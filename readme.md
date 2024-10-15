@@ -1,3 +1,5 @@
+Primera capa de ingesta de datos para sistema de acciones bursatiles. (proceso diario)
+
 Proyecto de Integración de Google Cloud Functions con BigQuery y Google Cloud Storage
 Este proyecto representa la primera capa de un pipeline ETL (Extract, Transform, Load) diseñado para extraer datos financieros desde fuentes externas, realizar transformaciones básicas, y cargar los datos en Google Cloud Storage y BigQuery para análisis posterior.
 
