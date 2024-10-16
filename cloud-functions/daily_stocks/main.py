@@ -3,16 +3,23 @@ import os
 import logging
 import json
 from datetime import datetime
-from google.cloud import storage, bigquery
+from functions_framework import create_app  # Framework para ejecutar en Cloud Run
 
 # Añadir el directorio actual al path de Python para importaciones
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # Importar configuraciones y funciones personalizadas
-from conf.conf import bucket_name, bq_table, tickers, target_date  # Las variables centrales desde conf
-from custom_function.data_processing import save_data_to_json
-from custom_function.gcs_operations import upload_to_gcs
-from custom_function.bq_operations import load_data_to_bigquery
+from conf.conf import bucket_name, bq_table  # Ya no necesitas importar tickers y target_date desde conf.py
+
+# Cargar las variables de entorno para tickers y la fecha objetivo
+tickers = os.environ.get('TICKERS', 'AAPL').split(",")  # Por defecto, usa 'AAPL' si no se proporciona la variable
+target_date_str = os.environ.get('TARGET_DATE')
+
+# Convertir TARGET_DATE en un objeto datetime (si no se proporciona, utiliza la fecha actual)
+if target_date_str:
+    target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
+else:
+    target_date = datetime.today().date()
 
 # Configurar el logging para capturar los errores en Cloud Logging
 logging.basicConfig(level=logging.INFO)
@@ -20,10 +27,10 @@ logging.basicConfig(level=logging.INFO)
 # Función para procesar cada ticker individualmente, recibiendo las rutas desde conf
 def process_ticker(ticker, bucket_name, bq_table, target_date):
     try:
-        # Generar el nombre del archivo de salida y la ruta en GCS usando las configuraciones centralizadas
         output_file = f"{ticker}_{str(target_date)}.json"
         gcs_output_path = f"gs://{bucket_name}/{ticker}/{output_file}"
 
+        # Aquí llamas a las funciones personalizadas (ejemplo)
         # Generar datos de acciones en un archivo JSON para la fecha objetivo
         save_data_to_json(ticker, output_file, target_date)
         
@@ -38,22 +45,18 @@ def process_ticker(ticker, bucket_name, bq_table, target_date):
 
     except Exception as e:
         logging.error(f"Error al procesar el ticker {ticker} para la fecha {target_date}: {str(e)}")
-        raise  # Relanzar el error para que el flujo principal capture y decida si continuar
+        raise
 
-# Función HTTP principal para Google Cloud Functions
+# Función HTTP principal para Cloud Run y Functions Framework
 def main(request):
     """
-    Punto de entrada para Google Cloud Functions.
+    Punto de entrada para Google Cloud Run.
     Este método maneja solicitudes HTTP y procesa tickers.
     """
-    # Extraer el cuerpo de la solicitud (request body)
     request_json = request.get_json(silent=True)
 
-    # Si se proporcionan tickers en la solicitud, procesarlos, de lo contrario usar la lista por defecto
-    if request_json and "tickers" in request_json:
-        tickers_input = request_json["tickers"]
-    else:
-        tickers_input = tickers  # Usa la lista de tickers desde la configuración si no se proporciona entrada
+    # Permitir que los tickers se pasen también en la solicitud (opcional)
+    tickers_input = request_json.get("tickers", tickers)
 
     resultados = []
     
@@ -67,3 +70,10 @@ def main(request):
             resultados.append({"status": "error", "ticker": ticker, "message": str(e)})
 
     return json.dumps(resultados), 200, {'Content-Type': 'application/json'}
+
+
+# Ejecutar la aplicación con Functions Framework
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 8080))  # Usamos el puerto 8080 que Cloud Run requiere
+    app = create_app("main")  # Aquí definimos el nombre de la función que se ejecutará
+    app.run(host="0.0.0.0", port=port)
