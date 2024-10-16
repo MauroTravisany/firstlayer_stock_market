@@ -30,4 +30,4 @@ jobs:
               --platform managed \
               --region us-east1 \
               --allow-unauthenticated \
-              --set-env-vars TICKERS="AAPL" \
+              --set-env-vars TICKERS="AAPL" 
