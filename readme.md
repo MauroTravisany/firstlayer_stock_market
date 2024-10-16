@@ -102,7 +102,7 @@ gcloud projects add-iam-policy-binding your-project-id     --member="serviceAcco
 
 ### 3. Configuración de Terraform
 
-Configurar variables de entorno para **Terraform**:
+importante, configurar variables de entorno para **Terraform**:
 
 Antes de ejecutar Terraform, asegúrate de definir las variables necesarias en un archivo `terraform.tfvars` en el directorio `terraform/`:
 
