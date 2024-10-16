@@ -2,14 +2,12 @@ name: Deploy Cloud Function
 
 # Evento que activa el workflow: pull request cerrado (merged) en la rama master
 on:
-  pull_request:
-    types: [closed]
+  push:
     branches:
       - master
 
 jobs:
   deploy:
-    if: github.event.pull_request.merged == true  # Solo ejecuta si el PR fue mergeado
     runs-on: ubuntu-latest
 
     steps:
