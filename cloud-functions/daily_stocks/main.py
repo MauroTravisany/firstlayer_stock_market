@@ -7,6 +7,9 @@ from functions_framework import create_app  # Framework para ejecutar en Cloud R
 
 # Añadir el directorio actual al path de Python para importaciones
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from custom_function.data_processing import save_data_to_json
+from custom_function.gcs_operations import upload_to_gcs
+from custom_function.bq_operations import load_data_to_bigquery
 
 # Importar configuraciones y funciones personalizadas
 from conf.conf import bucket_name, bq_table  # Ya no necesitas importar tickers y target_date desde conf.py
