@@ -29,7 +29,9 @@ jobs:
       
       - name: Install dependencies
         run: |
-          pip install -r cloud-functions/daily_stocks/requirements.txt
+          python -m venv venv  # Crear entorno virtual
+          source venv/bin/activate  # Activar el entorno virtual
+          pip install -r cloud-functions/daily_stocks/requirements.txt  # Instalar dependencias
       
       - name: Deploy to Cloud Functions
         run: |
