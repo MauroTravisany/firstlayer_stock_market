@@ -1,5 +1,9 @@
 functions-framework==3.0.0
-google-cloud-storage==2.0.0
-google-cloud-bigquery==2.0.0
+google-auth==2.23.0  # Asegura evitar las problemáticas 2.24.0 y 2.25.0
+google-cloud-core==2.3.2
+google-cloud-secret-manager==2.16.1
+google-cloud-storage==2.8.0
+google-cloud-bigquery==3.4.2
+google-cloud-logging==3.11.2
 yfinance==0.1.63
 jsonschema==4.4.0
