@@ -26,9 +26,8 @@ jobs:
       - name: Deploy to Cloud Functions
         run: |
           gcloud functions deploy dailystocks \
-            --runtime python310 \
-            --trigger-http \
-            --entry-point main \
+            --platform managed \
+            --allow-unauthenticated \
             --region us-east1 \
             --source ./cloud-functions/daily_stocks \
             --set-env-vars TICKERS="AAPL"
