@@ -28,7 +28,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --user -r cloud-functions/daily_stocks/requirements.txt
-          echo "$HOME/.local/bin" >> $GITHUB_PATH  # Asegurar que los binarios estén en PATH
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Deploy to Cloud Functions
         run: |
@@ -37,4 +37,5 @@ jobs:
               --platform managed \
               --region us-east1 \
               --allow-unauthenticated \
-              --set-env-vars TICKERS="AAPL" 
+              --set-env-vars 'TICKERS=AAPL;GOOGL,PROJECT_ID=stocks-437902'
+

@@ -55,7 +55,7 @@ def load_data_to_bigquery(bq_table, gcs_output_path):
         
     except Exception as e:
         logging.error(f"Error durante la ejecución del MERGE entre {temp_table} y {bq_table}: {str(e)}")
-        return  # Finalizar el proceso si falla el MERGE
+        return  
 
     try:
         # Limpiar tabla temporal
@@ -65,4 +65,3 @@ def load_data_to_bigquery(bq_table, gcs_output_path):
 
     except Exception as e:
         logging.error(f"Error al eliminar la tabla temporal {temp_table}: {str(e)}")
-        # No finalizar el proceso aquí, ya que la eliminación de la tabla es secundaria

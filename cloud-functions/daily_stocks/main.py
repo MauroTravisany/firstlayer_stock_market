@@ -16,7 +16,7 @@ from custom_function.bq_operations import load_data_to_bigquery
 from conf.conf import bucket_name, bq_table  # Ya no necesitas importar tickers y target_date desde conf.py
 
 # Cargar las variables de entorno para tickers y la fecha objetivo
-tickers = os.environ.get('TICKERS', 'AAPL').split(",")  # Por defecto, usa 'AAPL' si no se proporciona la variable
+tickers = os.environ.get('TICKERS', 'AAPL').split(";")  # Por defecto, usa 'AAPL' si no se proporciona la variable
 target_date_str = os.environ.get('TARGET_DATE')
 
 # Convertir TARGET_DATE en un objeto datetime (si no se proporciona, utiliza la fecha actual)

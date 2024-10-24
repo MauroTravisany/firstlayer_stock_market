@@ -20,7 +20,7 @@ table_id = access_secret_version("table_id")
 bq_table = f"{project_id}.{dataset_id}.{table_id}"
 
 # Cargar tickers desde las variables de entorno (si no se suministra, usar 'AAPL' por defecto)
-tickers = os.environ.get('TICKERS', 'AAPL').split(",")
+tickers = os.environ.get('TICKERS', 'AAPL').split(";")
 
 # Cargar la fecha objetivo desde una variable de entorno o usar la fecha actual
 target_date_str = os.environ.get('TARGET_DATE')
