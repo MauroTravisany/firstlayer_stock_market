@@ -13,7 +13,7 @@ from custom_function.gcs_operations import upload_to_gcs
 from custom_function.bq_operations import load_data_to_bigquery
 
 # Importar configuraciones y funciones personalizadas
-from conf.conf import bucket_name, bq_table  # Ya no necesitas importar tickers y target_date desde conf.py
+from conf.conf import load_config
 
 # Cargar las variables de entorno para tickers y la fecha objetivo
 tickers = os.environ.get('TICKERS', 'AAPL').split(";")  # Por defecto, usa 'AAPL' si no se proporciona la variable
@@ -61,6 +61,12 @@ def main(request):
 
     # Permitir que los tickers se pasen también en la solicitud (opcional)
     tickers_input = request_json.get("tickers", tickers)
+
+    try:
+        bucket_name, bq_table = load_config()
+    except Exception as e:
+        logging.error(f"Error al cargar configuración desde Secret Manager: {str(e)}")
+        return json.dumps({"status": "error", "message": str(e)}), 500, {'Content-Type': 'application/json'}
 
     resultados = []
     

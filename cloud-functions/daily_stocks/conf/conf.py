@@ -10,14 +10,17 @@ def access_secret_version(secret_id, version_id="latest"):
     secret_value = response.payload.data.decode("UTF-8")
     return secret_value
 
-# Cargar variables sensibles desde Google Secret Manager
-bucket_name = access_secret_version("bucket_name")
-project_id = access_secret_version("project_id")
-dataset_id = access_secret_version("dataset_id")
-table_id = access_secret_version("table_id")
+# Cargar variables sensibles desde Google Secret Manager cuando se procese una request.
+# Evita que Cloud Run falle durante el arranque si Secret Manager tarda o responde con error.
+def load_config():
+    bucket_name = access_secret_version("bucket_name")
+    project_id = access_secret_version("project_id")
+    dataset_id = access_secret_version("dataset_id")
+    table_id = access_secret_version("table_id")
 
-# Generar la tabla de BigQuery con los datos obtenidos
-bq_table = f"{project_id}.{dataset_id}.{table_id}"
+    # Generar la tabla de BigQuery con los datos obtenidos
+    bq_table = f"{project_id}.{dataset_id}.{table_id}"
+    return bucket_name, bq_table
 
 # Cargar tickers desde las variables de entorno (si no se suministra, usar 'AAPL' por defecto)
 tickers = os.environ.get('TICKERS', 'AAPL').split(";")
