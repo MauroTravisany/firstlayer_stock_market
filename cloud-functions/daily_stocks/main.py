@@ -1,90 +1,85 @@
-import sys
-import os
-import logging
 import json
-from datetime import datetime
-from functions_framework import create_app  # Framework para ejecutar en Cloud Run
+import logging
+import os
+import sys
+from datetime import date, datetime
 
-# Añadir el directorio actual al path de Python para importaciones
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(os.path.expanduser("~/.local/lib/python3.12/site-packages"))
 
-# Importar configuraciones y funciones personalizadas
 from conf.conf import load_config
 
-# Cargar las variables de entorno para tickers y la fecha objetivo
-tickers = os.environ.get('TICKERS', 'AAPL').split(";")  # Por defecto, usa 'AAPL' si no se proporciona la variable
-target_date_str = os.environ.get('TARGET_DATE')
-
-# Convertir TARGET_DATE en un objeto datetime (si no se proporciona, utiliza la fecha actual)
-if target_date_str:
-    target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
-else:
-    target_date = datetime.today().date()
-
-# Configurar el logging para capturar los errores en Cloud Logging
 logging.basicConfig(level=logging.INFO)
 
-# Función para procesar cada ticker individualmente, recibiendo las rutas desde conf
+
+def parse_tickers(value):
+    if isinstance(value, str):
+        value = value.replace(";", ",").split(",")
+
+    return [str(ticker).strip().upper() for ticker in value if str(ticker).strip()]
+
+
+def parse_target_date(value):
+    if not value:
+        return date.today()
+
+    return datetime.strptime(value, "%Y-%m-%d").date()
+
+
+def default_tickers():
+    return parse_tickers(os.environ.get("TICKERS", "AAPL"))
+
+
 def process_ticker(ticker, bucket_name, bq_table, target_date):
+    from custom_function.bq_operations import load_data_to_bigquery
     from custom_function.data_processing import save_data_to_json
     from custom_function.gcs_operations import upload_to_gcs
-    from custom_function.bq_operations import load_data_to_bigquery
 
-    try:
-        output_file = f"{ticker}_{str(target_date)}.json"
-        gcs_output_path = f"gs://{bucket_name}/{ticker}/{output_file}"
+    output_file = f"{ticker}_{target_date}.json"
+    gcs_output_path = f"gs://{bucket_name}/{ticker}/{output_file}"
 
-        # Aquí llamas a las funciones personalizadas (ejemplo)
-        # Generar datos de acciones en un archivo JSON para la fecha objetivo
-        save_data_to_json(ticker, output_file, target_date)
-        
-        # Subir el archivo a Google Cloud Storage
-        upload_to_gcs(bucket_name, output_file, f"{ticker}/{output_file}")
-        
-        # Cargar los datos en BigQuery
-        load_data_to_bigquery(bq_table, gcs_output_path)
-        
-        logging.info(f"Proceso completado exitosamente para {ticker} en la fecha {target_date}")
-        return {"status": "success", "ticker": ticker, "message": "Proceso completado con éxito"}
+    save_data_to_json(ticker, output_file, target_date)
+    upload_to_gcs(bucket_name, output_file, f"{ticker}/{output_file}")
+    load_data_to_bigquery(bq_table, gcs_output_path)
 
-    except Exception as e:
-        logging.error(f"Error al procesar el ticker {ticker} para la fecha {target_date}: {str(e)}")
-        raise
+    logging.info("Proceso completado exitosamente para %s en la fecha %s", ticker, target_date)
+    return {"status": "success", "ticker": ticker, "message": "Proceso completado con exito"}
 
-# Función HTTP principal para Cloud Run y Functions Framework
+
 def main(request):
-    """
-    Punto de entrada para Google Cloud Run.
-    Este método maneja solicitudes HTTP y procesa tickers.
-    """
     request_json = request.get_json(silent=True) or {}
 
-    # Permitir que los tickers se pasen también en la solicitud (opcional)
-    tickers_input = request_json.get("tickers", tickers)
+    try:
+        tickers_input = parse_tickers(request_json.get("tickers", default_tickers()))
+        target_date = parse_target_date(request_json.get("target_date") or os.environ.get("TARGET_DATE"))
+    except ValueError as exc:
+        return json.dumps({"status": "error", "message": str(exc)}), 400, {"Content-Type": "application/json"}
+
+    if not tickers_input:
+        return json.dumps({"status": "error", "message": "No tickers provided"}), 400, {"Content-Type": "application/json"}
 
     try:
         bucket_name, bq_table = load_config()
-    except Exception as e:
-        logging.error(f"Error al cargar configuración desde Secret Manager: {str(e)}")
-        return json.dumps({"status": "error", "message": str(e)}), 500, {'Content-Type': 'application/json'}
+    except Exception as exc:
+        logging.exception("Error al cargar configuracion desde Secret Manager")
+        return json.dumps({"status": "error", "message": str(exc)}), 500, {"Content-Type": "application/json"}
 
-    resultados = []
-    
+    results = []
+
     for ticker in tickers_input:
         try:
-            logging.info(f"Iniciando proceso para el ticker {ticker} en la fecha {target_date}")
-            resultado = process_ticker(ticker, bucket_name, bq_table, target_date)
-            resultados.append(resultado)
-        except Exception as e:
-            logging.error(f"El proceso falló para el ticker {ticker} en la fecha {target_date}: {str(e)}")
-            resultados.append({"status": "error", "ticker": ticker, "message": str(e)})
+            logging.info("Iniciando proceso para el ticker %s en la fecha %s", ticker, target_date)
+            results.append(process_ticker(ticker, bucket_name, bq_table, target_date))
+        except Exception as exc:
+            logging.exception("El proceso fallo para el ticker %s en la fecha %s", ticker, target_date)
+            results.append({"status": "error", "ticker": ticker, "message": str(exc)})
 
-    return json.dumps(resultados), 200, {'Content-Type': 'application/json'}
+    status_code = 207 if any(item["status"] == "error" for item in results) else 200
+    return json.dumps(results), status_code, {"Content-Type": "application/json"}
 
 
-# Ejecutar la aplicación con Functions Framework
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 8080))  # Usamos el puerto 8080 que Cloud Run requiere
-    app = create_app("main")  # Aquí definimos el nombre de la función que se ejecutará
+if __name__ == "__main__":
+    from functions_framework import create_app
+
+    port = int(os.environ.get("PORT", 8080))
+    app = create_app("main")
     app.run(host="0.0.0.0", port=port)

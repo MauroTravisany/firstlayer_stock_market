@@ -23,7 +23,7 @@ def load_data_to_bigquery(bq_table, gcs_output_path):
 
     except Exception as e:
         logging.error(f"Error al cargar datos en la tabla temporal {temp_table}: {str(e)}")
-        return  # Finalizar el proceso si falla la carga de datos
+        raise
 
     try:
         # Ejecutar MERGE en BigQuery
@@ -55,7 +55,7 @@ def load_data_to_bigquery(bq_table, gcs_output_path):
         
     except Exception as e:
         logging.error(f"Error durante la ejecución del MERGE entre {temp_table} y {bq_table}: {str(e)}")
-        return  
+        raise
 
     try:
         # Limpiar tabla temporal
