@@ -8,9 +8,6 @@ from functions_framework import create_app  # Framework para ejecutar en Cloud R
 # Añadir el directorio actual al path de Python para importaciones
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.path.expanduser("~/.local/lib/python3.12/site-packages"))
-from custom_function.data_processing import save_data_to_json
-from custom_function.gcs_operations import upload_to_gcs
-from custom_function.bq_operations import load_data_to_bigquery
 
 # Importar configuraciones y funciones personalizadas
 from conf.conf import load_config
@@ -30,6 +27,10 @@ logging.basicConfig(level=logging.INFO)
 
 # Función para procesar cada ticker individualmente, recibiendo las rutas desde conf
 def process_ticker(ticker, bucket_name, bq_table, target_date):
+    from custom_function.data_processing import save_data_to_json
+    from custom_function.gcs_operations import upload_to_gcs
+    from custom_function.bq_operations import load_data_to_bigquery
+
     try:
         output_file = f"{ticker}_{str(target_date)}.json"
         gcs_output_path = f"gs://{bucket_name}/{ticker}/{output_file}"
