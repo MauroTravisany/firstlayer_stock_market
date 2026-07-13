@@ -2,7 +2,12 @@ terraform/windows_amd64/*
 .terraform/
 *.tfstate
 *.tfstate.backup
+__pycache__/
+**/__pycache__/
+*.py[cod]
+cloud-functions/daily_stocks/*.json
+*.log
+.env
 terraform/.terraform.lock.hcl
 terraform/terraform.tfstate
-terraform/variables.tf
 terraform/terraform.tfstate.backup

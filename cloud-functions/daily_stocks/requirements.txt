@@ -1,4 +1,4 @@
-functions-framework==3.0.0
+functions-framework>=3.5,<4
 google-auth==2.23.0  # Asegura evitar las problemáticas 2.24.0 y 2.25.0
 google-cloud-core==2.3.2
 google-cloud-secret-manager==2.16.1
