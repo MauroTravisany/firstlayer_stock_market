@@ -17,13 +17,24 @@ def save_data_to_json(ticker, output_file, target_date):
     import yfinance as yf
 
     try:
-        stock_data = yf.Ticker(ticker).history(
-            start=target_date,
-            end=target_date + timedelta(days=1),
-            interval="15m",
-        )
+        try:
+            stock_data = yf.Ticker(ticker).history(
+                start=target_date,
+                end=target_date + timedelta(days=1),
+                interval="15m",
+                auto_adjust=False,
+            )
+        except ValueError as exc:
+            raise RuntimeError(
+                f"Yahoo Finance did not return valid price data for {ticker} on {target_date}. "
+                "Try a recent market day or redeploy with the updated yfinance dependency."
+            ) from exc
+
         if stock_data.empty:
-            raise ValueError(f"No data returned for ticker: {ticker}")
+            raise ValueError(
+                f"No data returned for ticker {ticker} on {target_date}. "
+                "Use a valid trading day within yfinance intraday history."
+            )
 
         stock_data["volatilidad"] = ((stock_data["High"] - stock_data["Low"]) / stock_data["Open"]) * 100
         prev_close = None
