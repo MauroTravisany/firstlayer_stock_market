@@ -57,7 +57,7 @@ def main(request):
     Punto de entrada para Google Cloud Run.
     Este método maneja solicitudes HTTP y procesa tickers.
     """
-    request_json = request.get_json(silent=True)
+    request_json = request.get_json(silent=True) or {}
 
     # Permitir que los tickers se pasen también en la solicitud (opcional)
     tickers_input = request_json.get("tickers", tickers)
