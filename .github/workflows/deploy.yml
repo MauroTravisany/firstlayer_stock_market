@@ -30,4 +30,5 @@ jobs:
               --platform managed \
               --region us-east1 \
               --allow-unauthenticated \
+              --clear-base-image \
               --set-env-vars "TICKERS=AAPL;GOOGL,PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}"
