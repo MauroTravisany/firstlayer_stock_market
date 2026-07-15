@@ -23,7 +23,7 @@ jobs:
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
-      - name: Deploy to Cloud Run
+      - name: Deploy stock prices to Cloud Run
         run: |
           gcloud run deploy stockdaily \
               --source ./cloud-functions/daily_stocks \
@@ -32,3 +32,13 @@ jobs:
               --allow-unauthenticated \
               --clear-base-image \
               --set-env-vars "TICKERS=AAPL;GOOGL,PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}"
+
+      - name: Deploy financial data to Cloud Run
+        run: |
+          gcloud run deploy stockfinancial \
+              --source ./cloud-functions/financial_data \
+              --platform managed \
+              --region us-east1 \
+              --allow-unauthenticated \
+              --clear-base-image \
+              --set-env-vars "TICKERS=AAPL;AMZN;ASML;BBH;BCH;COIN;DGRO;GOOG;GOOGL;INTC;KO;MCD;MELI;META;MSFT;MSTR;NFLX;NKE;NVDA;PFE;SBUX;TSLA;TTWO;URA;XLE;GRID,PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},FINANCIAL_STATEMENTS_TABLE_ID=financial_statements,FINANCIAL_RATIOS_TABLE_ID=financial_ratios_snapshot"
