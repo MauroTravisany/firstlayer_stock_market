@@ -24,6 +24,9 @@ def clean_value(value):
 
 
 def statement_value(frame, column, names):
+    if frame.empty or column not in frame.columns:
+        return None
+
     for name in names:
         if name in frame.index:
             return clean_value(frame.at[name, column])
