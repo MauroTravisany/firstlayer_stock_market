@@ -30,6 +30,16 @@ jobs:
               --region us-east1 \
               --quiet || true
 
+          for i in {1..30}; do
+            if ! gcloud run services describe stockdaily \
+                --platform managed \
+                --region us-east1 >/dev/null 2>&1; then
+              break
+            fi
+            echo "Waiting for stockdaily deletion to finish..."
+            sleep 5
+          done
+
           gcloud run deploy stockdaily \
               --source ./cloud-functions/daily_stocks \
               --platform managed \
@@ -44,6 +54,16 @@ jobs:
               --platform managed \
               --region us-east1 \
               --quiet || true
+
+          for i in {1..30}; do
+            if ! gcloud run services describe stockfinancial \
+                --platform managed \
+                --region us-east1 >/dev/null 2>&1; then
+              break
+            fi
+            echo "Waiting for stockfinancial deletion to finish..."
+            sleep 5
+          done
 
           gcloud run deploy stockfinancial \
               --source ./cloud-functions/financial_data \
