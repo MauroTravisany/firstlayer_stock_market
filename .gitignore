@@ -6,6 +6,7 @@ __pycache__/
 **/__pycache__/
 *.py[cod]
 cloud-functions/daily_stocks/*.json
+cloud-functions/financial_data/*.json
 *.log
 .env
 terraform/.terraform.lock.hcl
