@@ -11,4 +11,4 @@ COPY . .
 
 EXPOSE 8080
 
-CMD ["python", "-m", "functions_framework", "--target=main", "--host=0.0.0.0", "--port=8080"]
+CMD ["python", "main.py"]
