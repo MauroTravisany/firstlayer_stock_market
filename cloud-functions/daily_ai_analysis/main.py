@@ -104,10 +104,10 @@ def main(request):
     try:
         portfolio_summary = build_portfolio_summary(config, analysis_rows)
         alert_title = portfolio_summary["alert_title"]
-        alert_body = build_alert_text(portfolio_summary)
+        alert_body = build_alert_text(portfolio_summary, None)
 
         if send_alert:
-            alert_sent, alert_error = send_webhook_alert(config, portfolio_summary)
+            alert_sent, alert_error = send_webhook_alert(config, portfolio_summary, analysis_rows)
 
         merge_summary(
             config,
@@ -130,7 +130,8 @@ def main(request):
         logging.exception("Fallo resumen o alerta diaria")
         alert_error = str(exc)
 
-    status_code = 207 if any(item["status"] == "error" for item in results) or alert_error else 200
+    alert_failure = alert_error and alert_error != "NO_CLEAR_OPPORTUNITIES"
+    status_code = 207 if any(item["status"] == "error" for item in results) or alert_failure else 200
     return (
         json.dumps(
             {
