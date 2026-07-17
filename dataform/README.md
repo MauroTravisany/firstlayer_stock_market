@@ -10,9 +10,10 @@ Este proyecto Dataform calcula una clasificacion diaria de la cartera usando:
 
 ```text
 acciones_dataset.portfolio_valuation_daily
+acciones_dataset.portfolio_daily_signal
 ```
 
-La tabla queda particionada por `analysis_date` y clusterizada por `classification, ticker`.
+Las tablas quedan particionadas por `analysis_date`.
 
 ## Clasificaciones
 
@@ -36,6 +37,29 @@ FINANCIERO_MISMO_DIA  snapshot financiero del mismo dia
 FINANCIERO_REZAGADO   snapshot financiero anterior a ayer
 SIN_SNAPSHOT_FINANCIERO
 ```
+
+## Senal diaria
+
+`portfolio_daily_signal` combina:
+
+- valoracion fundamental
+- calidad financiera
+- momentum de precio
+- riesgo/volatilidad
+
+Senales posibles:
+
+```text
+COMPRAR_OBSERVAR
+CALIDAD_ALTA_PRECIO_JUSTO
+MANTENER
+SOBREVALORADA
+TRAMPA_DE_VALOR
+RIESGO_ALTO
+DATOS_INSUFICIENTES
+```
+
+La columna `final_score` ordena las oportunidades diarias. La columna `signal_reason` muestra el aporte de valoracion, calidad, momentum y riesgo.
 
 ## Ejecucion local
 

@@ -1,0 +1,163 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "portfolio_daily_signal",
+  description: "Senal diaria accionable de la cartera combinando valoracion, calidad financiera, momentum y riesgo.",
+  tags: ["portfolio", "valuation", "daily", "signal"],
+  bigquery: {
+    partitionBy: "analysis_date",
+    clusterBy: ["signal", "ticker"]
+  },
+  assertions: {
+    nonNull: ["analysis_date", "ticker", "signal"],
+    uniqueKey: ["analysis_date", "ticker"]
+  }
+}
+
+WITH price_daily AS (
+  SELECT
+    ticker,
+    fecha AS analysis_date,
+    ARRAY_AGG(close ORDER BY hora DESC LIMIT 1)[OFFSET(0)] AS close_price,
+    SUM(volumen) AS volume
+  FROM `stocks-437902.acciones_dataset.valores_acciones_recientes`
+  GROUP BY ticker, analysis_date
+),
+price_returns AS (
+  SELECT
+    ticker,
+    analysis_date,
+    close_price,
+    volume,
+    SAFE_DIVIDE(close_price, LAG(close_price, 1) OVER ticker_window) - 1 AS return_1d,
+    SAFE_DIVIDE(close_price, LAG(close_price, 5) OVER ticker_window) - 1 AS return_5d,
+    SAFE_DIVIDE(close_price, LAG(close_price, 20) OVER ticker_window) - 1 AS return_20d,
+    SAFE_DIVIDE(close_price, LAG(close_price, 60) OVER ticker_window) - 1 AS return_60d,
+    SAFE_DIVIDE(close_price, LAG(close_price, 1) OVER ticker_window) - 1 AS daily_return
+  FROM price_daily
+  WINDOW ticker_window AS (PARTITION BY ticker ORDER BY analysis_date)
+),
+price_features AS (
+  SELECT
+    ticker,
+    analysis_date,
+    close_price,
+    volume,
+    return_1d,
+    return_5d,
+    return_20d,
+    return_60d,
+    AVG(close_price) OVER ticker_20d AS sma_20,
+    AVG(close_price) OVER ticker_60d AS sma_60,
+    STDDEV_POP(daily_return) OVER ticker_20d AS volatility_20d,
+    SAFE_DIVIDE(volume, AVG(volume) OVER ticker_20d) AS volume_vs_20d_avg
+  FROM price_returns
+  WINDOW
+    ticker_20d AS (PARTITION BY ticker ORDER BY analysis_date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW),
+    ticker_60d AS (PARTITION BY ticker ORDER BY analysis_date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW)
+),
+base AS (
+  SELECT
+    v.*,
+    p.return_1d,
+    p.return_5d,
+    p.return_20d,
+    p.return_60d,
+    p.sma_20,
+    p.sma_60,
+    p.volatility_20d,
+    p.volume_vs_20d_avg
+  FROM ${ref("portfolio_valuation_daily")} v
+  LEFT JOIN price_features p
+    ON p.ticker = v.ticker
+   AND p.analysis_date = v.analysis_date
+),
+scored AS (
+  SELECT
+    *,
+    (
+      CASE WHEN classification = "BARATA" THEN 3
+           WHEN classification = "PRECIO_JUSTO" THEN 1
+           WHEN classification = "CARA" THEN -3
+           ELSE -1 END
+    ) AS value_component,
+    (
+      CASE WHEN profit_margin >= 0.20 THEN 1.5 WHEN profit_margin < 0 THEN -1.5 ELSE 0 END +
+      CASE WHEN operating_margin >= 0.20 THEN 1 WHEN operating_margin < 0 THEN -1 ELSE 0 END +
+      CASE WHEN roe >= 0.15 THEN 1 WHEN roe < 0 THEN -1 ELSE 0 END +
+      CASE WHEN free_cash_flow > 0 THEN 1 WHEN free_cash_flow < 0 THEN -1 ELSE 0 END +
+      CASE WHEN debt_to_equity IS NULL THEN 0 WHEN debt_to_equity <= 100 THEN 0.5 WHEN debt_to_equity > 250 THEN -1 ELSE 0 END +
+      CASE WHEN current_ratio IS NULL THEN 0 WHEN current_ratio >= 1.5 THEN 0.5 WHEN current_ratio < 1 THEN -0.5 ELSE 0 END
+    ) AS quality_score,
+    (
+      CASE WHEN return_20d IS NULL THEN 0 WHEN return_20d BETWEEN -0.12 AND 0.12 THEN 0.5 WHEN return_20d > 0.20 THEN -0.5 WHEN return_20d < -0.20 THEN -0.5 ELSE 0 END +
+      CASE WHEN return_60d IS NULL THEN 0 WHEN return_60d > 0.05 THEN 1 WHEN return_60d < -0.15 THEN -1 ELSE 0 END +
+      CASE WHEN sma_20 IS NULL THEN 0 WHEN last_close >= sma_20 THEN 0.5 ELSE -0.5 END +
+      CASE WHEN sma_60 IS NULL THEN 0 WHEN last_close >= sma_60 THEN 0.5 ELSE -0.5 END
+    ) AS momentum_score,
+    (
+      CASE WHEN volatility_20d IS NULL THEN 0 WHEN volatility_20d <= 0.025 THEN 0.5 WHEN volatility_20d > 0.06 THEN -1.5 ELSE -0.5 END +
+      CASE WHEN beta IS NULL THEN 0 WHEN beta <= 1.2 THEN 0.5 WHEN beta > 1.8 THEN -1 ELSE 0 END +
+      CASE WHEN volume_vs_20d_avg IS NULL THEN 0 WHEN volume_vs_20d_avg >= 1.5 AND return_1d < 0 THEN -0.5 ELSE 0 END
+    ) AS risk_score
+  FROM base
+),
+final_scored AS (
+  SELECT
+    *,
+    ROUND(
+      valuation_score +
+      value_component +
+      quality_score +
+      momentum_score +
+      risk_score,
+      2
+    ) AS final_score
+  FROM scored
+)
+
+SELECT
+  analysis_date,
+  ticker,
+  last_close,
+  classification,
+  financial_data_status,
+  valuation_score,
+  value_component,
+  quality_score,
+  momentum_score,
+  risk_score,
+  final_score,
+  return_1d,
+  return_5d,
+  return_20d,
+  return_60d,
+  volatility_20d,
+  volume_vs_20d_avg,
+  pe_ratio,
+  forward_pe,
+  price_to_sales,
+  ev_to_ebitda,
+  roe,
+  profit_margin,
+  operating_margin,
+  debt_to_equity,
+  current_ratio,
+  free_cash_flow,
+  CASE
+    WHEN financial_data_status = "SIN_SNAPSHOT_FINANCIERO" THEN "DATOS_INSUFICIENTES"
+    WHEN classification = "BARATA" AND quality_score >= 2 AND final_score >= 6 THEN "COMPRAR_OBSERVAR"
+    WHEN classification = "BARATA" AND quality_score < 0 THEN "TRAMPA_DE_VALOR"
+    WHEN classification = "CARA" AND final_score < -3 THEN "SOBREVALORADA"
+    WHEN risk_score <= -2 THEN "RIESGO_ALTO"
+    WHEN classification = "PRECIO_JUSTO" AND quality_score >= 2 AND final_score >= 3 THEN "CALIDAD_ALTA_PRECIO_JUSTO"
+    ELSE "MANTENER"
+  END AS signal,
+  CONCAT(
+    "valor=", CAST(ROUND(value_component, 2) AS STRING),
+    "; calidad=", CAST(ROUND(quality_score, 2) AS STRING),
+    "; momentum=", CAST(ROUND(momentum_score, 2) AS STRING),
+    "; riesgo=", CAST(ROUND(risk_score, 2) AS STRING)
+  ) AS signal_reason,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM final_scored
