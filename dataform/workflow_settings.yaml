@@ -1,0 +1,4 @@
+defaultProject: stocks-437902
+defaultLocation: us-east1
+defaultDataset: acciones_dataset
+dataformCoreVersion: 3.0.0
