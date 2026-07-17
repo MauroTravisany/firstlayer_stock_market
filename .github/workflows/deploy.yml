@@ -42,3 +42,15 @@ jobs:
               --allow-unauthenticated \
               --clear-base-image \
               --set-env-vars "TICKERS=AAPL;AMZN;ASML;BBH;BCH;COIN;DGRO;GOOG;GOOGL;INTC;KO;MCD;MELI;META;MSFT;MSTR;NFLX;NKE;NVDA;PFE;SBUX;TSLA;TTWO;URA;XLE;GRID,PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},FINANCIAL_STATEMENTS_TABLE_ID=financial_statements,FINANCIAL_RATIOS_TABLE_ID=financial_ratios_snapshot"
+
+      - name: Deploy AI analysis to Cloud Run
+        run: |
+          gcloud run deploy stockaianalysis \
+              --source ./cloud-functions/daily_ai_analysis \
+              --platform managed \
+              --region us-east1 \
+              --allow-unauthenticated \
+              --clear-base-image \
+              --timeout 1800 \
+              --memory 1Gi \
+              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},OPENAI_MODEL=gpt-5-mini,ALERT_WEBHOOK_TYPE=auto,AI_ANALYSIS_TABLE_ID=portfolio_ai_analysis_daily,AI_SUMMARY_TABLE_ID=portfolio_ai_summary_daily"
