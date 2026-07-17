@@ -98,7 +98,10 @@ Reglas obligatorias:
 4. Si una fuente externa contradice los datos internos, marca la discrepancia.
 5. Prioriza valoracion, calidad financiera, momentum y riesgo.
 6. Explica la conclusion de forma objetiva y accionable, sin decir "compra" como orden.
-7. Devuelve solo JSON valido segun el schema.
+7. Responde siempre en espanol en todos los campos narrativos del JSON.
+8. Si las fuentes externas estan en ingles, resume su contenido en espanol.
+9. confidence_score debe ser un numero entre 0.0 y 1.0, no porcentaje.
+10. Devuelve solo JSON valido segun el schema.
 """
 
 
@@ -163,6 +166,7 @@ def analyze_ticker(config, signal_row):
                 "content": (
                     "Analiza este ticker con los datos internos y contrasta con fuentes externas. "
                     "Usa busqueda web para contexto reciente y cita las fuentes usadas dentro de sources. "
+                    "Todos los textos explicativos deben estar en espanol. "
                     f"Payload JSON:\n{json.dumps(payload, ensure_ascii=True)}"
                 ),
             },
@@ -260,6 +264,7 @@ def build_portfolio_summary(config, analysis_rows):
                     "Crea un resumen ejecutivo en espanol para dashboard y alerta Slack/Discord. "
                     "Debe separar oportunidades, sobrevaloradas y riesgos. "
                     "No des recomendacion financiera personalizada. "
+                    "Todos los campos de texto deben estar escritos en espanol. "
                     f"analysis_date={analysis_date}\n"
                     f"analysis_rows={json.dumps(compact_rows, ensure_ascii=True)}"
                 ),

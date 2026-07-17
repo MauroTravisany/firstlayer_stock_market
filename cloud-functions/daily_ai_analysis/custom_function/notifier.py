@@ -2,9 +2,11 @@ import requests
 
 
 DISCORD_CONTENT_LIMIT = 2000
+DISCORD_FIELD_LIMIT = 1024
 SLACK_TEXT_LIMIT = 12000
 DEFAULT_MIN_FINAL_SCORE = 6.0
 DEFAULT_MIN_CONFIDENCE = 0.65
+DISCORD_GREEN = 0x2ECC71
 
 
 def _detect_webhook_type(config):
@@ -32,16 +34,26 @@ def clear_opportunity_rows(analysis_rows, min_final_score=DEFAULT_MIN_FINAL_SCOR
     return sorted(rows, key=lambda item: item.get("final_score") or 0, reverse=True)
 
 
+def _normalized_confidence(value):
+    if value is None:
+        return 0.0
+    confidence = float(value)
+    if confidence > 1:
+        return confidence / 100
+    return confidence
+
+
 def build_alert_text(summary, opportunity_rows=None):
     if opportunity_rows is not None:
         lines = [f"*{summary['alert_title']}*", ""]
         lines.append("Oportunidades claras detectadas:")
         for row in opportunity_rows:
+            confidence = _normalized_confidence(row.get("confidence_score"))
             lines.append(
                 "- {ticker}: score={score}, confianza={confidence}. {summary}".format(
                     ticker=row.get("ticker"),
                     score=round(float(row.get("final_score") or 0), 2),
-                    confidence=round(float(row.get("confidence_score") or 0), 2),
+                    confidence=round(confidence, 2),
                     summary=row.get("ai_summary") or row.get("ai_opportunity") or "Ver detalle en Looker Studio.",
                 )
             )
@@ -65,6 +77,39 @@ def _truncate_text(text, limit):
     return text[: max(0, limit - len(suffix))].rstrip() + suffix
 
 
+def _short_text(text, limit):
+    if not text:
+        return "Ver detalle en Looker Studio."
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 3)].rstrip() + "..."
+
+
+def build_discord_payload(summary, opportunity_rows):
+    fields = []
+    for row in opportunity_rows[:10]:
+        ticker = row.get("ticker")
+        score = round(float(row.get("final_score") or 0), 2)
+        confidence = round(_normalized_confidence(row.get("confidence_score")), 2)
+        text = row.get("ai_summary") or row.get("ai_opportunity") or "Ver detalle en Looker Studio."
+        fields.append(
+            {
+                "name": f"{ticker} | score {score} | confianza {confidence}",
+                "value": _short_text(text, DISCORD_FIELD_LIMIT),
+                "inline": False,
+            }
+        )
+
+    embed = {
+        "title": summary.get("alert_title") or "Oportunidades claras de cartera",
+        "description": "Se detectaron acciones con senal `COMPRAR_OBSERVAR`, score alto y confianza suficiente.",
+        "color": DISCORD_GREEN,
+        "fields": fields,
+        "footer": {"text": "Detalle completo en Looker Studio / BigQuery"},
+    }
+    return {"embeds": [embed]}
+
+
 def send_webhook_alert(config, summary, analysis_rows=None):
     url = config.get("alert_webhook_url")
     if not url:
@@ -77,7 +122,7 @@ def send_webhook_alert(config, summary, analysis_rows=None):
     text = build_alert_text(summary, opportunity_rows)
     webhook_type = _detect_webhook_type(config)
     if webhook_type == "discord":
-        payload = {"content": _truncate_text(text, DISCORD_CONTENT_LIMIT)}
+        payload = build_discord_payload(summary, opportunity_rows)
     else:
         payload = {"text": _truncate_text(text, SLACK_TEXT_LIMIT)}
 
