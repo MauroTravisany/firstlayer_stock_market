@@ -1,0 +1,32 @@
+config {
+  type: "view",
+  schema: "acciones_dataset",
+  name: "looker_portfolio_history",
+  description: "Vista historica para Looker Studio con scores y cambios diarios por ticker.",
+  tags: ["portfolio", "valuation", "daily", "looker", "dashboard"]
+}
+
+SELECT
+  analysis_date,
+  ticker,
+  signal,
+  classification,
+  last_close,
+  final_score,
+  valuation_score,
+  quality_score,
+  momentum_score,
+  risk_score,
+  return_1d,
+  return_5d,
+  return_20d,
+  return_60d,
+  volatility_20d,
+  LAG(signal) OVER (PARTITION BY ticker ORDER BY analysis_date) AS previous_signal,
+  LAG(final_score) OVER (PARTITION BY ticker ORDER BY analysis_date) AS previous_final_score,
+  final_score - LAG(final_score) OVER (PARTITION BY ticker ORDER BY analysis_date) AS final_score_change,
+  CASE
+    WHEN signal != LAG(signal) OVER (PARTITION BY ticker ORDER BY analysis_date) THEN TRUE
+    ELSE FALSE
+  END AS signal_changed
+FROM ${ref("portfolio_daily_signal")}

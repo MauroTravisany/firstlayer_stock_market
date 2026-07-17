@@ -1,0 +1,23 @@
+config {
+  type: "view",
+  schema: "acciones_dataset",
+  name: "looker_portfolio_ai_summary",
+  description: "Vista de resumen IA diario para tarjetas textuales en Looker Studio.",
+  tags: ["portfolio", "valuation", "daily", "looker", "dashboard", "ai"]
+}
+
+SELECT
+  analysis_date,
+  portfolio_summary,
+  top_opportunities,
+  overvalued_summary,
+  risk_summary,
+  dashboard_summary,
+  alert_title,
+  alert_body,
+  alert_sent,
+  alert_error,
+  model_name,
+  prompt_version,
+  created_at
+FROM `stocks-437902.acciones_dataset.portfolio_ai_summary_daily`

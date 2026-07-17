@@ -1,0 +1,64 @@
+config {
+  type: "view",
+  schema: "acciones_dataset",
+  name: "looker_portfolio_latest",
+  description: "Vista optimizada para Looker Studio con el ultimo dia disponible de senales de cartera.",
+  tags: ["portfolio", "valuation", "daily", "looker", "dashboard"]
+}
+
+WITH latest_date AS (
+  SELECT MAX(analysis_date) AS analysis_date
+  FROM ${ref("portfolio_daily_signal")}
+)
+
+SELECT
+  s.analysis_date,
+  s.ticker,
+  s.signal,
+  s.classification,
+  s.last_close,
+  s.final_score,
+  s.valuation_score,
+  s.value_component,
+  s.quality_score,
+  s.momentum_score,
+  s.risk_score,
+  s.return_1d,
+  s.return_5d,
+  s.return_20d,
+  s.return_60d,
+  s.volatility_20d,
+  s.pe_ratio,
+  s.forward_pe,
+  s.price_to_sales,
+  s.ev_to_ebitda,
+  s.roe,
+  s.profit_margin,
+  s.operating_margin,
+  s.debt_to_equity,
+  s.current_ratio,
+  s.free_cash_flow,
+  s.signal_reason,
+  a.ai_summary,
+  a.ai_analysis,
+  a.ai_risks,
+  a.ai_opportunity,
+  a.ai_decision_support,
+  a.external_context_summary,
+  a.data_discrepancies,
+  a.confidence_score,
+  a.confidence_reason,
+  a.external_sources_json,
+  CASE
+    WHEN s.final_score >= 8 THEN "Muy alta"
+    WHEN s.final_score >= 4 THEN "Alta"
+    WHEN s.final_score >= 0 THEN "Media"
+    WHEN s.final_score >= -4 THEN "Baja"
+    ELSE "Muy baja"
+  END AS opportunity_bucket
+FROM ${ref("portfolio_daily_signal")} s
+JOIN latest_date d
+  ON d.analysis_date = s.analysis_date
+LEFT JOIN `stocks-437902.acciones_dataset.portfolio_ai_analysis_daily` a
+  ON a.analysis_date = s.analysis_date
+ AND a.ticker = s.ticker
