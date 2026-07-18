@@ -31,6 +31,7 @@ jobs:
               --region us-east1 \
               --no-allow-unauthenticated \
               --clear-base-image \
+              --timeout 900 \
               --concurrency 1 \
               --max-instances 1 \
               --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PORTFOLIO_TABLE_ID=portfolio_assets,DATA_QUALITY_TABLE_ID=pipeline_data_quality_daily,ALERT_WEBHOOK_TYPE=auto,TIME_ZONE=America/Santiago"
@@ -43,6 +44,7 @@ jobs:
               --region us-east1 \
               --no-allow-unauthenticated \
               --clear-base-image \
+              --timeout 900 \
               --concurrency 1 \
               --max-instances 1 \
               --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PORTFOLIO_TABLE_ID=portfolio_assets,DATA_QUALITY_TABLE_ID=pipeline_data_quality_daily,ALERT_WEBHOOK_TYPE=auto,TIME_ZONE=America/Santiago,FINANCIAL_STATEMENTS_TABLE_ID=financial_statements,FINANCIAL_RATIOS_TABLE_ID=financial_ratios_snapshot"
