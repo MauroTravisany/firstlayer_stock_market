@@ -11,6 +11,14 @@ from conf.conf import load_config
 logging.basicConfig(level=logging.INFO)
 
 
+def parse_bool(value, default=False):
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "si"}
+
+
 def parse_tickers(value):
     if isinstance(value, str):
         value = value.replace(";", ",").split(",")
@@ -26,7 +34,20 @@ def parse_target_date(value):
 
 
 def default_tickers():
-    return parse_tickers(os.environ.get("TICKERS", "AAPL"))
+    return parse_tickers(os.environ.get("TICKERS", ""))
+
+
+def resolve_tickers(request_json, config):
+    if "tickers" in request_json:
+        return parse_tickers(request_json.get("tickers"))
+
+    from custom_function.portfolio_operations import fetch_enabled_tickers
+
+    tickers = fetch_enabled_tickers(config["project_id"], config["portfolio_table"])
+    if tickers:
+        return tickers
+
+    return default_tickers()
 
 
 def process_ticker(ticker, bucket_name, bq_table, target_date):
@@ -47,28 +68,44 @@ def process_ticker(ticker, bucket_name, bq_table, target_date):
 
 def main(request):
     request_json = request.get_json(silent=True) or {}
+    dry_run = parse_bool(request_json.get("dry_run", request.args.get("dry_run")), False)
 
     try:
-        tickers_input = parse_tickers(request_json.get("tickers", default_tickers()))
         target_date = parse_target_date(request_json.get("target_date") or os.environ.get("TARGET_DATE"))
     except ValueError as exc:
         return json.dumps({"status": "error", "message": str(exc)}), 400, {"Content-Type": "application/json"}
 
-    if not tickers_input:
-        return json.dumps({"status": "error", "message": "No tickers provided"}), 400, {"Content-Type": "application/json"}
-
     try:
-        bucket_name, bq_table = load_config()
+        config = load_config()
+        tickers_input = resolve_tickers(request_json, config)
     except Exception as exc:
-        logging.exception("Error al cargar configuracion desde Secret Manager")
+        logging.exception("Error al cargar configuracion o portafolio")
         return json.dumps({"status": "error", "message": str(exc)}), 500, {"Content-Type": "application/json"}
+
+    if not tickers_input:
+        return json.dumps({"status": "error", "message": "No enabled tickers found in portfolio"}), 400, {"Content-Type": "application/json"}
+
+    if dry_run:
+        return (
+            json.dumps(
+                {
+                    "status": "dry_run",
+                    "target_date": str(target_date),
+                    "source": "portfolio_assets" if "tickers" not in request_json else "request",
+                    "tickers": tickers_input,
+                    "rows": len(tickers_input),
+                }
+            ),
+            200,
+            {"Content-Type": "application/json"},
+        )
 
     results = []
 
     for ticker in tickers_input:
         try:
             logging.info("Iniciando proceso para el ticker %s en la fecha %s", ticker, target_date)
-            results.append(process_ticker(ticker, bucket_name, bq_table, target_date))
+            results.append(process_ticker(ticker, config["bucket_name"], config["bq_table"], target_date))
         except Exception as exc:
             logging.exception("El proceso fallo para el ticker %s en la fecha %s", ticker, target_date)
             results.append({"status": "error", "ticker": ticker, "message": str(exc)})

@@ -11,6 +11,14 @@ from conf.conf import load_config
 logging.basicConfig(level=logging.INFO)
 
 
+def parse_bool(value, default=False):
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "si"}
+
+
 def parse_tickers(value):
     if isinstance(value, str):
         value = value.replace(";", ",").split(",")
@@ -25,7 +33,20 @@ def parse_snapshot_date(value):
 
 
 def default_tickers():
-    return parse_tickers(os.environ.get("TICKERS", "AAPL"))
+    return parse_tickers(os.environ.get("TICKERS", ""))
+
+
+def resolve_tickers(request_json, config):
+    if "tickers" in request_json:
+        return parse_tickers(request_json.get("tickers"))
+
+    from custom_function.portfolio_operations import fetch_enabled_tickers
+
+    tickers = fetch_enabled_tickers(config["project_id"], config["portfolio_table"])
+    if tickers:
+        return tickers
+
+    return default_tickers()
 
 
 def process_ticker(ticker, config, snapshot_date):
@@ -64,21 +85,37 @@ def process_ticker(ticker, config, snapshot_date):
 
 def main(request):
     request_json = request.get_json(silent=True) or {}
+    dry_run = parse_bool(request_json.get("dry_run", request.args.get("dry_run")), False)
 
     try:
-        tickers = parse_tickers(request_json.get("tickers", default_tickers()))
         snapshot_date = parse_snapshot_date(request_json.get("snapshot_date") or os.environ.get("SNAPSHOT_DATE"))
     except ValueError as exc:
         return json.dumps({"status": "error", "message": str(exc)}), 400, {"Content-Type": "application/json"}
 
-    if not tickers:
-        return json.dumps({"status": "error", "message": "No tickers provided"}), 400, {"Content-Type": "application/json"}
-
     try:
         config = load_config()
+        tickers = resolve_tickers(request_json, config)
     except Exception as exc:
-        logging.exception("Error al cargar configuracion")
+        logging.exception("Error al cargar configuracion o portafolio")
         return json.dumps({"status": "error", "message": str(exc)}), 500, {"Content-Type": "application/json"}
+
+    if not tickers:
+        return json.dumps({"status": "error", "message": "No enabled tickers found in portfolio"}), 400, {"Content-Type": "application/json"}
+
+    if dry_run:
+        return (
+            json.dumps(
+                {
+                    "status": "dry_run",
+                    "snapshot_date": str(snapshot_date),
+                    "source": "portfolio_assets" if "tickers" not in request_json else "request",
+                    "tickers": tickers,
+                    "rows": len(tickers),
+                }
+            ),
+            200,
+            {"Content-Type": "application/json"},
+        )
 
     results = []
     for ticker in tickers:

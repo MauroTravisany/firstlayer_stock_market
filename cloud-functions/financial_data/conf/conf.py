@@ -20,9 +20,13 @@ def load_config():
     dataset_id = access_secret_version("dataset_id")
     statements_table_id = os.environ.get("FINANCIAL_STATEMENTS_TABLE_ID", "financial_statements")
     ratios_table_id = os.environ.get("FINANCIAL_RATIOS_TABLE_ID", "financial_ratios_snapshot")
+    portfolio_table_id = os.environ.get("PORTFOLIO_TABLE_ID", "portfolio_assets")
 
     return {
         "bucket_name": bucket_name,
+        "project_id": project_id,
+        "dataset_id": dataset_id,
+        "portfolio_table": f"{project_id}.{dataset_id}.{portfolio_table_id}",
         "financial_statements_table": f"{project_id}.{dataset_id}.{statements_table_id}",
         "financial_ratios_table": f"{project_id}.{dataset_id}.{ratios_table_id}",
     }

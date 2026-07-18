@@ -20,5 +20,13 @@ def load_config():
     dataset_id = access_secret_version("dataset_id")
     table_id = access_secret_version("table_id")
     bq_table = f"{project_id}.{dataset_id}.{table_id}"
+    portfolio_table_id = os.environ.get("PORTFOLIO_TABLE_ID", "portfolio_assets")
+    portfolio_table = f"{project_id}.{dataset_id}.{portfolio_table_id}"
 
-    return bucket_name, bq_table
+    return {
+        "bucket_name": bucket_name,
+        "bq_table": bq_table,
+        "project_id": project_id,
+        "dataset_id": dataset_id,
+        "portfolio_table": portfolio_table,
+    }
