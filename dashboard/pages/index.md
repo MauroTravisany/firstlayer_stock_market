@@ -12,8 +12,7 @@ select
   count(*) as empresas,
   round(avg(final_score), 2) as score_promedio,
   sum(case when signal = 'COMPRAR_OBSERVAR' then 1 else 0 end) as compras_observar,
-  sum(case when sell_signal = 'VENTA_CLARA' or signal = 'VENDER_OBSERVAR' then 1 else 0 end) as ventas_observar,
-  sum(case when financial_data_status != 'OK' then 1 else 0 end) as datos_incompletos
+  sum(case when sell_signal = 'VENTA_CLARA' or signal = 'VENDER_OBSERVAR' then 1 else 0 end) as ventas_observar
 from stocks.portfolio_latest
 ```
 
@@ -73,7 +72,6 @@ select
   price_to_sales,
   roe,
   debt_to_equity,
-  financial_data_status
 from stocks.portfolio_latest
 order by final_score desc, ticker
 ```
@@ -82,12 +80,11 @@ order by final_score desc, ticker
 
 Ultima fecha procesada: <Value data={latest_date} column=analysis_date/>
 
-<Grid cols=5>
+<Grid cols=4>
   <Value data={kpis} column=empresas title="Empresas"/>
   <Value data={kpis} column=score_promedio title="Score promedio"/>
   <Value data={kpis} column=compras_observar title="Compras a observar"/>
   <Value data={kpis} column=ventas_observar title="Ventas a observar"/>
-  <Value data={kpis} column=datos_incompletos title="Datos incompletos"/>
 </Grid>
 
 ## Distribucion de senales
