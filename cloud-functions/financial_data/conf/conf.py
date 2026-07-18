@@ -27,17 +27,17 @@ def load_config():
     bucket_name = access_secret_version("bucket_name")
     project_id = access_secret_version("project_id")
     dataset_id = access_secret_version("dataset_id")
-    table_id = access_secret_version("table_id")
-    bq_table = f"{project_id}.{dataset_id}.{table_id}"
+    statements_table_id = os.environ.get("FINANCIAL_STATEMENTS_TABLE_ID", "financial_statements")
+    ratios_table_id = os.environ.get("FINANCIAL_RATIOS_TABLE_ID", "financial_ratios_snapshot")
     portfolio_table_id = os.environ.get("PORTFOLIO_TABLE_ID", "portfolio_assets")
-    portfolio_table = f"{project_id}.{dataset_id}.{portfolio_table_id}"
 
     return {
         "bucket_name": bucket_name,
-        "bq_table": bq_table,
         "project_id": project_id,
         "dataset_id": dataset_id,
-        "portfolio_table": portfolio_table,
+        "portfolio_table": f"{project_id}.{dataset_id}.{portfolio_table_id}",
+        "financial_statements_table": f"{project_id}.{dataset_id}.{statements_table_id}",
+        "financial_ratios_table": f"{project_id}.{dataset_id}.{ratios_table_id}",
         "quality_table": f"{project_id}.{dataset_id}.{os.environ.get('DATA_QUALITY_TABLE_ID', 'pipeline_data_quality_daily')}",
         "alert_webhook_url": os.environ.get("ALERT_WEBHOOK_URL")
         or access_secret_version(os.environ.get("ALERT_WEBHOOK_URL_SECRET", "ALERT_WEBHOOK_URL"), required=False),

@@ -1,0 +1,35 @@
+config {
+  type: "view",
+  schema: "acciones_dataset",
+  name: "looker_data_quality_latest",
+  description: "Ultimo estado de calidad de datos por pipeline y ticker.",
+  tags: ["portfolio", "valuation", "daily", "quality", "looker", "dashboard"]
+}
+
+WITH latest_date AS (
+  SELECT MAX(run_date) AS run_date
+  FROM `stocks-437902.acciones_dataset.pipeline_data_quality_daily`
+  WHERE run_date <= (
+    SELECT MAX(analysis_date)
+    FROM ${ref("portfolio_daily_signal")}
+  )
+)
+
+SELECT
+  q.run_date,
+  q.pipeline,
+  q.ticker,
+  q.data_status,
+  q.severity,
+  q.rows_loaded,
+  q.message,
+  q.created_at,
+  CASE
+    WHEN q.pipeline = "stockdaily" AND q.severity = "ERROR" THEN "ALTO: sin precio diario, el ticker puede no entrar al analisis del dia."
+    WHEN q.pipeline = "stockfinancial" AND q.severity = "ERROR" THEN "ALTO: sin ratios financieros actuales, el analisis queda degradado o con datos rezagados."
+    WHEN q.pipeline = "stockfinancial" AND q.severity = "WARNING" THEN "MEDIO: ratios incompletos; menor confianza en valoracion fundamental."
+    ELSE "BAJO: datos suficientes."
+  END AS analysis_impact
+FROM `stocks-437902.acciones_dataset.pipeline_data_quality_daily` q
+JOIN latest_date d
+  ON d.run_date = q.run_date

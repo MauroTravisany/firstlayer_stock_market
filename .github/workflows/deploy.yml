@@ -1,6 +1,5 @@
-name: Deploy Cloud Function
+name: Deploy Cloud Run service
 
-# Evento que activa el workflow: pull request cerrado (merged) en la rama master
 on:
   push:
     branches:
@@ -12,10 +11,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v1
+        uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
       
@@ -24,18 +23,42 @@ jobs:
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
-      
-      - name: Install dependencies
-        run: |
-          pip install --user -r cloud-functions/daily_stocks/requirements.txt
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-
-      - name: Deploy to Cloud Functions
+      - name: Deploy stock prices to Cloud Run
         run: |
           gcloud run deploy stockdaily \
               --source ./cloud-functions/daily_stocks \
               --platform managed \
               --region us-east1 \
-              --allow-unauthenticated \
-              --set-env-vars 'TICKERS=AAPL;GOOGL,PROJECT_ID=stocks-437902'
+              --no-allow-unauthenticated \
+              --clear-base-image \
+              --timeout 900 \
+              --concurrency 1 \
+              --max-instances 1 \
+              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PORTFOLIO_TABLE_ID=portfolio_assets,DATA_QUALITY_TABLE_ID=pipeline_data_quality_daily,ALERT_WEBHOOK_TYPE=auto,TIME_ZONE=America/Santiago"
 
+      - name: Deploy financial data to Cloud Run
+        run: |
+          gcloud run deploy stockfinancial \
+              --source ./cloud-functions/financial_data \
+              --platform managed \
+              --region us-east1 \
+              --no-allow-unauthenticated \
+              --clear-base-image \
+              --timeout 900 \
+              --concurrency 1 \
+              --max-instances 1 \
+              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PORTFOLIO_TABLE_ID=portfolio_assets,DATA_QUALITY_TABLE_ID=pipeline_data_quality_daily,ALERT_WEBHOOK_TYPE=auto,TIME_ZONE=America/Santiago,FINANCIAL_STATEMENTS_TABLE_ID=financial_statements,FINANCIAL_RATIOS_TABLE_ID=financial_ratios_snapshot"
+
+      - name: Deploy AI analysis to Cloud Run
+        run: |
+          gcloud run deploy stockaianalysis \
+              --source ./cloud-functions/daily_ai_analysis \
+              --platform managed \
+              --region us-east1 \
+              --no-allow-unauthenticated \
+              --clear-base-image \
+              --timeout 1800 \
+              --memory 1Gi \
+              --concurrency 1 \
+              --max-instances 1 \
+              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},OPENAI_MODEL=gpt-5-mini,ALERT_WEBHOOK_TYPE=auto,PROMPT_VERSION=portfolio-ai-v3,AI_MAX_TICKERS=12,AI_ANALYSIS_TABLE_ID=portfolio_ai_analysis_daily,AI_SUMMARY_TABLE_ID=portfolio_ai_summary_daily"

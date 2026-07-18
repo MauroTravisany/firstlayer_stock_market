@@ -1,4 +1,5 @@
 import logging
+import uuid
 from google.cloud import bigquery
 
 def load_data_to_bigquery(bq_table, gcs_output_path):
@@ -8,11 +9,11 @@ def load_data_to_bigquery(bq_table, gcs_output_path):
     job_config = bigquery.LoadJobConfig(
         source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
         autodetect=True,
-        write_disposition=bigquery.WriteDisposition.WRITE_APPEND
+        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE
     )
 
     # Definir tabla temporal
-    temp_table = f"{bq_table}_temp"
+    temp_table = f"{bq_table}_temp_{uuid.uuid4().hex}"
     
     try:
         # Cargar datos en la tabla temporal
@@ -23,7 +24,7 @@ def load_data_to_bigquery(bq_table, gcs_output_path):
 
     except Exception as e:
         logging.error(f"Error al cargar datos en la tabla temporal {temp_table}: {str(e)}")
-        return  # Finalizar el proceso si falla la carga de datos
+        raise
 
     try:
         # Ejecutar MERGE en BigQuery
@@ -55,7 +56,7 @@ def load_data_to_bigquery(bq_table, gcs_output_path):
         
     except Exception as e:
         logging.error(f"Error durante la ejecución del MERGE entre {temp_table} y {bq_table}: {str(e)}")
-        return  
+        raise
 
     try:
         # Limpiar tabla temporal

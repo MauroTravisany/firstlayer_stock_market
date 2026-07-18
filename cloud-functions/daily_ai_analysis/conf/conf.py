@@ -24,22 +24,20 @@ def access_secret_version(secret_id, version_id="latest", required=True):
 
 
 def load_config():
-    bucket_name = access_secret_version("bucket_name")
     project_id = access_secret_version("project_id")
     dataset_id = access_secret_version("dataset_id")
-    table_id = access_secret_version("table_id")
-    bq_table = f"{project_id}.{dataset_id}.{table_id}"
-    portfolio_table_id = os.environ.get("PORTFOLIO_TABLE_ID", "portfolio_assets")
-    portfolio_table = f"{project_id}.{dataset_id}.{portfolio_table_id}"
 
     return {
-        "bucket_name": bucket_name,
-        "bq_table": bq_table,
         "project_id": project_id,
         "dataset_id": dataset_id,
-        "portfolio_table": portfolio_table,
-        "quality_table": f"{project_id}.{dataset_id}.{os.environ.get('DATA_QUALITY_TABLE_ID', 'pipeline_data_quality_daily')}",
+        "signal_table": f"{project_id}.{dataset_id}.{os.environ.get('SIGNAL_TABLE_ID', 'portfolio_daily_signal')}",
+        "analysis_table": f"{project_id}.{dataset_id}.{os.environ.get('AI_ANALYSIS_TABLE_ID', 'portfolio_ai_analysis_daily')}",
+        "summary_table": f"{project_id}.{dataset_id}.{os.environ.get('AI_SUMMARY_TABLE_ID', 'portfolio_ai_summary_daily')}",
+        "openai_api_key": access_secret_version(os.environ.get("OPENAI_API_KEY_SECRET", "OPENAI_API_KEY"), required=False),
+        "openai_model": os.environ.get("OPENAI_MODEL", "gpt-5-mini"),
         "alert_webhook_url": os.environ.get("ALERT_WEBHOOK_URL")
         or access_secret_version(os.environ.get("ALERT_WEBHOOK_URL_SECRET", "ALERT_WEBHOOK_URL"), required=False),
         "alert_webhook_type": os.environ.get("ALERT_WEBHOOK_TYPE", "auto").lower(),
+        "prompt_version": os.environ.get("PROMPT_VERSION", "portfolio-ai-v1"),
+        "max_tickers": int(os.environ.get("AI_MAX_TICKERS", "12")),
     }

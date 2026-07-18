@@ -27,10 +27,9 @@ def parse_tickers(value):
     return [str(ticker).strip().upper() for ticker in value if str(ticker).strip()]
 
 
-def parse_target_date(value):
+def parse_snapshot_date(value):
     if not value:
         return datetime.now(ZoneInfo(os.environ.get("TIME_ZONE", "America/Santiago"))).date()
-
     return datetime.strptime(value, "%Y-%m-%d").date()
 
 
@@ -51,26 +50,41 @@ def resolve_tickers(request_json, config):
     return default_tickers()
 
 
-def process_ticker(ticker, bucket_name, bq_table, target_date):
-    from custom_function.bq_operations import load_data_to_bigquery
-    from custom_function.data_processing import save_data_to_json
+def process_ticker(ticker, config, snapshot_date):
+    from custom_function.bq_operations import merge_financial_ratios, merge_financial_statements
+    from custom_function.data_processing import save_financial_data_to_json
     from custom_function.gcs_operations import upload_to_gcs
 
-    output_file = f"{ticker}_{target_date}.json"
-    gcs_output_path = f"gs://{bucket_name}/{ticker}/{output_file}"
+    files = save_financial_data_to_json(ticker, snapshot_date)
+    bucket_name = config["bucket_name"]
 
-    rows_loaded = save_data_to_json(ticker, output_file, target_date)
-    upload_to_gcs(bucket_name, output_file, f"{ticker}/{output_file}")
-    load_data_to_bigquery(bq_table, gcs_output_path)
+    statements_blob = f"{ticker}/financial_statements/{files['statements_file']}" if files["statements_file"] else None
+    ratios_blob = f"{ticker}/financial_ratios/{files['ratios_file']}"
 
-    logging.info("Proceso completado exitosamente para %s en la fecha %s", ticker, target_date)
+    upload_to_gcs(bucket_name, files["ratios_file"], ratios_blob)
+
+    if files["statements_count"] > 0 and statements_blob:
+        upload_to_gcs(bucket_name, files["statements_file"], statements_blob)
+        merge_financial_statements(
+            config["financial_statements_table"],
+            f"gs://{bucket_name}/{statements_blob}",
+        )
+
+    merge_financial_ratios(
+        config["financial_ratios_table"],
+        f"gs://{bucket_name}/{ratios_blob}",
+    )
+
     return {
         "status": "success",
         "ticker": ticker,
-        "message": "Proceso completado con exito",
-        "data_status": "PRICE_OK",
-        "severity": "OK",
-        "rows_loaded": rows_loaded,
+        "snapshot_date": str(snapshot_date),
+        "financial_statements_rows": files["statements_count"],
+        "financial_ratios_rows": files["ratios_count"],
+        "data_status": files["data_status"],
+        "severity": files["severity"],
+        "rows_loaded": files["statements_count"] + files["ratios_count"],
+        "message": files["message"],
     }
 
 
@@ -80,8 +94,8 @@ def main(request):
     send_alert = parse_bool(request_json.get("send_alert", request.args.get("send_alert")), True)
 
     try:
-        target_date = parse_target_date(
-            request_json.get("target_date") or request.args.get("target_date") or os.environ.get("TARGET_DATE")
+        snapshot_date = parse_snapshot_date(
+            request_json.get("snapshot_date") or request.args.get("snapshot_date") or os.environ.get("SNAPSHOT_DATE")
         )
     except ValueError as exc:
         return json.dumps({"status": "error", "message": str(exc)}), 400, {"Content-Type": "application/json"}
@@ -89,14 +103,14 @@ def main(request):
     try:
         config = load_config()
         if request.args.get("tickers") and "tickers" not in request_json:
-            tickers_input = parse_tickers(request.args.get("tickers"))
+            tickers = parse_tickers(request.args.get("tickers"))
         else:
-            tickers_input = resolve_tickers(request_json, config)
+            tickers = resolve_tickers(request_json, config)
     except Exception as exc:
         logging.exception("Error al cargar configuracion o portafolio")
         return json.dumps({"status": "error", "message": str(exc)}), 500, {"Content-Type": "application/json"}
 
-    if not tickers_input:
+    if not tickers:
         return json.dumps({"status": "error", "message": "No enabled tickers found in portfolio"}), 400, {"Content-Type": "application/json"}
 
     if dry_run:
@@ -104,10 +118,10 @@ def main(request):
             json.dumps(
                 {
                     "status": "dry_run",
-                    "target_date": str(target_date),
+                    "snapshot_date": str(snapshot_date),
                     "source": "portfolio_assets" if "tickers" not in request_json else "request",
-                    "tickers": tickers_input,
-                    "rows": len(tickers_input),
+                    "tickers": tickers,
+                    "rows": len(tickers),
                 }
             ),
             200,
@@ -115,19 +129,18 @@ def main(request):
         )
 
     results = []
-
-    for ticker in tickers_input:
+    for ticker in tickers:
         try:
-            logging.info("Iniciando proceso para el ticker %s en la fecha %s", ticker, target_date)
-            results.append(process_ticker(ticker, config["bucket_name"], config["bq_table"], target_date))
+            logging.info("Iniciando ETL financiero para %s", ticker)
+            results.append(process_ticker(ticker, config, snapshot_date))
         except Exception as exc:
-            logging.exception("El proceso fallo para el ticker %s en la fecha %s", ticker, target_date)
+            logging.exception("Fallo ETL financiero para %s", ticker)
             results.append(
                 {
                     "status": "error",
                     "ticker": ticker,
                     "message": str(exc),
-                    "data_status": "PRICE_MISSING",
+                    "data_status": "FINANCIAL_MISSING",
                     "severity": "ERROR",
                     "rows_loaded": 0,
                 }
@@ -139,15 +152,15 @@ def main(request):
     try:
         from custom_function.monitoring import persist_quality_events, quality_summary, send_quality_alert
 
-        persist_quality_events(config, "stockdaily", target_date, results)
+        persist_quality_events(config, "stockfinancial", snapshot_date, results)
         quality = quality_summary(results)
         if send_alert:
-            alert_sent, alert_error = send_quality_alert(config, "stockdaily", target_date, results)
+            alert_sent, alert_error = send_quality_alert(config, "stockfinancial", snapshot_date, results)
     except Exception as exc:
-        logging.exception("Fallo monitoreo de calidad stockdaily")
+        logging.exception("Fallo monitoreo de calidad stockfinancial")
         alert_error = str(exc)
 
-    status_code = 207 if any(item["status"] == "error" for item in results) else 200
+    status_code = 207 if any(result["status"] == "error" or result.get("severity") == "ERROR" for result in results) else 200
     return (
         json.dumps({"results": results, "quality": quality, "alert_sent": alert_sent, "alert_error": alert_error}),
         status_code,

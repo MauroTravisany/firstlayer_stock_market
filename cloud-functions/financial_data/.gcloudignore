@@ -1,0 +1,7 @@
+.gcloudignore
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.json
+*.log
+.env

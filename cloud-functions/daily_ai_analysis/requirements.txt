@@ -1,0 +1,5 @@
+functions-framework>=3.5,<4
+google-cloud-bigquery==3.4.2
+google-cloud-secret-manager==2.16.1
+openai>=1.90.0,<2
+requests>=2.31,<3

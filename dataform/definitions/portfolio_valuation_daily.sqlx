@@ -1,0 +1,174 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "portfolio_valuation_daily",
+  description: "Clasificacion diaria de la cartera como BARATA, PRECIO_JUSTO o CARA usando ratios financieros y precios diarios.",
+  tags: ["portfolio", "valuation", "daily"],
+  bigquery: {
+    partitionBy: "analysis_date",
+    clusterBy: ["classification", "ticker"]
+  },
+  assertions: {
+    nonNull: ["analysis_date", "ticker", "classification"],
+    uniqueKey: ["analysis_date", "ticker"]
+  }
+}
+
+WITH price_daily AS (
+  SELECT
+    ticker,
+    fecha AS analysis_date,
+    ARRAY_AGG(open ORDER BY hora ASC LIMIT 1)[OFFSET(0)] AS first_open,
+    ARRAY_AGG(close ORDER BY hora DESC LIMIT 1)[OFFSET(0)] AS last_close,
+    MIN(low) AS day_low,
+    MAX(high) AS day_high,
+    SUM(volumen) AS volume,
+    SAFE_DIVIDE(
+      ARRAY_AGG(close ORDER BY hora DESC LIMIT 1)[OFFSET(0)] - ARRAY_AGG(open ORDER BY hora ASC LIMIT 1)[OFFSET(0)],
+      ARRAY_AGG(open ORDER BY hora ASC LIMIT 1)[OFFSET(0)]
+    ) * 100 AS day_change_pct
+  FROM `stocks-437902.acciones_dataset.valores_acciones_recientes`
+  GROUP BY ticker, analysis_date
+),
+ratios_for_price_day AS (
+  SELECT * EXCEPT(rn)
+  FROM (
+    SELECT
+      p.analysis_date,
+      r.*,
+      DATE_DIFF(p.analysis_date, r.snapshot_date, DAY) AS ratio_lag_days,
+      ROW_NUMBER() OVER (
+        PARTITION BY p.ticker, p.analysis_date
+        ORDER BY r.snapshot_date DESC, r.loaded_at DESC
+      ) AS rn
+    FROM price_daily p
+    JOIN `stocks-437902.acciones_dataset.financial_ratios_snapshot` r
+      ON r.ticker = p.ticker
+     AND r.snapshot_date <= p.analysis_date
+  )
+  WHERE rn = 1
+),
+latest_statement_for_price_day AS (
+  SELECT * EXCEPT(rn)
+  FROM (
+    SELECT
+      p.analysis_date,
+      s.ticker,
+      s.period_end_date,
+      s.fiscal_year,
+      s.fiscal_quarter,
+      s.currency,
+      s.revenue,
+      s.net_income,
+      s.total_debt,
+      s.free_cash_flow,
+      ROW_NUMBER() OVER (
+        PARTITION BY p.ticker, p.analysis_date
+        ORDER BY s.period_end_date DESC, s.loaded_at DESC
+      ) AS rn
+    FROM price_daily p
+    LEFT JOIN `stocks-437902.acciones_dataset.financial_statements` s
+      ON s.ticker = p.ticker
+     AND s.period_end_date <= p.analysis_date
+  )
+  WHERE rn = 1
+),
+scored AS (
+  SELECT
+    p.analysis_date,
+    p.ticker,
+    r.snapshot_date AS financial_snapshot_date,
+    r.ratio_lag_days,
+    p.first_open,
+    p.last_close,
+    p.day_low,
+    p.day_high,
+    p.volume,
+    p.day_change_pct,
+    r.price AS ratio_price,
+    r.market_cap,
+    r.pe_ratio,
+    r.forward_pe,
+    r.price_to_book,
+    r.price_to_sales,
+    r.ev_to_ebitda,
+    r.dividend_yield,
+    r.beta,
+    r.roe,
+    r.roa,
+    r.profit_margin,
+    r.gross_margin,
+    r.operating_margin,
+    r.debt_to_equity,
+    r.current_ratio,
+    s.period_end_date,
+    s.fiscal_year,
+    s.fiscal_quarter,
+    s.currency,
+    s.revenue,
+    s.net_income,
+    s.total_debt,
+    s.free_cash_flow,
+    (
+      CASE
+        WHEN r.forward_pe IS NULL THEN 0
+        WHEN r.forward_pe <= 18 THEN 2
+        WHEN r.forward_pe <= 28 THEN 1
+        WHEN r.forward_pe <= 45 THEN 0
+        ELSE -2
+      END +
+      CASE
+        WHEN r.pe_ratio IS NULL THEN 0
+        WHEN r.pe_ratio <= 20 THEN 1
+        WHEN r.pe_ratio <= 35 THEN 0.5
+        WHEN r.pe_ratio > 60 THEN -1.5
+        ELSE -0.5
+      END +
+      CASE
+        WHEN r.price_to_sales IS NULL THEN 0
+        WHEN r.price_to_sales <= 3 THEN 1
+        WHEN r.price_to_sales <= 8 THEN 0
+        WHEN r.price_to_sales > 12 THEN -1.5
+        ELSE -0.75
+      END +
+      CASE
+        WHEN r.ev_to_ebitda IS NULL THEN 0
+        WHEN r.ev_to_ebitda <= 15 THEN 1
+        WHEN r.ev_to_ebitda <= 25 THEN 0
+        WHEN r.ev_to_ebitda > 40 THEN -1.5
+        ELSE -0.75
+      END +
+      CASE WHEN r.profit_margin >= 0.25 THEN 1 WHEN r.profit_margin < 0 THEN -1 ELSE 0 END +
+      CASE WHEN r.operating_margin >= 0.25 THEN 0.5 WHEN r.operating_margin < 0 THEN -0.75 ELSE 0 END +
+      CASE WHEN r.roe >= 0.20 THEN 0.5 WHEN r.roe < 0 THEN -0.75 ELSE 0 END +
+      CASE WHEN r.current_ratio IS NOT NULL AND r.current_ratio < 1 THEN -0.5 ELSE 0 END +
+      CASE WHEN p.day_change_pct > 3 THEN -0.5 WHEN p.day_change_pct < -3 THEN 0.5 ELSE 0 END
+    ) AS valuation_score
+  FROM price_daily p
+  LEFT JOIN ratios_for_price_day r
+    ON r.ticker = p.ticker
+   AND r.analysis_date = p.analysis_date
+  LEFT JOIN latest_statement_for_price_day s
+    ON s.ticker = p.ticker
+   AND s.analysis_date = p.analysis_date
+)
+SELECT
+  *,
+  CASE
+    WHEN pe_ratio IS NULL
+      AND forward_pe IS NULL
+      AND price_to_sales IS NULL
+      AND ev_to_ebitda IS NULL
+      THEN "SIN_DATOS_FUNDAMENTALES"
+    WHEN valuation_score >= 2 THEN "BARATA"
+    WHEN valuation_score >= 0 THEN "PRECIO_JUSTO"
+    ELSE "CARA"
+  END AS classification,
+  CASE
+    WHEN ratio_lag_days = 1 THEN "FINANCIERO_AYER"
+    WHEN ratio_lag_days = 0 THEN "FINANCIERO_MISMO_DIA"
+    WHEN ratio_lag_days IS NULL THEN "SIN_SNAPSHOT_FINANCIERO"
+    ELSE "FINANCIERO_REZAGADO"
+  END AS financial_data_status,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM scored

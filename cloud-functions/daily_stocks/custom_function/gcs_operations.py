@@ -10,7 +10,7 @@ def upload_to_gcs(bucket_name, source_file_name, destination_blob_name):
         blob = bucket.blob(destination_blob_name)
         blob.upload_from_filename(source_file_name)
         logging.info(f"Archivo {source_file_name} subido exitosamente a {destination_blob_name} en GCS.")
-        if os.path.exists(destination_blob_name):
+        if os.path.exists(source_file_name):
             os.remove(source_file_name)  # Eliminar el archivo local
             logging.info(f"Archivo local '{source_file_name}' eliminado.")
         else:
