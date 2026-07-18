@@ -1,0 +1,30 @@
+deployment:
+  basePath: /firstlayer_stock_market
+
+appearance:
+  default: light
+  switcher: true
+  theme:
+    colors:
+      primary:
+        light: "#2563eb"
+        dark: "#60a5fa"
+      accent:
+        light: "#0f766e"
+        dark: "#2dd4bf"
+      positive:
+        light: "#15803d"
+        dark: "#4ade80"
+      warning:
+        light: "#ca8a04"
+        dark: "#facc15"
+      negative:
+        light: "#dc2626"
+        dark: "#f87171"
+
+plugins:
+  components:
+    "@evidence-dev/core-components": {}
+  datasources:
+    "@evidence-dev/bigquery": {}
+    "@evidence-dev/duckdb": {}

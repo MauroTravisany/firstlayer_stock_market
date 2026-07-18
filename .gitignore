@@ -9,6 +9,10 @@ cloud-functions/daily_stocks/*.json
 cloud-functions/financial_data/*.json
 *.log
 .env
+dashboard/.evidence/
+dashboard/build/
+dashboard/node_modules/
+dashboard/sources/**/connection.options.yaml
 terraform/.terraform.lock.hcl
 terraform/terraform.tfstate
 terraform/terraform.tfstate.backup

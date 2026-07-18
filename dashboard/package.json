@@ -1,0 +1,30 @@
+{
+  "name": "stock-portfolio-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "evidence dev --open /",
+    "sources": "evidence sources",
+    "sources:strict": "evidence sources --strict",
+    "build": "evidence build",
+    "build:strict": "evidence build:strict",
+    "preview": "evidence preview"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=7.0.0"
+  },
+  "dependencies": {
+    "@evidence-dev/bigquery": "^2.0.12",
+    "@evidence-dev/core-components": "^5.4.2",
+    "@evidence-dev/duckdb": "^2.0.1",
+    "@evidence-dev/evidence": "^40.1.8"
+  },
+  "overrides": {
+    "axios": "^1.7.4",
+    "jsonwebtoken": "9.0.0",
+    "sqlite3": "5.1.5",
+    "trim@<0.0.3": ">0.0.3"
+  }
+}

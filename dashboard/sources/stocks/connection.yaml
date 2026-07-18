@@ -1,0 +1,5 @@
+name: stocks
+type: bigquery
+options:
+  projectId: ${BQ_PROJECT_ID}
+  location: ${BQ_LOCATION}
