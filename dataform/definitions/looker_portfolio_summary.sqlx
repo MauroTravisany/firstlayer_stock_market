@@ -10,6 +10,9 @@ SELECT
   analysis_date,
   COUNT(*) AS ticker_count,
   COUNTIF(signal = "COMPRAR_OBSERVAR") AS buy_watch_count,
+  COUNTIF(signal = "VENDER_OBSERVAR") AS sell_watch_count,
+  COUNTIF(sell_signal = "VENTA_CLARA") AS clear_sell_count,
+  COUNTIF(sell_signal = "VENTA_PARCIAL_OBSERVAR") AS partial_sell_watch_count,
   COUNTIF(signal = "CALIDAD_ALTA_PRECIO_JUSTO") AS quality_fair_count,
   COUNTIF(signal = "MANTENER") AS hold_count,
   COUNTIF(signal = "SOBREVALORADA") AS overvalued_count,
@@ -21,7 +24,9 @@ SELECT
   ROUND(AVG(quality_score), 2) AS avg_quality_score,
   ROUND(AVG(momentum_score), 2) AS avg_momentum_score,
   ROUND(AVG(risk_score), 2) AS avg_risk_score,
+  ROUND(AVG(sell_score), 2) AS avg_sell_score,
   STRING_AGG(ticker ORDER BY final_score DESC LIMIT 5) AS top_5_tickers,
+  STRING_AGG(ticker ORDER BY sell_score DESC LIMIT 5) AS top_5_sell_watch_tickers,
   STRING_AGG(ticker ORDER BY final_score ASC LIMIT 5) AS bottom_5_tickers
 FROM ${ref("portfolio_daily_signal")}
 GROUP BY analysis_date

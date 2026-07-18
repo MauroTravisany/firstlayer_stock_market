@@ -22,6 +22,13 @@ def ensure_tables(config):
       quality_score FLOAT64,
       momentum_score FLOAT64,
       risk_score FLOAT64,
+      sell_score FLOAT64,
+      sell_signal STRING,
+      suggested_sell_price FLOAT64,
+      ai_sell_thesis STRING,
+      ai_sell_reasons STRING,
+      ai_sell_price_view STRING,
+      ai_sell_decision_support STRING,
       ai_summary STRING,
       ai_analysis STRING,
       ai_risks STRING,
@@ -64,6 +71,19 @@ def ensure_tables(config):
     client.query(analysis_sql).result()
     client.query(summary_sql).result()
 
+    for column_name, column_type in [
+        ("sell_score", "FLOAT64"),
+        ("sell_signal", "STRING"),
+        ("suggested_sell_price", "FLOAT64"),
+        ("ai_sell_thesis", "STRING"),
+        ("ai_sell_reasons", "STRING"),
+        ("ai_sell_price_view", "STRING"),
+        ("ai_sell_decision_support", "STRING"),
+    ]:
+        client.query(
+            f"ALTER TABLE {_table_ref(config['analysis_table'])} ADD COLUMN IF NOT EXISTS {column_name} {column_type}"
+        ).result()
+
 
 def get_analysis_date(config, requested_date=None):
     if requested_date:
@@ -97,6 +117,9 @@ def fetch_daily_signals(config, analysis_date, tickers=None):
       quality_score,
       momentum_score,
       risk_score,
+      sell_score,
+      sell_signal,
+      suggested_sell_price,
       final_score,
       return_1d,
       return_5d,
@@ -115,7 +138,8 @@ def fetch_daily_signals(config, analysis_date, tickers=None):
       current_ratio,
       free_cash_flow,
       signal,
-      signal_reason
+      signal_reason,
+      sell_reason
     FROM {_table_ref(config["signal_table"])}
     WHERE analysis_date = @analysis_date
     {ticker_filter}
@@ -140,6 +164,13 @@ def merge_analysis(config, row):
         @quality_score AS quality_score,
         @momentum_score AS momentum_score,
         @risk_score AS risk_score,
+        @sell_score AS sell_score,
+        @sell_signal AS sell_signal,
+        @suggested_sell_price AS suggested_sell_price,
+        @ai_sell_thesis AS ai_sell_thesis,
+        @ai_sell_reasons AS ai_sell_reasons,
+        @ai_sell_price_view AS ai_sell_price_view,
+        @ai_sell_decision_support AS ai_sell_decision_support,
         @ai_summary AS ai_summary,
         @ai_analysis AS ai_analysis,
         @ai_risks AS ai_risks,
@@ -165,6 +196,13 @@ def merge_analysis(config, row):
       quality_score = S.quality_score,
       momentum_score = S.momentum_score,
       risk_score = S.risk_score,
+      sell_score = S.sell_score,
+      sell_signal = S.sell_signal,
+      suggested_sell_price = S.suggested_sell_price,
+      ai_sell_thesis = S.ai_sell_thesis,
+      ai_sell_reasons = S.ai_sell_reasons,
+      ai_sell_price_view = S.ai_sell_price_view,
+      ai_sell_decision_support = S.ai_sell_decision_support,
       ai_summary = S.ai_summary,
       ai_analysis = S.ai_analysis,
       ai_risks = S.ai_risks,
@@ -192,6 +230,13 @@ def merge_analysis(config, row):
         bigquery.ScalarQueryParameter("quality_score", "FLOAT64", row.get("quality_score")),
         bigquery.ScalarQueryParameter("momentum_score", "FLOAT64", row.get("momentum_score")),
         bigquery.ScalarQueryParameter("risk_score", "FLOAT64", row.get("risk_score")),
+        bigquery.ScalarQueryParameter("sell_score", "FLOAT64", row.get("sell_score")),
+        bigquery.ScalarQueryParameter("sell_signal", "STRING", row.get("sell_signal")),
+        bigquery.ScalarQueryParameter("suggested_sell_price", "FLOAT64", row.get("suggested_sell_price")),
+        bigquery.ScalarQueryParameter("ai_sell_thesis", "STRING", row.get("ai_sell_thesis")),
+        bigquery.ScalarQueryParameter("ai_sell_reasons", "STRING", row.get("ai_sell_reasons")),
+        bigquery.ScalarQueryParameter("ai_sell_price_view", "STRING", row.get("ai_sell_price_view")),
+        bigquery.ScalarQueryParameter("ai_sell_decision_support", "STRING", row.get("ai_sell_decision_support")),
         bigquery.ScalarQueryParameter("ai_summary", "STRING", row.get("ai_summary")),
         bigquery.ScalarQueryParameter("ai_analysis", "STRING", row.get("ai_analysis")),
         bigquery.ScalarQueryParameter("ai_risks", "STRING", row.get("ai_risks")),

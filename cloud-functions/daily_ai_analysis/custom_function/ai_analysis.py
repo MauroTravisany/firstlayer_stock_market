@@ -19,6 +19,10 @@ TICKER_SCHEMA = {
         "risk_view": {"type": "string"},
         "discrepancies": {"type": "string"},
         "opportunity": {"type": "string"},
+        "sell_thesis": {"type": "string"},
+        "sell_reasons": {"type": "string"},
+        "sell_price_view": {"type": "string"},
+        "sell_decision_support": {"type": "string"},
         "decision_support": {"type": "string"},
         "confidence_score": {"type": "number"},
         "confidence_reason": {"type": "string"},
@@ -50,6 +54,10 @@ TICKER_SCHEMA = {
         "risk_view",
         "discrepancies",
         "opportunity",
+        "sell_thesis",
+        "sell_reasons",
+        "sell_price_view",
+        "sell_decision_support",
         "decision_support",
         "confidence_score",
         "confidence_reason",
@@ -97,11 +105,13 @@ Reglas obligatorias:
 3. Si no encuentras fuentes externas confiables, dilo claramente.
 4. Si una fuente externa contradice los datos internos, marca la discrepancia.
 5. Prioriza valoracion, calidad financiera, momentum y riesgo.
-6. Explica la conclusion de forma objetiva y accionable, sin decir "compra" como orden.
+6. Explica la conclusion de forma objetiva y accionable, sin decir "compra" o "vende" como orden.
 7. Responde siempre en espanol en todos los campos narrativos del JSON.
 8. Si las fuentes externas estan en ingles, resume su contenido en espanol.
 9. confidence_score debe ser un numero entre 0.0 y 1.0, no porcentaje.
 10. Devuelve solo JSON valido segun el schema.
+11. Si sell_signal indica VENTA_CLARA o VENTA_PARCIAL_OBSERVAR, evalua si la empresa parece cara con los multiplos disponibles, calidad, momentum, riesgo y contexto externo.
+12. En sell_price_view explica el precio o zona sugerida para evaluar venta usando suggested_sell_price, last_close y los multiplos internos. No inventes precio objetivo externo.
 """
 
 
@@ -144,6 +154,7 @@ def analyze_ticker(config, signal_row):
             "query_focus": [
                 f"{ticker} latest earnings guidance margin revenue debt risk",
                 f"{ticker} stock recent news valuation risk",
+                f"{ticker} valuation multiples overvalued sell risk",
                 f"{ticker} investor relations earnings results",
             ],
             "preferred_sources": [
@@ -165,6 +176,9 @@ def analyze_ticker(config, signal_row):
                 "role": "user",
                 "content": (
                     "Analiza este ticker con los datos internos y contrasta con fuentes externas. "
+                    "Incluye una tesis de venta objetiva cuando los datos sugieran sobrevaloracion, deterioro o riesgo elevado. "
+                    "Evalua los ratios disponibles frente a umbrales razonables: PE, forward PE, price to sales, EV/EBITDA, ROE, margenes, deuda, liquidez, FCF, momentum y volatilidad. "
+                    "Si no hay caso de venta, dilo claramente y explica que condiciones activarian una revision de venta. "
                     "Usa busqueda web para contexto reciente y cita las fuentes usadas dentro de sources. "
                     "Todos los textos explicativos deben estar en espanol. "
                     f"Payload JSON:\n{json.dumps(payload, ensure_ascii=True)}"
@@ -189,6 +203,13 @@ def build_analysis_row(config, signal_row, parsed, input_hash):
         "quality_score": signal_row.get("quality_score"),
         "momentum_score": signal_row.get("momentum_score"),
         "risk_score": signal_row.get("risk_score"),
+        "sell_score": signal_row.get("sell_score"),
+        "sell_signal": signal_row.get("sell_signal"),
+        "suggested_sell_price": signal_row.get("suggested_sell_price"),
+        "ai_sell_thesis": parsed.get("sell_thesis"),
+        "ai_sell_reasons": parsed.get("sell_reasons"),
+        "ai_sell_price_view": parsed.get("sell_price_view"),
+        "ai_sell_decision_support": parsed.get("sell_decision_support"),
         "ai_summary": parsed.get("executive_summary"),
         "ai_analysis": parsed.get("internal_data_analysis"),
         "ai_risks": parsed.get("risk_view"),
@@ -218,6 +239,13 @@ def build_error_analysis_row(config, signal_row, exc):
         "quality_score": signal_row.get("quality_score"),
         "momentum_score": signal_row.get("momentum_score"),
         "risk_score": signal_row.get("risk_score"),
+        "sell_score": signal_row.get("sell_score"),
+        "sell_signal": signal_row.get("sell_signal"),
+        "suggested_sell_price": signal_row.get("suggested_sell_price"),
+        "ai_sell_thesis": None,
+        "ai_sell_reasons": None,
+        "ai_sell_price_view": None,
+        "ai_sell_decision_support": None,
         "ai_summary": "ERROR_GENERANDO_ANALISIS",
         "ai_analysis": str(exc),
         "ai_risks": None,
@@ -249,6 +277,10 @@ def build_portfolio_summary(config, analysis_rows):
             "risks": row.get("ai_risks"),
             "opportunity": row.get("ai_opportunity"),
             "confidence_score": row.get("confidence_score"),
+            "sell_score": row.get("sell_score"),
+            "sell_signal": row.get("sell_signal"),
+            "suggested_sell_price": row.get("suggested_sell_price"),
+            "sell_thesis": row.get("ai_sell_thesis"),
         }
         for row in analysis_rows
     ]
@@ -262,7 +294,7 @@ def build_portfolio_summary(config, analysis_rows):
                 "role": "user",
                 "content": (
                     "Crea un resumen ejecutivo en espanol para dashboard y alerta Slack/Discord. "
-                    "Debe separar oportunidades, sobrevaloradas y riesgos. "
+                    "Debe separar oportunidades de compra, posiciones caras con posible venta y riesgos. "
                     "No des recomendacion financiera personalizada. "
                     "Todos los campos de texto deben estar escritos en espanol. "
                     f"analysis_date={analysis_date}\n"

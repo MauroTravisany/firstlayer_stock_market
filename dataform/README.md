@@ -51,6 +51,7 @@ Senales posibles:
 
 ```text
 COMPRAR_OBSERVAR
+VENDER_OBSERVAR
 CALIDAD_ALTA_PRECIO_JUSTO
 MANTENER
 SOBREVALORADA
@@ -59,7 +60,19 @@ RIESGO_ALTO
 DATOS_INSUFICIENTES
 ```
 
-La columna `final_score` ordena las oportunidades diarias. La columna `signal_reason` muestra el aporte de valoracion, calidad, momentum y riesgo.
+La columna `final_score` ordena las oportunidades diarias de compra. La columna `sell_score` ordena las posibles ventas por sobrevaloracion, deterioro o riesgo.
+
+Senales de venta:
+
+```text
+VENTA_CLARA
+VENTA_PARCIAL_OBSERVAR
+MANTENER_OBSERVAR_VALORACION
+SIN_SENAL_VENTA
+SIN_DATOS
+```
+
+`suggested_sell_price` marca una zona objetiva de revision de venta basada en precio actual, valoracion, momentum y riesgo. No es una orden de venta.
 
 ## Ejecucion local
 
