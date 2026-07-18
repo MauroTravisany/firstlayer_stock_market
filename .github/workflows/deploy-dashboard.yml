@@ -2,6 +2,12 @@ name: Deploy Evidence dashboard
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - "dashboard/**"
+      - ".github/workflows/deploy-dashboard.yml"
   schedule:
     - cron: "10 1 * * 2-6"
 
