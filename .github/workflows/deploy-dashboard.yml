@@ -40,7 +40,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: dashboard
-        run: npm install
+        run: npm install --legacy-peer-deps
 
       - name: Build Evidence sources
         working-directory: dashboard
