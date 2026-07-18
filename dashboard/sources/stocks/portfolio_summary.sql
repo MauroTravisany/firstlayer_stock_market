@@ -1,3 +1,3 @@
 select
   *
-from `stocks-437902.acciones_dataset.looker_portfolio_summary`
+from read_csv_auto('data/portfolio_summary.csv')

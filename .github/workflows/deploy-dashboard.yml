@@ -42,11 +42,42 @@ jobs:
         working-directory: dashboard
         run: npm install --legacy-peer-deps
 
+      - name: Export BigQuery snapshots
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dashboard/data
+
+          bq query --project_id="${{ secrets.GCP_PROJECT_ID }}" --use_legacy_sql=false --format=csv \
+            'select * from `stocks-437902.acciones_dataset.looker_portfolio_latest`' \
+            > dashboard/data/portfolio_latest.csv
+
+          bq query --project_id="${{ secrets.GCP_PROJECT_ID }}" --use_legacy_sql=false --format=csv \
+            'select * from `stocks-437902.acciones_dataset.looker_portfolio_history`' \
+            > dashboard/data/portfolio_history.csv
+
+          bq query --project_id="${{ secrets.GCP_PROJECT_ID }}" --use_legacy_sql=false --format=csv \
+            'select * from `stocks-437902.acciones_dataset.looker_portfolio_summary`' \
+            > dashboard/data/portfolio_summary.csv
+
+          bq query --project_id="${{ secrets.GCP_PROJECT_ID }}" --use_legacy_sql=false --format=csv \
+            'select * from `stocks-437902.acciones_dataset.looker_portfolio_ai_summary`' \
+            > dashboard/data/portfolio_ai_summary.csv
+
+          bq query --project_id="${{ secrets.GCP_PROJECT_ID }}" --use_legacy_sql=false --format=csv \
+            'select * from `stocks-437902.acciones_dataset.looker_data_quality_latest`' \
+            > dashboard/data/data_quality_latest.csv
+
+          bq query --project_id="${{ secrets.GCP_PROJECT_ID }}" --use_legacy_sql=false --format=csv \
+            'select * from `stocks-437902.acciones_dataset.portfolio_ai_analysis_daily`
+             where analysis_date = (
+               select max(analysis_date)
+               from `stocks-437902.acciones_dataset.portfolio_ai_analysis_daily`
+             )' \
+            > dashboard/data/ai_analysis_latest.csv
+
       - name: Build Evidence sources
         working-directory: dashboard
-        env:
-          BQ_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          BQ_LOCATION: us-east1
         run: npm run sources:strict
 
       - name: Build static dashboard

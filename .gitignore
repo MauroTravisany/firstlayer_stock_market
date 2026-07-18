@@ -11,6 +11,7 @@ cloud-functions/financial_data/*.json
 .env
 dashboard/.evidence/
 dashboard/build/
+dashboard/data/
 dashboard/node_modules/
 dashboard/sources/**/connection.options.yaml
 terraform/.terraform.lock.hcl

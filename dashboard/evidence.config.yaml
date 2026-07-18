@@ -26,5 +26,4 @@ plugins:
   components:
     "@evidence-dev/core-components": {}
   datasources:
-    "@evidence-dev/bigquery": {}
     "@evidence-dev/duckdb": {}

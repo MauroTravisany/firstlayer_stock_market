@@ -1,3 +1,3 @@
 select
   *
-from `stocks-437902.acciones_dataset.looker_data_quality_latest`
+from read_csv_auto('data/data_quality_latest.csv')
