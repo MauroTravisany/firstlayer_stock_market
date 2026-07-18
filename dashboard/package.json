@@ -19,6 +19,9 @@
     "@evidence-dev/core-components": "^5.4.2",
     "@evidence-dev/duckdb": "^2.0.1",
     "@evidence-dev/evidence": "^40.1.8",
+    "@sveltejs/kit": "^2.27.0",
+    "@sveltejs/vite-plugin-svelte": "^5.1.1",
+    "svelte": "^5.0.0",
     "typescript": "5.6.3"
   },
   "overrides": {
