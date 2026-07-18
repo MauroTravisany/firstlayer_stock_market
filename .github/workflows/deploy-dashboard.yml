@@ -76,6 +76,18 @@ jobs:
              )' \
             > dashboard/data/ai_analysis_latest.csv
 
+          for csv_file in dashboard/data/*.csv; do
+            echo "::group::$(basename "$csv_file")"
+            head -n 1 "$csv_file"
+            rows=$(( $(wc -l < "$csv_file") - 1 ))
+            echo "rows=$rows"
+            if [ "$rows" -le 0 ]; then
+              echo "CSV snapshot is empty: $csv_file" >&2
+              exit 1
+            fi
+            echo "::endgroup::"
+          done
+
       - name: Build Evidence sources
         working-directory: dashboard
         run: npm run sources:strict

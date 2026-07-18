@@ -71,7 +71,7 @@ select
   forward_pe,
   price_to_sales,
   roe,
-  debt_to_equity,
+  debt_to_equity
 from stocks.portfolio_latest
 order by final_score desc, ticker
 ```

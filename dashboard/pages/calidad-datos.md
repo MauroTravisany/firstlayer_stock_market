@@ -21,6 +21,6 @@ order by pipeline, data_status
 
 # Calidad de datos
 
-<BarChart data={quality_summary} x=pipeline y=registros series=status/>
+<BarChart data={quality_summary} x=pipeline y=registros series=data_status/>
 
 <DataTable data={quality} rows=50/>
