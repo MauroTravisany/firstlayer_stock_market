@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -28,7 +29,7 @@ def parse_tickers(value):
 
 def parse_snapshot_date(value):
     if not value:
-        return date.today()
+        return datetime.now(ZoneInfo(os.environ.get("TIME_ZONE", "America/Santiago"))).date()
     return datetime.strptime(value, "%Y-%m-%d").date()
 
 
@@ -80,21 +81,31 @@ def process_ticker(ticker, config, snapshot_date):
         "snapshot_date": str(snapshot_date),
         "financial_statements_rows": files["statements_count"],
         "financial_ratios_rows": files["ratios_count"],
+        "data_status": files["data_status"],
+        "severity": files["severity"],
+        "rows_loaded": files["statements_count"] + files["ratios_count"],
+        "message": files["message"],
     }
 
 
 def main(request):
     request_json = request.get_json(silent=True) or {}
     dry_run = parse_bool(request_json.get("dry_run", request.args.get("dry_run")), False)
+    send_alert = parse_bool(request_json.get("send_alert", request.args.get("send_alert")), True)
 
     try:
-        snapshot_date = parse_snapshot_date(request_json.get("snapshot_date") or os.environ.get("SNAPSHOT_DATE"))
+        snapshot_date = parse_snapshot_date(
+            request_json.get("snapshot_date") or request.args.get("snapshot_date") or os.environ.get("SNAPSHOT_DATE")
+        )
     except ValueError as exc:
         return json.dumps({"status": "error", "message": str(exc)}), 400, {"Content-Type": "application/json"}
 
     try:
         config = load_config()
-        tickers = resolve_tickers(request_json, config)
+        if request.args.get("tickers") and "tickers" not in request_json:
+            tickers = parse_tickers(request.args.get("tickers"))
+        else:
+            tickers = resolve_tickers(request_json, config)
     except Exception as exc:
         logging.exception("Error al cargar configuracion o portafolio")
         return json.dumps({"status": "error", "message": str(exc)}), 500, {"Content-Type": "application/json"}
@@ -124,10 +135,37 @@ def main(request):
             results.append(process_ticker(ticker, config, snapshot_date))
         except Exception as exc:
             logging.exception("Fallo ETL financiero para %s", ticker)
-            results.append({"status": "error", "ticker": ticker, "message": str(exc)})
+            results.append(
+                {
+                    "status": "error",
+                    "ticker": ticker,
+                    "message": str(exc),
+                    "data_status": "FINANCIAL_MISSING",
+                    "severity": "ERROR",
+                    "rows_loaded": 0,
+                }
+            )
 
-    status_code = 207 if any(result["status"] == "error" for result in results) else 200
-    return json.dumps(results), status_code, {"Content-Type": "application/json"}
+    alert_sent = False
+    alert_error = None
+    quality = None
+    try:
+        from custom_function.monitoring import persist_quality_events, quality_summary, send_quality_alert
+
+        persist_quality_events(config, "stockfinancial", snapshot_date, results)
+        quality = quality_summary(results)
+        if send_alert:
+            alert_sent, alert_error = send_quality_alert(config, "stockfinancial", snapshot_date, results)
+    except Exception as exc:
+        logging.exception("Fallo monitoreo de calidad stockfinancial")
+        alert_error = str(exc)
+
+    status_code = 207 if any(result["status"] == "error" or result.get("severity") == "ERROR" for result in results) else 200
+    return (
+        json.dumps({"results": results, "quality": quality, "alert_sent": alert_sent, "alert_error": alert_error}),
+        status_code,
+        {"Content-Type": "application/json"},
+    )
 
 
 if __name__ == "__main__":

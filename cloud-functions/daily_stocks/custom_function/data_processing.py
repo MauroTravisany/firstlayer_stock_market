@@ -69,6 +69,7 @@ def save_data_to_json(ticker, output_file, target_date):
                 file.write(json.dumps(message) + "\n")
 
         logging.info("Datos para %s guardados en %s", ticker, output_file)
+        return len(stock_data)
     except Exception:
         logging.exception("Error al procesar los datos de %s", ticker)
         raise

@@ -31,7 +31,7 @@ jobs:
               --region us-east1 \
               --allow-unauthenticated \
               --clear-base-image \
-              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PORTFOLIO_TABLE_ID=portfolio_assets"
+              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PORTFOLIO_TABLE_ID=portfolio_assets,DATA_QUALITY_TABLE_ID=pipeline_data_quality_daily,ALERT_WEBHOOK_TYPE=auto,TIME_ZONE=America/Santiago"
 
       - name: Deploy financial data to Cloud Run
         run: |
@@ -41,7 +41,7 @@ jobs:
               --region us-east1 \
               --allow-unauthenticated \
               --clear-base-image \
-              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PORTFOLIO_TABLE_ID=portfolio_assets,FINANCIAL_STATEMENTS_TABLE_ID=financial_statements,FINANCIAL_RATIOS_TABLE_ID=financial_ratios_snapshot"
+              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PORTFOLIO_TABLE_ID=portfolio_assets,DATA_QUALITY_TABLE_ID=pipeline_data_quality_daily,ALERT_WEBHOOK_TYPE=auto,TIME_ZONE=America/Santiago,FINANCIAL_STATEMENTS_TABLE_ID=financial_statements,FINANCIAL_RATIOS_TABLE_ID=financial_ratios_snapshot"
 
       - name: Deploy AI analysis to Cloud Run
         run: |

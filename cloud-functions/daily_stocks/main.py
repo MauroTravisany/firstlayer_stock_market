@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -28,7 +29,7 @@ def parse_tickers(value):
 
 def parse_target_date(value):
     if not value:
-        return date.today()
+        return datetime.now(ZoneInfo(os.environ.get("TIME_ZONE", "America/Santiago"))).date()
 
     return datetime.strptime(value, "%Y-%m-%d").date()
 
@@ -58,26 +59,39 @@ def process_ticker(ticker, bucket_name, bq_table, target_date):
     output_file = f"{ticker}_{target_date}.json"
     gcs_output_path = f"gs://{bucket_name}/{ticker}/{output_file}"
 
-    save_data_to_json(ticker, output_file, target_date)
+    rows_loaded = save_data_to_json(ticker, output_file, target_date)
     upload_to_gcs(bucket_name, output_file, f"{ticker}/{output_file}")
     load_data_to_bigquery(bq_table, gcs_output_path)
 
     logging.info("Proceso completado exitosamente para %s en la fecha %s", ticker, target_date)
-    return {"status": "success", "ticker": ticker, "message": "Proceso completado con exito"}
+    return {
+        "status": "success",
+        "ticker": ticker,
+        "message": "Proceso completado con exito",
+        "data_status": "PRICE_OK",
+        "severity": "OK",
+        "rows_loaded": rows_loaded,
+    }
 
 
 def main(request):
     request_json = request.get_json(silent=True) or {}
     dry_run = parse_bool(request_json.get("dry_run", request.args.get("dry_run")), False)
+    send_alert = parse_bool(request_json.get("send_alert", request.args.get("send_alert")), True)
 
     try:
-        target_date = parse_target_date(request_json.get("target_date") or os.environ.get("TARGET_DATE"))
+        target_date = parse_target_date(
+            request_json.get("target_date") or request.args.get("target_date") or os.environ.get("TARGET_DATE")
+        )
     except ValueError as exc:
         return json.dumps({"status": "error", "message": str(exc)}), 400, {"Content-Type": "application/json"}
 
     try:
         config = load_config()
-        tickers_input = resolve_tickers(request_json, config)
+        if request.args.get("tickers") and "tickers" not in request_json:
+            tickers_input = parse_tickers(request.args.get("tickers"))
+        else:
+            tickers_input = resolve_tickers(request_json, config)
     except Exception as exc:
         logging.exception("Error al cargar configuracion o portafolio")
         return json.dumps({"status": "error", "message": str(exc)}), 500, {"Content-Type": "application/json"}
@@ -108,10 +122,37 @@ def main(request):
             results.append(process_ticker(ticker, config["bucket_name"], config["bq_table"], target_date))
         except Exception as exc:
             logging.exception("El proceso fallo para el ticker %s en la fecha %s", ticker, target_date)
-            results.append({"status": "error", "ticker": ticker, "message": str(exc)})
+            results.append(
+                {
+                    "status": "error",
+                    "ticker": ticker,
+                    "message": str(exc),
+                    "data_status": "PRICE_MISSING",
+                    "severity": "ERROR",
+                    "rows_loaded": 0,
+                }
+            )
+
+    alert_sent = False
+    alert_error = None
+    quality = None
+    try:
+        from custom_function.monitoring import persist_quality_events, quality_summary, send_quality_alert
+
+        persist_quality_events(config, "stockdaily", target_date, results)
+        quality = quality_summary(results)
+        if send_alert:
+            alert_sent, alert_error = send_quality_alert(config, "stockdaily", target_date, results)
+    except Exception as exc:
+        logging.exception("Fallo monitoreo de calidad stockdaily")
+        alert_error = str(exc)
 
     status_code = 207 if any(item["status"] == "error" for item in results) else 200
-    return json.dumps(results), status_code, {"Content-Type": "application/json"}
+    return (
+        json.dumps({"results": results, "quality": quality, "alert_sent": alert_sent, "alert_error": alert_error}),
+        status_code,
+        {"Content-Type": "application/json"},
+    )
 
 
 if __name__ == "__main__":

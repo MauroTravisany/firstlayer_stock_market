@@ -114,6 +114,28 @@ def build_ratio_snapshot_row(ticker, info, snapshot_date):
     }
 
 
+def ratio_quality_status(info, ratio_row):
+    critical_fields = [
+        "price",
+        "market_cap",
+        "pe_ratio",
+        "forward_pe",
+        "price_to_sales",
+        "ev_to_ebitda",
+        "roe",
+        "profit_margin",
+        "debt_to_equity",
+    ]
+    populated = [field for field in critical_fields if ratio_row.get(field) is not None]
+    if not info:
+        return "FINANCIAL_INFO_EMPTY", "ERROR", "Yahoo no entrego info financiera para el ticker."
+    if not ratio_row.get("price") and not ratio_row.get("market_cap"):
+        return "FINANCIAL_CORE_MISSING", "ERROR", "Yahoo no entrego precio ni market cap financiero."
+    if len(populated) < 3:
+        return "FINANCIAL_RATIOS_SPARSE", "WARNING", "Yahoo entrego pocos ratios criticos; el analisis puede usar datos rezagados o quedar con menor confianza."
+    return "FINANCIAL_OK", "OK", "Datos financieros suficientes."
+
+
 def write_json_lines(path, rows):
     with open(path, "w", encoding="utf-8") as file:
         for row in rows:
@@ -125,7 +147,9 @@ def save_financial_data_to_json(ticker, snapshot_date):
     info = stock.info or {}
 
     statements = build_financial_statement_rows(ticker, stock, info)
-    ratios = [build_ratio_snapshot_row(ticker, info, snapshot_date)]
+    ratio_row = build_ratio_snapshot_row(ticker, info, snapshot_date)
+    ratios = [ratio_row]
+    data_status, severity, message = ratio_quality_status(info, ratio_row)
 
     statements_file = f"{ticker}_financial_statements_{snapshot_date}.json" if statements else None
     ratios_file = f"{ticker}_financial_ratios_{snapshot_date}.json"
@@ -141,4 +165,7 @@ def save_financial_data_to_json(ticker, snapshot_date):
         "ratios_file": ratios_file,
         "statements_count": len(statements),
         "ratios_count": len(ratios),
+        "data_status": data_status,
+        "severity": severity,
+        "message": message,
     }
