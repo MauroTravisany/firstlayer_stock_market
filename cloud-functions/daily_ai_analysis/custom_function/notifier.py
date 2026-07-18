@@ -2,7 +2,8 @@ import requests
 
 
 DISCORD_CONTENT_LIMIT = 2000
-DISCORD_FIELD_LIMIT = 1024
+DISCORD_FIELD_LIMIT = 650
+DISCORD_MAX_FIELDS_PER_SECTION = 5
 SLACK_TEXT_LIMIT = 12000
 DEFAULT_MIN_FINAL_SCORE = 6.0
 DEFAULT_MIN_CONFIDENCE = 0.65
@@ -122,7 +123,7 @@ def _short_text(text, limit):
 
 def _buy_fields(opportunity_rows):
     fields = []
-    for row in opportunity_rows[:10]:
+    for row in opportunity_rows[:DISCORD_MAX_FIELDS_PER_SECTION]:
         ticker = row.get("ticker")
         score = round(float(row.get("final_score") or 0), 2)
         confidence = round(_normalized_confidence(row.get("confidence_score")), 2)
@@ -139,7 +140,7 @@ def _buy_fields(opportunity_rows):
 
 def _sell_fields(sell_rows):
     fields = []
-    for row in sell_rows[:10]:
+    for row in sell_rows[:DISCORD_MAX_FIELDS_PER_SECTION]:
         ticker = row.get("ticker")
         score = round(float(row.get("sell_score") or 0), 2)
         confidence = round(_normalized_confidence(row.get("confidence_score")), 2)
@@ -154,6 +155,57 @@ def _sell_fields(sell_rows):
             }
         )
     return fields
+
+
+def _discord_buy_embed(row):
+    ticker = row.get("ticker")
+    score = round(float(row.get("final_score") or 0), 2)
+    confidence = round(_normalized_confidence(row.get("confidence_score")), 2)
+    return {
+        "title": f"{ticker} | oportunidad clara de compra",
+        "description": _short_text(row.get("ai_summary") or row.get("ai_opportunity"), DISCORD_FIELD_LIMIT),
+        "color": DISCORD_GREEN,
+        "fields": [
+            {"name": "Score", "value": str(score), "inline": True},
+            {"name": "Confianza", "value": str(confidence), "inline": True},
+            {
+                "name": "Soporte",
+                "value": _short_text(row.get("ai_decision_support"), DISCORD_FIELD_LIMIT),
+                "inline": False,
+            },
+            {
+                "name": "Riesgos",
+                "value": _short_text(row.get("ai_risks"), DISCORD_FIELD_LIMIT),
+                "inline": False,
+            },
+        ],
+        "footer": {"text": "Detalle completo en Looker Studio / BigQuery"},
+    }
+
+
+def _discord_sell_embed(row):
+    ticker = row.get("ticker")
+    score = round(float(row.get("sell_score") or 0), 2)
+    confidence = round(_normalized_confidence(row.get("confidence_score")), 2)
+    price = round(float(row.get("last_close") or 0), 2)
+    sell_price = round(float(row.get("suggested_sell_price") or 0), 2)
+    return {
+        "title": f"{ticker} | alerta clara de venta",
+        "description": _short_text(row.get("ai_sell_thesis") or row.get("ai_sell_reasons"), DISCORD_FIELD_LIMIT),
+        "color": DISCORD_RED,
+        "fields": [
+            {"name": "Score venta", "value": str(score), "inline": True},
+            {"name": "Precio actual", "value": str(price), "inline": True},
+            {"name": "Zona revision", "value": str(sell_price), "inline": True},
+            {"name": "Confianza", "value": str(confidence), "inline": True},
+            {
+                "name": "Razon",
+                "value": _short_text(row.get("ai_sell_decision_support") or row.get("ai_sell_price_view"), DISCORD_FIELD_LIMIT),
+                "inline": False,
+            },
+        ],
+        "footer": {"text": "No es recomendacion personalizada. Revisar detalle en Looker Studio / BigQuery"},
+    }
 
 
 def build_discord_payload(summary, opportunity_rows, sell_rows=None):
@@ -190,6 +242,17 @@ def build_discord_payload(summary, opportunity_rows, sell_rows=None):
     return {"embeds": embeds}
 
 
+def build_discord_messages(summary, opportunity_rows, sell_rows=None):
+    messages = []
+    for row in (opportunity_rows or [])[:DISCORD_MAX_FIELDS_PER_SECTION]:
+        messages.append({"embeds": [_discord_buy_embed(row)]})
+    for row in (sell_rows or [])[:DISCORD_MAX_FIELDS_PER_SECTION]:
+        messages.append({"embeds": [_discord_sell_embed(row)]})
+    if not messages:
+        messages.append(build_discord_payload(summary, [], []))
+    return messages
+
+
 def send_webhook_alert(config, summary, analysis_rows=None):
     url = config.get("alert_webhook_url")
     if not url:
@@ -203,7 +266,14 @@ def send_webhook_alert(config, summary, analysis_rows=None):
     text = build_alert_text(summary, opportunity_rows, sell_rows)
     webhook_type = _detect_webhook_type(config)
     if webhook_type == "discord":
-        payload = build_discord_payload(summary, opportunity_rows, sell_rows)
+        errors = []
+        for payload in build_discord_messages(summary, opportunity_rows, sell_rows):
+            response = requests.post(url, json=payload, timeout=30)
+            if response.status_code >= 300:
+                errors.append(f"{response.status_code}: {response.text}")
+        if errors:
+            return False, "Webhook error: " + " | ".join(errors)
+        return True, None
     else:
         payload = {"text": _truncate_text(text, SLACK_TEXT_LIMIT)}
 

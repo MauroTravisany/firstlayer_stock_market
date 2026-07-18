@@ -11,9 +11,12 @@ from custom_function.ai_analysis import (
     build_analysis_row,
     build_error_analysis_row,
     build_portfolio_summary,
+    ticker_input_hash,
 )
 from custom_function.bq_operations import (
     ensure_tables,
+    fetch_existing_successful_analyses,
+    fetch_summary_state,
     fetch_daily_signals,
     get_analysis_date,
     merge_analysis,
@@ -45,13 +48,26 @@ def main(request):
     request_json = request.get_json(silent=True) or {}
     dry_run = parse_bool(request_json.get("dry_run", request.args.get("dry_run")), False)
     send_alert = parse_bool(request_json.get("send_alert", request.args.get("send_alert")), True)
+    analysis_scope = (request_json.get("analysis_scope") or request.args.get("analysis_scope") or "candidates").lower()
+    if analysis_scope not in {"candidates", "all"}:
+        return (
+            json.dumps({"status": "error", "message": "analysis_scope must be candidates or all"}),
+            400,
+            {"Content-Type": "application/json"},
+        )
 
     try:
         config = load_config()
         ensure_tables(config)
         analysis_date = get_analysis_date(config, request_json.get("analysis_date") or request.args.get("analysis_date"))
         tickers = parse_tickers(request_json.get("tickers") or request.args.get("tickers") or os.environ.get("TICKERS"))
-        signals = fetch_daily_signals(config, analysis_date, tickers)
+        signals = fetch_daily_signals(config, analysis_date, tickers, analysis_scope, config.get("max_tickers"))
+        existing_success = fetch_existing_successful_analyses(
+            config,
+            analysis_date,
+            [row["ticker"] for row in signals],
+        )
+        summary_state = fetch_summary_state(config, analysis_date)
     except Exception as exc:
         logging.exception("Error preparando daily_ai_analysis")
         return json.dumps({"status": "error", "message": str(exc)}), 500, {"Content-Type": "application/json"}
@@ -69,6 +85,8 @@ def main(request):
                 {
                     "status": "dry_run",
                     "analysis_date": str(analysis_date),
+                    "analysis_scope": analysis_scope,
+                    "max_tickers": config.get("max_tickers"),
                     "tickers": [row["ticker"] for row in signals],
                     "rows": len(signals),
                 }
@@ -81,6 +99,13 @@ def main(request):
     analysis_rows = []
     for signal_row in signals:
         ticker = signal_row["ticker"]
+        input_hash = ticker_input_hash(signal_row)
+        existing_row = existing_success.get(ticker)
+        if existing_row and existing_row.get("input_hash") == input_hash:
+            logging.info("Saltando %s: analisis IA existente para el mismo input", ticker)
+            analysis_rows.append({**signal_row, **existing_row})
+            results.append({"ticker": ticker, "status": "skipped_existing"})
+            continue
         try:
             logging.info("Generando analisis IA para %s", ticker)
             parsed, input_hash = analyze_ticker(config, signal_row)
@@ -101,13 +126,38 @@ def main(request):
     alert_sent = False
     alert_error = None
     alert_title = None
+    all_tickers_skipped = results and all(item["status"] == "skipped_existing" for item in results)
+    already_alerted = bool(summary_state and summary_state.get("alert_sent"))
+    if all_tickers_skipped and already_alerted:
+        return (
+            json.dumps(
+                {
+                    "status": "success",
+                    "analysis_date": str(analysis_date),
+                    "analysis_scope": analysis_scope,
+                    "max_tickers": config.get("max_tickers"),
+                    "processed": len(results),
+                    "results": results,
+                    "alert_sent": True,
+                    "alert_error": None,
+                    "alert_title": None,
+                    "message": "All tickers already had successful analysis and today's alert was already sent.",
+                }
+            ),
+            200,
+            {"Content-Type": "application/json"},
+        )
+
     try:
         portfolio_summary = build_portfolio_summary(config, analysis_rows)
         alert_title = portfolio_summary["alert_title"]
         alert_body = build_alert_text(portfolio_summary, None)
 
-        if send_alert:
+        if send_alert and not already_alerted:
             alert_sent, alert_error = send_webhook_alert(config, portfolio_summary, analysis_rows)
+        elif already_alerted:
+            alert_sent = True
+            alert_error = None
 
         merge_summary(
             config,
@@ -137,6 +187,8 @@ def main(request):
             {
                 "status": "success" if status_code == 200 else "partial",
                 "analysis_date": str(analysis_date),
+                "analysis_scope": analysis_scope,
+                "max_tickers": config.get("max_tickers"),
                 "processed": len(results),
                 "results": results,
                 "alert_sent": alert_sent,

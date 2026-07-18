@@ -1,4 +1,3 @@
-import json
 from datetime import datetime, timezone
 
 import requests
@@ -35,26 +34,53 @@ def ensure_quality_table(config):
 def persist_quality_events(config, pipeline, run_date, results):
     ensure_quality_table(config)
     client = bigquery.Client(project=config["project_id"])
-    rows = []
     now = datetime.now(timezone.utc).isoformat()
     for result in results:
-        rows.append(
-            {
-                "run_date": str(run_date),
-                "pipeline": pipeline,
-                "ticker": result.get("ticker"),
-                "data_status": result.get("data_status") or result.get("status", "unknown"),
-                "severity": result.get("severity") or ("ERROR" if result.get("status") == "error" else "OK"),
-                "rows_loaded": result.get("rows_loaded"),
-                "message": result.get("message"),
-                "created_at": now,
-            }
-        )
-
-    if rows:
-        errors = client.insert_rows_json(config["quality_table"], rows)
-        if errors:
-            raise RuntimeError(f"Error inserting quality events: {errors}")
+        row = {
+            "run_date": str(run_date),
+            "pipeline": pipeline,
+            "ticker": result.get("ticker"),
+            "data_status": result.get("data_status") or result.get("status", "unknown"),
+            "severity": result.get("severity") or ("ERROR" if result.get("status") == "error" else "OK"),
+            "rows_loaded": result.get("rows_loaded"),
+            "message": result.get("message"),
+            "created_at": now,
+        }
+        sql = f"""
+        MERGE {_table_ref(config["quality_table"])} T
+        USING (
+          SELECT
+            @run_date AS run_date,
+            @pipeline AS pipeline,
+            @ticker AS ticker,
+            @data_status AS data_status,
+            @severity AS severity,
+            @rows_loaded AS rows_loaded,
+            @message AS message,
+            @created_at AS created_at
+        ) S
+        ON T.run_date = S.run_date
+          AND T.pipeline = S.pipeline
+          AND T.ticker = S.ticker
+        WHEN MATCHED THEN UPDATE SET
+          data_status = S.data_status,
+          severity = S.severity,
+          rows_loaded = S.rows_loaded,
+          message = S.message,
+          created_at = S.created_at
+        WHEN NOT MATCHED THEN INSERT ROW
+        """
+        params = [
+            bigquery.ScalarQueryParameter("run_date", "DATE", row["run_date"]),
+            bigquery.ScalarQueryParameter("pipeline", "STRING", row["pipeline"]),
+            bigquery.ScalarQueryParameter("ticker", "STRING", row["ticker"]),
+            bigquery.ScalarQueryParameter("data_status", "STRING", row["data_status"]),
+            bigquery.ScalarQueryParameter("severity", "STRING", row["severity"]),
+            bigquery.ScalarQueryParameter("rows_loaded", "INT64", row["rows_loaded"]),
+            bigquery.ScalarQueryParameter("message", "STRING", row["message"]),
+            bigquery.ScalarQueryParameter("created_at", "TIMESTAMP", row["created_at"]),
+        ]
+        client.query(sql, job_config=bigquery.QueryJobConfig(query_parameters=params)).result()
 
 
 def _detect_webhook_type(config):

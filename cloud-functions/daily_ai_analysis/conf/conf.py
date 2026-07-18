@@ -39,4 +39,5 @@ def load_config():
         or access_secret_version(os.environ.get("ALERT_WEBHOOK_URL_SECRET", "ALERT_WEBHOOK_URL"), required=False),
         "alert_webhook_type": os.environ.get("ALERT_WEBHOOK_TYPE", "auto").lower(),
         "prompt_version": os.environ.get("PROMPT_VERSION", "portfolio-ai-v1"),
+        "max_tickers": int(os.environ.get("AI_MAX_TICKERS", "12")),
     }

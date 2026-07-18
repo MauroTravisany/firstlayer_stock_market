@@ -143,18 +143,34 @@ def _input_hash(payload):
     return hashlib.sha256(json.dumps(payload, ensure_ascii=True, sort_keys=True).encode("utf-8")).hexdigest()
 
 
-def analyze_ticker(config, signal_row):
-    if not config.get("openai_api_key"):
-        raise RuntimeError("OPENAI_API_KEY secret is required to generate AI analysis")
-    client = OpenAI(api_key=config["openai_api_key"])
+def _missing_ratio_fields(signal_row):
+    ratio_fields = [
+        "pe_ratio",
+        "forward_pe",
+        "price_to_sales",
+        "ev_to_ebitda",
+        "roe",
+        "profit_margin",
+        "operating_margin",
+        "debt_to_equity",
+        "current_ratio",
+        "free_cash_flow",
+    ]
+    return [field for field in ratio_fields if signal_row.get(field) is None]
+
+
+def build_ticker_payload(signal_row):
     ticker = signal_row["ticker"]
-    payload = {
+    missing_ratios = _missing_ratio_fields(signal_row)
+    return {
         "internal_data": json.loads(row_to_json(signal_row)),
+        "missing_internal_ratios": missing_ratios,
         "external_search_instructions": {
             "query_focus": [
                 f"{ticker} latest earnings guidance margin revenue debt risk",
                 f"{ticker} stock recent news valuation risk",
                 f"{ticker} valuation multiples overvalued sell risk",
+                f"{ticker} PE forward PE price sales EV EBITDA ROE debt equity free cash flow",
                 f"{ticker} investor relations earnings results",
             ],
             "preferred_sources": [
@@ -168,6 +184,17 @@ def analyze_ticker(config, signal_row):
         },
     }
 
+
+def ticker_input_hash(signal_row):
+    return _input_hash(build_ticker_payload(signal_row))
+
+
+def analyze_ticker(config, signal_row):
+    if not config.get("openai_api_key"):
+        raise RuntimeError("OPENAI_API_KEY secret is required to generate AI analysis")
+    client = OpenAI(api_key=config["openai_api_key"])
+    payload = build_ticker_payload(signal_row)
+
     response = client.responses.create(
         model=config["openai_model"],
         input=[
@@ -178,6 +205,8 @@ def analyze_ticker(config, signal_row):
                     "Analiza este ticker con los datos internos y contrasta con fuentes externas. "
                     "Incluye una tesis de venta objetiva cuando los datos sugieran sobrevaloracion, deterioro o riesgo elevado. "
                     "Evalua los ratios disponibles frente a umbrales razonables: PE, forward PE, price to sales, EV/EBITDA, ROE, margenes, deuda, liquidez, FCF, momentum y volatilidad. "
+                    "Si missing_internal_ratios no esta vacio, busca esos ratios faltantes en fuentes externas confiables y usalos solo como contraste externo. "
+                    "Cuando uses un ratio externo, indica fuente, fecha aproximada si esta disponible, y advierte que no reemplaza al dato interno de BigQuery. "
                     "Si no hay caso de venta, dilo claramente y explica que condiciones activarian una revision de venta. "
                     "Usa busqueda web para contexto reciente y cita las fuentes usadas dentro de sources. "
                     "Todos los textos explicativos deben estar en espanol. "

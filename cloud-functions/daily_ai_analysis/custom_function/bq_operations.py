@@ -97,13 +97,25 @@ def get_analysis_date(config, requested_date=None):
     return rows[0]["analysis_date"]
 
 
-def fetch_daily_signals(config, analysis_date, tickers=None):
+def fetch_daily_signals(config, analysis_date, tickers=None, analysis_scope="candidates", max_tickers=None):
     client = bigquery.Client(project=config["project_id"])
     params = [bigquery.ScalarQueryParameter("analysis_date", "DATE", analysis_date)]
     ticker_filter = ""
     if tickers:
         ticker_filter = "AND ticker IN UNNEST(@tickers)"
         params.append(bigquery.ArrayQueryParameter("tickers", "STRING", tickers))
+    scope_filter = ""
+    if analysis_scope != "all":
+        scope_filter = """
+        AND (
+          signal IN ("COMPRAR_OBSERVAR", "VENDER_OBSERVAR")
+          OR sell_signal = "VENTA_CLARA"
+        )
+        """
+    limit_clause = ""
+    if max_tickers and analysis_scope != "all" and not tickers:
+        limit_clause = "LIMIT @max_tickers"
+        params.append(bigquery.ScalarQueryParameter("max_tickers", "INT64", int(max_tickers)))
 
     sql = f"""
     SELECT
@@ -143,10 +155,63 @@ def fetch_daily_signals(config, analysis_date, tickers=None):
     FROM {_table_ref(config["signal_table"])}
     WHERE analysis_date = @analysis_date
     {ticker_filter}
-    ORDER BY final_score DESC, ticker
+    {scope_filter}
+    ORDER BY
+      CASE
+        WHEN signal = "COMPRAR_OBSERVAR" THEN 1
+        WHEN sell_signal = "VENTA_CLARA" OR signal = "VENDER_OBSERVAR" THEN 2
+        ELSE 3
+      END,
+      GREATEST(COALESCE(final_score, 0), COALESCE(sell_score, 0)) DESC,
+      ticker
+    {limit_clause}
     """
     job_config = bigquery.QueryJobConfig(query_parameters=params)
     return [dict(row) for row in client.query(sql, job_config=job_config).result()]
+
+
+def fetch_existing_successful_analyses(config, analysis_date, tickers=None):
+    client = bigquery.Client(project=config["project_id"])
+    params = [
+        bigquery.ScalarQueryParameter("analysis_date", "DATE", analysis_date),
+        bigquery.ScalarQueryParameter("prompt_version", "STRING", config["prompt_version"]),
+        bigquery.ScalarQueryParameter("model_name", "STRING", config["openai_model"]),
+    ]
+    ticker_filter = ""
+    if tickers:
+        ticker_filter = "AND ticker IN UNNEST(@tickers)"
+        params.append(bigquery.ArrayQueryParameter("tickers", "STRING", tickers))
+
+    sql = f"""
+    SELECT *
+    FROM {_table_ref(config["analysis_table"])}
+    WHERE analysis_date = @analysis_date
+      AND prompt_version = @prompt_version
+      AND model_name = @model_name
+      AND ai_summary IS NOT NULL
+      AND ai_summary != "ERROR_GENERANDO_ANALISIS"
+      {ticker_filter}
+    """
+    job_config = bigquery.QueryJobConfig(query_parameters=params)
+    return {row["ticker"]: dict(row) for row in client.query(sql, job_config=job_config).result()}
+
+
+def fetch_summary_state(config, analysis_date):
+    client = bigquery.Client(project=config["project_id"])
+    sql = f"""
+    SELECT alert_sent, alert_error
+    FROM {_table_ref(config["summary_table"])}
+    WHERE analysis_date = @analysis_date
+      AND prompt_version = @prompt_version
+    ORDER BY created_at DESC
+    LIMIT 1
+    """
+    params = [
+        bigquery.ScalarQueryParameter("analysis_date", "DATE", analysis_date),
+        bigquery.ScalarQueryParameter("prompt_version", "STRING", config["prompt_version"]),
+    ]
+    rows = list(client.query(sql, job_config=bigquery.QueryJobConfig(query_parameters=params)).result())
+    return dict(rows[0]) if rows else None
 
 
 def merge_analysis(config, row):
@@ -218,7 +283,71 @@ def merge_analysis(config, row):
       input_hash = S.input_hash,
       raw_response_json = S.raw_response_json,
       created_at = S.created_at
-    WHEN NOT MATCHED THEN INSERT ROW
+    WHEN NOT MATCHED THEN INSERT (
+      analysis_date,
+      ticker,
+      signal,
+      classification,
+      final_score,
+      valuation_score,
+      quality_score,
+      momentum_score,
+      risk_score,
+      ai_summary,
+      ai_analysis,
+      ai_risks,
+      ai_opportunity,
+      ai_decision_support,
+      external_sources_json,
+      external_context_summary,
+      data_discrepancies,
+      confidence_score,
+      confidence_reason,
+      model_name,
+      prompt_version,
+      input_hash,
+      raw_response_json,
+      created_at,
+      sell_score,
+      sell_signal,
+      suggested_sell_price,
+      ai_sell_thesis,
+      ai_sell_reasons,
+      ai_sell_price_view,
+      ai_sell_decision_support
+    ) VALUES (
+      S.analysis_date,
+      S.ticker,
+      S.signal,
+      S.classification,
+      S.final_score,
+      S.valuation_score,
+      S.quality_score,
+      S.momentum_score,
+      S.risk_score,
+      S.ai_summary,
+      S.ai_analysis,
+      S.ai_risks,
+      S.ai_opportunity,
+      S.ai_decision_support,
+      S.external_sources_json,
+      S.external_context_summary,
+      S.data_discrepancies,
+      S.confidence_score,
+      S.confidence_reason,
+      S.model_name,
+      S.prompt_version,
+      S.input_hash,
+      S.raw_response_json,
+      S.created_at,
+      S.sell_score,
+      S.sell_signal,
+      S.suggested_sell_price,
+      S.ai_sell_thesis,
+      S.ai_sell_reasons,
+      S.ai_sell_price_view,
+      S.ai_sell_decision_support
+    )
     """
     params = [
         bigquery.ScalarQueryParameter("analysis_date", "DATE", row["analysis_date"]),
@@ -289,7 +418,35 @@ def merge_summary(config, row):
       model_name = S.model_name,
       prompt_version = S.prompt_version,
       created_at = S.created_at
-    WHEN NOT MATCHED THEN INSERT ROW
+    WHEN NOT MATCHED THEN INSERT (
+      analysis_date,
+      portfolio_summary,
+      top_opportunities,
+      overvalued_summary,
+      risk_summary,
+      dashboard_summary,
+      alert_title,
+      alert_body,
+      alert_sent,
+      alert_error,
+      model_name,
+      prompt_version,
+      created_at
+    ) VALUES (
+      S.analysis_date,
+      S.portfolio_summary,
+      S.top_opportunities,
+      S.overvalued_summary,
+      S.risk_summary,
+      S.dashboard_summary,
+      S.alert_title,
+      S.alert_body,
+      S.alert_sent,
+      S.alert_error,
+      S.model_name,
+      S.prompt_version,
+      S.created_at
+    )
     """
     params = [
         bigquery.ScalarQueryParameter("analysis_date", "DATE", row["analysis_date"]),
