@@ -1,0 +1,10 @@
+config {
+  type: "view",
+  schema: "acciones_dataset",
+  name: "looker_company_status_changes",
+  description: "Vista para dashboard con cambios relevantes de estado por empresa.",
+  tags: ["portfolio", "status", "changes", "looker", "dashboard"]
+}
+
+SELECT *
+FROM ${ref("portfolio_company_status_changes")}

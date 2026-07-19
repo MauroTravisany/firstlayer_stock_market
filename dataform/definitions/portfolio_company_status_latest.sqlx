@@ -1,0 +1,68 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "portfolio_company_status_latest",
+  description: "Ultimo estado final por empresa, incluyendo antiguedad del estado y ultimo cambio relevante.",
+  tags: ["portfolio", "status", "latest"],
+  bigquery: {
+    clusterBy: ["company_status", "ticker"]
+  },
+  assertions: {
+    nonNull: ["analysis_date", "ticker", "company_status"],
+    uniqueKey: ["ticker"]
+  }
+}
+
+WITH latest AS (
+  SELECT * EXCEPT(rn)
+  FROM (
+    SELECT
+      *,
+      ROW_NUMBER() OVER (PARTITION BY ticker ORDER BY analysis_date DESC) AS rn
+    FROM ${ref("portfolio_company_status_daily")}
+  )
+  WHERE rn = 1
+),
+last_change AS (
+  SELECT
+    ticker,
+    ARRAY_AGG(analysis_date ORDER BY analysis_date DESC LIMIT 1)[OFFSET(0)] AS last_relevant_change_date,
+    ARRAY_AGG(change_type ORDER BY analysis_date DESC LIMIT 1)[OFFSET(0)] AS last_relevant_change_type,
+    ARRAY_AGG(status_reason ORDER BY analysis_date DESC LIMIT 1)[OFFSET(0)] AS last_relevant_change_reason
+  FROM ${ref("portfolio_company_status_daily")}
+  WHERE has_relevant_change
+  GROUP BY ticker
+),
+current_status_start AS (
+  SELECT
+    d.ticker,
+    MIN(d.analysis_date) AS current_status_start_date
+  FROM ${ref("portfolio_company_status_daily")} d
+  JOIN latest l
+    ON l.ticker = d.ticker
+   AND l.company_status = d.company_status
+   AND d.analysis_date <= l.analysis_date
+  WHERE NOT EXISTS (
+    SELECT 1
+    FROM ${ref("portfolio_company_status_daily")} between_rows
+    WHERE between_rows.ticker = d.ticker
+      AND between_rows.analysis_date > d.analysis_date
+      AND between_rows.analysis_date <= l.analysis_date
+      AND between_rows.company_status != l.company_status
+  )
+  GROUP BY d.ticker
+)
+
+SELECT
+  l.*,
+  css.current_status_start_date,
+  lc.last_relevant_change_date,
+  lc.last_relevant_change_type,
+  lc.last_relevant_change_reason,
+  DATE_DIFF(l.analysis_date, lc.last_relevant_change_date, DAY) AS days_since_last_relevant_change,
+  DATE_DIFF(l.analysis_date, css.current_status_start_date, DAY) AS days_in_current_status
+FROM latest l
+LEFT JOIN current_status_start css
+  ON css.ticker = l.ticker
+LEFT JOIN last_change lc
+  ON lc.ticker = l.ticker

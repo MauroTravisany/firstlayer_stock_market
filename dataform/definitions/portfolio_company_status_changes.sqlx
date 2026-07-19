@@ -1,0 +1,58 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "portfolio_company_status_changes",
+  description: "Historial compacto de cambios relevantes de estado por empresa.",
+  tags: ["portfolio", "status", "changes"],
+  bigquery: {
+    partitionBy: "analysis_date",
+    clusterBy: ["change_type", "ticker"]
+  },
+  assertions: {
+    nonNull: ["analysis_date", "ticker", "change_type"],
+    uniqueKey: ["analysis_date", "ticker", "change_type"]
+  }
+}
+
+SELECT
+  analysis_date,
+  ticker,
+  change_type,
+  previous_company_status,
+  company_status,
+  previous_status_group,
+  status_group,
+  previous_signal,
+  signal,
+  previous_sell_signal,
+  sell_signal,
+  previous_classification,
+  classification,
+  previous_risk_level,
+  risk_level,
+  previous_technical_trend,
+  technical_trend,
+  previous_missing_data_impact,
+  missing_data_impact,
+  last_close,
+  previous_close,
+  price_change_since_previous_status,
+  final_score,
+  previous_final_score,
+  final_score_change,
+  sell_score,
+  previous_sell_score,
+  sell_score_change,
+  margin_of_safety_pct,
+  previous_margin_of_safety_pct,
+  margin_of_safety_change,
+  fair_value_estimate,
+  conservative_fair_value,
+  suggested_buy_price,
+  suggested_sell_price,
+  status_reason,
+  signal_reason,
+  sell_reason,
+  calculated_at
+FROM ${ref("portfolio_company_status_daily")}
+WHERE has_relevant_change

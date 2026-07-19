@@ -1,0 +1,129 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "portfolio_company_status_daily",
+  description: "Estado final diario normalizado por empresa, con estado anterior y banderas de cambio.",
+  tags: ["portfolio", "status", "daily"],
+  bigquery: {
+    partitionBy: "analysis_date",
+    clusterBy: ["company_status", "ticker"]
+  },
+  assertions: {
+    nonNull: ["analysis_date", "ticker", "company_status"],
+    uniqueKey: ["analysis_date", "ticker"]
+  }
+}
+
+WITH base AS (
+  SELECT
+    analysis_date,
+    ticker,
+    signal,
+    sell_signal,
+    classification,
+    CASE
+      WHEN signal = "COMPRAR_OBSERVAR" THEN "OPORTUNIDAD_COMPRA"
+      WHEN signal = "VENDER_OBSERVAR" OR sell_signal = "VENTA_CLARA" THEN "ALERTA_VENTA"
+      WHEN signal = "TRAMPA_DE_VALOR" THEN "TRAMPA_DE_VALOR"
+      WHEN signal = "SOBREVALORADA" THEN "SOBREVALORADA"
+      WHEN signal = "RIESGO_ALTO" THEN "RIESGO_ALTO"
+      WHEN signal = "CALIDAD_ALTA_PRECIO_JUSTO" THEN "CALIDAD_PRECIO_JUSTO"
+      WHEN signal = "DATOS_INSUFICIENTES" THEN "DATOS_INSUFICIENTES"
+      ELSE "MANTENER"
+    END AS company_status,
+    CASE
+      WHEN signal = "COMPRAR_OBSERVAR" THEN "COMPRA"
+      WHEN signal = "VENDER_OBSERVAR" OR sell_signal IN ("VENTA_CLARA", "VENTA_PARCIAL_OBSERVAR") THEN "VENTA"
+      WHEN signal IN ("RIESGO_ALTO", "TRAMPA_DE_VALOR", "SOBREVALORADA") THEN "RIESGO"
+      WHEN signal = "DATOS_INSUFICIENTES" OR missing_data_impact = "ALTO" THEN "DATOS"
+      ELSE "SEGUIMIENTO"
+    END AS status_group,
+    last_close,
+    final_score,
+    sell_score,
+    valuation_score,
+    quality_score,
+    momentum_score,
+    technical_score,
+    risk_score,
+    data_quality_score,
+    risk_level,
+    technical_trend,
+    missing_data_impact,
+    fair_value_estimate,
+    conservative_fair_value,
+    margin_of_safety_pct,
+    suggested_buy_price,
+    suggested_sell_price,
+    return_1d,
+    return_5d,
+    return_20d,
+    return_60d,
+    return_120d,
+    signal_reason,
+    sell_reason
+  FROM ${ref("portfolio_daily_signal")}
+),
+with_previous AS (
+  SELECT
+    *,
+    LAG(company_status) OVER ticker_window AS previous_company_status,
+    LAG(status_group) OVER ticker_window AS previous_status_group,
+    LAG(signal) OVER ticker_window AS previous_signal,
+    LAG(sell_signal) OVER ticker_window AS previous_sell_signal,
+    LAG(classification) OVER ticker_window AS previous_classification,
+    LAG(risk_level) OVER ticker_window AS previous_risk_level,
+    LAG(technical_trend) OVER ticker_window AS previous_technical_trend,
+    LAG(missing_data_impact) OVER ticker_window AS previous_missing_data_impact,
+    LAG(final_score) OVER ticker_window AS previous_final_score,
+    LAG(sell_score) OVER ticker_window AS previous_sell_score,
+    LAG(margin_of_safety_pct) OVER ticker_window AS previous_margin_of_safety_pct,
+    LAG(last_close) OVER ticker_window AS previous_close
+  FROM base
+  WINDOW ticker_window AS (PARTITION BY ticker ORDER BY analysis_date)
+)
+
+SELECT
+  *,
+  ROUND(final_score - previous_final_score, 2) AS final_score_change,
+  ROUND(sell_score - previous_sell_score, 2) AS sell_score_change,
+  ROUND(margin_of_safety_pct - previous_margin_of_safety_pct, 4) AS margin_of_safety_change,
+  ROUND(SAFE_DIVIDE(last_close - previous_close, previous_close), 4) AS price_change_since_previous_status,
+  CASE
+    WHEN previous_company_status IS NULL THEN TRUE
+    WHEN company_status != previous_company_status THEN TRUE
+    WHEN COALESCE(classification, "NA") != COALESCE(previous_classification, "NA") THEN TRUE
+    WHEN COALESCE(sell_signal, "NA") != COALESCE(previous_sell_signal, "NA") THEN TRUE
+    WHEN COALESCE(risk_level, "NA") != COALESCE(previous_risk_level, "NA") THEN TRUE
+    WHEN COALESCE(technical_trend, "NA") != COALESCE(previous_technical_trend, "NA") THEN TRUE
+    WHEN COALESCE(missing_data_impact, "NA") != COALESCE(previous_missing_data_impact, "NA") THEN TRUE
+    WHEN ABS(COALESCE(final_score - previous_final_score, 0)) >= 2 THEN TRUE
+    WHEN ABS(COALESCE(margin_of_safety_pct - previous_margin_of_safety_pct, 0)) >= 0.05 THEN TRUE
+    ELSE FALSE
+  END AS has_relevant_change,
+  CASE
+    WHEN previous_company_status IS NULL THEN "NUEVO_REGISTRO"
+    WHEN company_status != previous_company_status THEN "CAMBIO_ESTADO"
+    WHEN COALESCE(classification, "NA") != COALESCE(previous_classification, "NA") THEN "CAMBIO_VALORACION"
+    WHEN COALESCE(sell_signal, "NA") != COALESCE(previous_sell_signal, "NA") THEN "CAMBIO_SENAL_VENTA"
+    WHEN COALESCE(risk_level, "NA") != COALESCE(previous_risk_level, "NA") THEN "CAMBIO_RIESGO"
+    WHEN COALESCE(technical_trend, "NA") != COALESCE(previous_technical_trend, "NA") THEN "CAMBIO_TENDENCIA"
+    WHEN COALESCE(missing_data_impact, "NA") != COALESCE(previous_missing_data_impact, "NA") THEN "CAMBIO_CALIDAD_DATOS"
+    WHEN ABS(COALESCE(final_score - previous_final_score, 0)) >= 2 THEN "CAMBIO_SCORE"
+    WHEN ABS(COALESCE(margin_of_safety_pct - previous_margin_of_safety_pct, 0)) >= 0.05 THEN "CAMBIO_MARGEN_SEGURIDAD"
+    ELSE "SIN_CAMBIO_RELEVANTE"
+  END AS change_type,
+  CONCAT(
+    "estado=", company_status,
+    "; anterior=", COALESCE(previous_company_status, "NA"),
+    "; signal=", signal,
+    "; venta=", COALESCE(sell_signal, "NA"),
+    "; valoracion=", classification,
+    "; riesgo=", COALESCE(risk_level, "NA"),
+    "; tendencia=", COALESCE(technical_trend, "NA"),
+    "; datos=", COALESCE(missing_data_impact, "NA"),
+    "; score_delta=", COALESCE(CAST(ROUND(final_score - previous_final_score, 2) AS STRING), "NA"),
+    "; margen_delta=", COALESCE(CAST(ROUND((margin_of_safety_pct - previous_margin_of_safety_pct) * 100, 1) AS STRING), "NA"), "%"
+  ) AS status_reason,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM with_previous

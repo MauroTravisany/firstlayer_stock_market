@@ -293,6 +293,21 @@ def fetch_summary_state(config, analysis_date, summary_type="daily"):
 
 def fetch_weekly_changes(config, analysis_date):
     client = bigquery.Client(project=config["project_id"])
+    status_changes_table = config.get("status_changes_table")
+    if status_changes_table:
+        try:
+            sql = f"""
+            SELECT *
+            FROM {_table_ref(status_changes_table)}
+            WHERE analysis_date BETWEEN DATE_SUB(@analysis_date, INTERVAL 7 DAY) AND @analysis_date
+            ORDER BY analysis_date DESC, ticker
+            LIMIT 200
+            """
+            params = [bigquery.ScalarQueryParameter("analysis_date", "DATE", analysis_date)]
+            return [dict(row) for row in client.query(sql, job_config=bigquery.QueryJobConfig(query_parameters=params)).result()]
+        except Exception:
+            pass
+
     available = _available_columns(client, config["signal_table"])
     sql = f"""
     WITH week_rows AS (

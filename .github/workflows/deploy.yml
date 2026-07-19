@@ -61,7 +61,7 @@ jobs:
               --memory 1Gi \
               --concurrency 1 \
               --max-instances 1 \
-              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},OPENAI_MODEL=gpt-5-mini,ALERT_WEBHOOK_TYPE=auto,PROMPT_VERSION=portfolio-ai-v4,AI_MAX_TICKERS=12,AI_ANALYSIS_TABLE_ID=portfolio_ai_analysis_daily,AI_SUMMARY_TABLE_ID=portfolio_ai_summary_daily"
+              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},OPENAI_MODEL=gpt-5-mini,ALERT_WEBHOOK_TYPE=auto,PROMPT_VERSION=portfolio-ai-v4,AI_MAX_TICKERS=12,AI_ANALYSIS_TABLE_ID=portfolio_ai_analysis_daily,AI_SUMMARY_TABLE_ID=portfolio_ai_summary_daily,STATUS_CHANGES_TABLE_ID=portfolio_company_status_changes"
 
       - name: Configure weekly AI summary scheduler
         run: |

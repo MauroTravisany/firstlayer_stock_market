@@ -56,6 +56,14 @@ jobs:
             'select * from `stocks-437902.acciones_dataset.looker_portfolio_history`' \
             > dashboard/data/portfolio_history.csv
 
+          bq query --project_id="${{ secrets.GCP_PROJECT_ID }}" --use_legacy_sql=false --format=csv \
+            'select * from `stocks-437902.acciones_dataset.looker_company_status_latest`' \
+            > dashboard/data/company_status_latest.csv
+
+          bq query --project_id="${{ secrets.GCP_PROJECT_ID }}" --use_legacy_sql=false --format=csv \
+            'select * from `stocks-437902.acciones_dataset.looker_company_status_changes`' \
+            > dashboard/data/company_status_changes.csv
+
           if ! bq query --project_id="${{ secrets.GCP_PROJECT_ID }}" --use_legacy_sql=false --format=csv \
             'select * from `stocks-437902.acciones_dataset.portfolio_signal_backtest`' \
             > dashboard/data/portfolio_signal_backtest.csv; then

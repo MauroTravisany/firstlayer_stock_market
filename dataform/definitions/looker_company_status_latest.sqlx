@@ -1,0 +1,10 @@
+config {
+  type: "view",
+  schema: "acciones_dataset",
+  name: "looker_company_status_latest",
+  description: "Vista para dashboard con el estado actual final por empresa.",
+  tags: ["portfolio", "status", "latest", "looker", "dashboard"]
+}
+
+SELECT *
+FROM ${ref("portfolio_company_status_latest")}

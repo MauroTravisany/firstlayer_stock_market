@@ -9,7 +9,10 @@ config {
 SELECT
   analysis_date,
   ticker,
+  company_status,
+  status_group,
   signal,
+  sell_signal,
   classification,
   last_close,
   final_score,
@@ -33,11 +36,24 @@ SELECT
   return_60d,
   return_120d,
   volatility_20d,
-  LAG(signal) OVER (PARTITION BY ticker ORDER BY analysis_date) AS previous_signal,
-  LAG(final_score) OVER (PARTITION BY ticker ORDER BY analysis_date) AS previous_final_score,
-  final_score - LAG(final_score) OVER (PARTITION BY ticker ORDER BY analysis_date) AS final_score_change,
-  CASE
-    WHEN signal != LAG(signal) OVER (PARTITION BY ticker ORDER BY analysis_date) THEN TRUE
-    ELSE FALSE
-  END AS signal_changed
-FROM ${ref("portfolio_daily_signal")}
+  previous_company_status,
+  previous_status_group,
+  previous_signal,
+  previous_sell_signal,
+  previous_classification,
+  previous_risk_level,
+  previous_technical_trend,
+  previous_missing_data_impact,
+  previous_final_score,
+  previous_sell_score,
+  previous_margin_of_safety_pct,
+  previous_close,
+  final_score_change,
+  sell_score_change,
+  margin_of_safety_change,
+  price_change_since_previous_status,
+  has_relevant_change,
+  change_type,
+  status_reason,
+  has_relevant_change AS signal_changed
+FROM ${ref("portfolio_company_status_daily")}

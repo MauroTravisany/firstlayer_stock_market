@@ -33,6 +33,7 @@ def load_config():
         "signal_table": f"{project_id}.{dataset_id}.{os.environ.get('SIGNAL_TABLE_ID', 'portfolio_daily_signal')}",
         "analysis_table": f"{project_id}.{dataset_id}.{os.environ.get('AI_ANALYSIS_TABLE_ID', 'portfolio_ai_analysis_daily')}",
         "summary_table": f"{project_id}.{dataset_id}.{os.environ.get('AI_SUMMARY_TABLE_ID', 'portfolio_ai_summary_daily')}",
+        "status_changes_table": f"{project_id}.{dataset_id}.{os.environ.get('STATUS_CHANGES_TABLE_ID', 'portfolio_company_status_changes')}",
         "openai_api_key": access_secret_version(os.environ.get("OPENAI_API_KEY_SECRET", "OPENAI_API_KEY"), required=False),
         "openai_model": os.environ.get("OPENAI_MODEL", "gpt-5-mini"),
         "alert_webhook_url": os.environ.get("ALERT_WEBHOOK_URL")
