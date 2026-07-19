@@ -50,6 +50,7 @@ def main(request):
     request_json = request.get_json(silent=True) or {}
     dry_run = parse_bool(request_json.get("dry_run", request.args.get("dry_run")), False)
     send_alert = parse_bool(request_json.get("send_alert", request.args.get("send_alert")), True)
+    force_summary = parse_bool(request_json.get("force_summary", request.args.get("force_summary")), False)
     analysis_scope = (request_json.get("analysis_scope") or request.args.get("analysis_scope") or "candidates").lower()
     summary_type = (request_json.get("summary_type") or request.args.get("summary_type") or "daily").lower()
     if analysis_scope not in {"candidates", "all"}:
@@ -86,13 +87,14 @@ def main(request):
                     200,
                     {"Content-Type": "application/json"},
                 )
-            if summary_state and summary_state.get("alert_sent"):
+            if summary_state and summary_state.get("alert_sent") and not force_summary:
                 return (
                     json.dumps(
                         {
                             "status": "success",
                             "summary_type": "weekly",
                             "analysis_date": str(analysis_date),
+                            "force_summary": force_summary,
                             "alert_sent": True,
                             "message": "Weekly alert already sent for this date.",
                         }
@@ -131,6 +133,7 @@ def main(request):
                         "status": "success" if not alert_error else "partial",
                         "summary_type": "weekly",
                         "analysis_date": str(analysis_date),
+                        "force_summary": force_summary,
                         "rows": len(weekly_rows),
                         "alert_sent": alert_sent,
                         "alert_error": alert_error,
