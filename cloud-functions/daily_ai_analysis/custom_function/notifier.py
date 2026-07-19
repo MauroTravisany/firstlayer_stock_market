@@ -8,6 +8,10 @@ SLACK_TEXT_LIMIT = 12000
 DEFAULT_MIN_FINAL_SCORE = 6.0
 DEFAULT_MIN_CONFIDENCE = 0.65
 DEFAULT_MIN_SELL_SCORE = 7.0
+MAX_BUY_FORWARD_PE = 28
+MAX_BUY_PE = 35
+MAX_BUY_PRICE_TO_SALES = 6
+MAX_BUY_EV_TO_EBITDA = 22
 DISCORD_GREEN = 0x2ECC71
 DISCORD_RED = 0xE74C3C
 DISCORD_GOLD = 0xF1C40F
@@ -33,6 +37,8 @@ def clear_opportunity_rows(analysis_rows, min_final_score=DEFAULT_MIN_FINAL_SCOR
         if final_score is None or float(final_score) < min_final_score:
             continue
         if confidence_score is None or float(confidence_score) < min_confidence:
+            continue
+        if not _passes_buy_valuation_guardrails(row):
             continue
         rows.append(row)
     return sorted(rows, key=lambda item: item.get("final_score") or 0, reverse=True)
@@ -62,6 +68,57 @@ def _normalized_confidence(value):
     return confidence
 
 
+def _float_or_none(value):
+    if value is None:
+        return None
+    return float(value)
+
+
+def _passes_buy_valuation_guardrails(row):
+    valuation_score = _float_or_none(row.get("valuation_score"))
+    if valuation_score is None or valuation_score < 2:
+        return False
+
+    pe_ratio = _float_or_none(row.get("pe_ratio"))
+    forward_pe = _float_or_none(row.get("forward_pe"))
+    price_to_sales = _float_or_none(row.get("price_to_sales"))
+    ev_to_ebitda = _float_or_none(row.get("ev_to_ebitda"))
+
+    available = [value for value in [pe_ratio, forward_pe, price_to_sales, ev_to_ebitda] if value is not None]
+    if len(available) < 2:
+        return False
+    if pe_ratio is not None and pe_ratio > MAX_BUY_PE:
+        return False
+    if forward_pe is not None and forward_pe > MAX_BUY_FORWARD_PE:
+        return False
+    if price_to_sales is not None and price_to_sales > MAX_BUY_PRICE_TO_SALES:
+        return False
+    if ev_to_ebitda is not None and ev_to_ebitda > MAX_BUY_EV_TO_EBITDA:
+        return False
+    return True
+
+
+def _metric_line(row):
+    metrics = [
+        ("PE", row.get("pe_ratio")),
+        ("Fwd PE", row.get("forward_pe")),
+        ("P/S", row.get("price_to_sales")),
+        ("EV/EBITDA", row.get("ev_to_ebitda")),
+        ("ROE", row.get("roe")),
+        ("Margen", row.get("profit_margin")),
+    ]
+    parts = []
+    for label, value in metrics:
+        if value is None:
+            continue
+        number = float(value)
+        if label in {"ROE", "Margen"}:
+            parts.append(f"{label} {round(number * 100, 1)}%")
+        else:
+            parts.append(f"{label} {round(number, 2)}")
+    return " | ".join(parts) if parts else "Ratios principales no disponibles."
+
+
 def build_alert_text(summary, opportunity_rows=None, sell_rows=None):
     if opportunity_rows is not None or sell_rows is not None:
         lines = [f"*{summary['alert_title']}*", ""]
@@ -74,7 +131,7 @@ def build_alert_text(summary, opportunity_rows=None, sell_rows=None):
                         ticker=row.get("ticker"),
                         score=round(float(row.get("final_score") or 0), 2),
                         confidence=round(confidence, 2),
-                        summary=row.get("ai_summary") or row.get("ai_opportunity") or "Ver detalle en Looker Studio.",
+                        summary=f"{_metric_line(row)}. {row.get('ai_summary') or row.get('ai_opportunity') or 'Ver detalle en Looker Studio.'}",
                     )
                 )
         if sell_rows:
@@ -168,6 +225,7 @@ def _discord_buy_embed(row):
         "fields": [
             {"name": "Score", "value": str(score), "inline": True},
             {"name": "Confianza", "value": str(confidence), "inline": True},
+            {"name": "Multiples", "value": _metric_line(row), "inline": False},
             {
                 "name": "Soporte",
                 "value": _short_text(row.get("ai_decision_support"), DISCORD_FIELD_LIMIT),
@@ -198,6 +256,7 @@ def _discord_sell_embed(row):
             {"name": "Precio actual", "value": str(price), "inline": True},
             {"name": "Zona revision", "value": str(sell_price), "inline": True},
             {"name": "Confianza", "value": str(confidence), "inline": True},
+            {"name": "Multiples", "value": _metric_line(row), "inline": False},
             {
                 "name": "Razon",
                 "value": _short_text(row.get("ai_sell_decision_support") or row.get("ai_sell_price_view"), DISCORD_FIELD_LIMIT),

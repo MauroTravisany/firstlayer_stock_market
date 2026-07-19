@@ -112,6 +112,9 @@ Reglas obligatorias:
 10. Devuelve solo JSON valido segun el schema.
 11. Si sell_signal indica VENTA_CLARA o VENTA_PARCIAL_OBSERVAR, evalua si la empresa parece cara con los multiplos disponibles, calidad, momentum, riesgo y contexto externo.
 12. En sell_price_view explica el precio o zona sugerida para evaluar venta usando suggested_sell_price, last_close y los multiplos internos. No inventes precio objetivo externo.
+13. Trata signal y classification como una preseleccion cuantitativa, no como conclusion definitiva.
+14. Si signal indica COMPRAR_OBSERVAR pero PE > 35, forward PE > 28, price_to_sales > 6 o EV/EBITDA > 22, advierte que la valoracion contradice una oportunidad clara y reduce confidence_score salvo que existan razones extraordinarias.
+15. Una empresa de alta calidad cerca de multiplos exigentes debe describirse como "calidad a precio exigente" o "mantener/observar", no como barata.
 """
 
 
@@ -205,6 +208,8 @@ def analyze_ticker(config, signal_row):
                     "Analiza este ticker con los datos internos y contrasta con fuentes externas. "
                     "Incluye una tesis de venta objetiva cuando los datos sugieran sobrevaloracion, deterioro o riesgo elevado. "
                     "Evalua los ratios disponibles frente a umbrales razonables: PE, forward PE, price to sales, EV/EBITDA, ROE, margenes, deuda, liquidez, FCF, momentum y volatilidad. "
+                    "No confirmes una oportunidad clara solo porque signal lo diga; valida que los multiplos sean razonables y que no exista una contradiccion de valoracion. "
+                    "Si la accion tiene calidad alta pero multiplos caros, explica que no es una compra clara y que requiere mejor precio o mayor margen de seguridad. "
                     "Si missing_internal_ratios no esta vacio, busca esos ratios faltantes en fuentes externas confiables y usalos solo como contraste externo. "
                     "Cuando uses un ratio externo, indica fuente, fecha aproximada si esta disponible, y advierte que no reemplaza al dato interno de BigQuery. "
                     "Si no hay caso de venta, dilo claramente y explica que condiciones activarian una revision de venta. "
