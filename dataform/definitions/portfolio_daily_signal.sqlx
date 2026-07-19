@@ -59,6 +59,25 @@ price_features AS (
 base AS (
   SELECT
     v.*,
+    ap.asset_type,
+    ap.sector,
+    ap.industry,
+    ap.peer_group,
+    pb.peer_count,
+    pb.peer_median_pe,
+    pb.peer_median_forward_pe,
+    pb.peer_median_price_to_sales,
+    pb.peer_median_ev_to_ebitda,
+    pb.peer_median_roe,
+    pb.peer_median_profit_margin,
+    pb.pe_percentile,
+    pb.forward_pe_percentile,
+    pb.price_to_sales_percentile,
+    pb.ev_to_ebitda_percentile,
+    pb.roe_percentile,
+    pb.profit_margin_percentile,
+    pb.peer_relative_score,
+    pb.peer_valuation_label,
     p.return_1d,
     p.return_5d,
     p.return_20d,
@@ -68,6 +87,11 @@ base AS (
     p.volatility_20d,
     p.volume_vs_20d_avg
   FROM ${ref("portfolio_valuation_daily")} v
+  LEFT JOIN ${ref("asset_profile")} ap
+    ON ap.ticker = v.ticker
+  LEFT JOIN ${ref("peer_benchmark_daily")} pb
+    ON pb.ticker = v.ticker
+   AND pb.analysis_date = v.analysis_date
   LEFT JOIN price_features p
     ON p.ticker = v.ticker
    AND p.analysis_date = v.analysis_date
@@ -107,6 +131,7 @@ final_scored AS (
     *,
     ROUND(
       valuation_score +
+      COALESCE(peer_relative_score, 0) +
       value_component +
       quality_score +
       momentum_score +
@@ -148,6 +173,25 @@ SELECT
   ticker,
   last_close,
   classification,
+  asset_type,
+  sector,
+  industry,
+  peer_group,
+  peer_count,
+  peer_median_pe,
+  peer_median_forward_pe,
+  peer_median_price_to_sales,
+  peer_median_ev_to_ebitda,
+  peer_median_roe,
+  peer_median_profit_margin,
+  pe_percentile,
+  forward_pe_percentile,
+  price_to_sales_percentile,
+  ev_to_ebitda_percentile,
+  roe_percentile,
+  profit_margin_percentile,
+  peer_relative_score,
+  peer_valuation_label,
   financial_data_status,
   valuation_score,
   value_component,
@@ -176,6 +220,8 @@ SELECT
   CASE
     WHEN financial_data_status = "SIN_SNAPSHOT_FINANCIERO" THEN "DATOS_INSUFICIENTES"
     WHEN classification = "BARATA"
+      AND COALESCE(asset_type, "STOCK") = "STOCK"
+      AND COALESCE(peer_valuation_label, "EN_LINEA_CON_PEERS") != "CARA_VS_PEERS"
       AND valuation_score >= 2
       AND quality_score >= 2
       AND final_score >= 6
@@ -191,6 +237,8 @@ SELECT
   END AS signal,
   CONCAT(
     "valor=", CAST(ROUND(value_component, 2) AS STRING),
+    "; peers=", COALESCE(peer_valuation_label, "SIN_PEERS"),
+    "; score_peer=", COALESCE(CAST(ROUND(peer_relative_score, 2) AS STRING), "NA"),
     "; calidad=", CAST(ROUND(quality_score, 2) AS STRING),
     "; momentum=", CAST(ROUND(momentum_score, 2) AS STRING),
     "; riesgo=", CAST(ROUND(risk_score, 2) AS STRING),
@@ -207,6 +255,7 @@ SELECT
   CONCAT(
     "score_venta=", CAST(ROUND(sell_score, 2) AS STRING),
     "; clasificacion=", classification,
+    "; peers=", COALESCE(peer_valuation_label, "SIN_PEERS"),
     "; pe=", COALESCE(CAST(ROUND(pe_ratio, 2) AS STRING), "NA"),
     "; forward_pe=", COALESCE(CAST(ROUND(forward_pe, 2) AS STRING), "NA"),
     "; ps=", COALESCE(CAST(ROUND(price_to_sales, 2) AS STRING), "NA"),

@@ -27,6 +27,9 @@ TICKER_SCHEMA = {
         "confidence_score": {"type": "number"},
         "confidence_reason": {"type": "string"},
         "alert_summary": {"type": "string"},
+        "ai_valuation_opinion": {"type": "string", "enum": ["BARATA", "PRECIO_JUSTO", "CARA", "DATOS_INSUFICIENTES"]},
+        "ai_signal_agreement": {"type": "string", "enum": ["CONFIRMA_MODELO", "CONTRADICE_MODELO", "NEUTRAL"]},
+        "ai_final_alert_action": {"type": "string", "enum": ["ENVIAR_COMPRA", "ENVIAR_VENTA", "NO_ENVIAR"]},
         "sources": {
             "type": "array",
             "items": {
@@ -62,6 +65,9 @@ TICKER_SCHEMA = {
         "confidence_score",
         "confidence_reason",
         "alert_summary",
+        "ai_valuation_opinion",
+        "ai_signal_agreement",
+        "ai_final_alert_action",
         "sources",
     ],
     "additionalProperties": False,
@@ -115,6 +121,9 @@ Reglas obligatorias:
 13. Trata signal y classification como una preseleccion cuantitativa, no como conclusion definitiva.
 14. Si signal indica COMPRAR_OBSERVAR pero PE > 35, forward PE > 28, price_to_sales > 6 o EV/EBITDA > 22, advierte que la valoracion contradice una oportunidad clara y reduce confidence_score salvo que existan razones extraordinarias.
 15. Una empresa de alta calidad cerca de multiplos exigentes debe describirse como "calidad a precio exigente" o "mantener/observar", no como barata.
+16. ai_valuation_opinion debe ser tu conclusion final independiente: BARATA, PRECIO_JUSTO, CARA o DATOS_INSUFICIENTES.
+17. ai_signal_agreement debe indicar si confirmas o contradices la senal cuantitativa.
+18. ai_final_alert_action solo debe ser ENVIAR_COMPRA cuando la tesis de compra sea clara, los multiplos sean razonables vs peers y no existan contradicciones relevantes.
 """
 
 
@@ -210,6 +219,8 @@ def analyze_ticker(config, signal_row):
                     "Evalua los ratios disponibles frente a umbrales razonables: PE, forward PE, price to sales, EV/EBITDA, ROE, margenes, deuda, liquidez, FCF, momentum y volatilidad. "
                     "No confirmes una oportunidad clara solo porque signal lo diga; valida que los multiplos sean razonables y que no exista una contradiccion de valoracion. "
                     "Si la accion tiene calidad alta pero multiplos caros, explica que no es una compra clara y que requiere mejor precio o mayor margen de seguridad. "
+                    "Usa peer_group, peer_valuation_label, peer_relative_score y percentiles relativos para comparar contra homologos. "
+                    "Si peer_count es menor a 3, baja la confianza y declara que la comparacion relativa es limitada. "
                     "Si missing_internal_ratios no esta vacio, busca esos ratios faltantes en fuentes externas confiables y usalos solo como contraste externo. "
                     "Cuando uses un ratio externo, indica fuente, fecha aproximada si esta disponible, y advierte que no reemplaza al dato interno de BigQuery. "
                     "Si no hay caso de venta, dilo claramente y explica que condiciones activarian una revision de venta. "
@@ -249,6 +260,9 @@ def build_analysis_row(config, signal_row, parsed, input_hash):
         "ai_risks": parsed.get("risk_view"),
         "ai_opportunity": parsed.get("opportunity"),
         "ai_decision_support": parsed.get("decision_support"),
+        "ai_valuation_opinion": parsed.get("ai_valuation_opinion"),
+        "ai_signal_agreement": parsed.get("ai_signal_agreement"),
+        "ai_final_alert_action": parsed.get("ai_final_alert_action"),
         "external_sources_json": json.dumps(parsed.get("sources", []), ensure_ascii=True),
         "external_context_summary": parsed.get("external_context"),
         "data_discrepancies": parsed.get("discrepancies"),
@@ -285,6 +299,9 @@ def build_error_analysis_row(config, signal_row, exc):
         "ai_risks": None,
         "ai_opportunity": None,
         "ai_decision_support": None,
+        "ai_valuation_opinion": "DATOS_INSUFICIENTES",
+        "ai_signal_agreement": "NEUTRAL",
+        "ai_final_alert_action": "NO_ENVIAR",
         "external_sources_json": "[]",
         "external_context_summary": None,
         "data_discrepancies": None,
@@ -315,6 +332,12 @@ def build_portfolio_summary(config, analysis_rows):
             "sell_signal": row.get("sell_signal"),
             "suggested_sell_price": row.get("suggested_sell_price"),
             "sell_thesis": row.get("ai_sell_thesis"),
+            "ai_valuation_opinion": row.get("ai_valuation_opinion"),
+            "ai_signal_agreement": row.get("ai_signal_agreement"),
+            "ai_final_alert_action": row.get("ai_final_alert_action"),
+            "peer_group": row.get("peer_group"),
+            "peer_valuation_label": row.get("peer_valuation_label"),
+            "peer_relative_score": row.get("peer_relative_score"),
         }
         for row in analysis_rows
     ]

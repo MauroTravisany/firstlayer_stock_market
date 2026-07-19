@@ -34,6 +34,9 @@ def ensure_tables(config):
       ai_risks STRING,
       ai_opportunity STRING,
       ai_decision_support STRING,
+      ai_valuation_opinion STRING,
+      ai_signal_agreement STRING,
+      ai_final_alert_action STRING,
       external_sources_json STRING,
       external_context_summary STRING,
       data_discrepancies STRING,
@@ -79,6 +82,9 @@ def ensure_tables(config):
         ("ai_sell_reasons", "STRING"),
         ("ai_sell_price_view", "STRING"),
         ("ai_sell_decision_support", "STRING"),
+        ("ai_valuation_opinion", "STRING"),
+        ("ai_signal_agreement", "STRING"),
+        ("ai_final_alert_action", "STRING"),
     ]:
         client.query(
             f"ALTER TABLE {_table_ref(config['analysis_table'])} ADD COLUMN IF NOT EXISTS {column_name} {column_type}"
@@ -97,8 +103,32 @@ def get_analysis_date(config, requested_date=None):
     return rows[0]["analysis_date"]
 
 
+def _table_parts(table_id):
+    project_id, dataset_id, table_name = table_id.split(".")
+    return project_id, dataset_id, table_name
+
+
+def _available_columns(client, table_id):
+    project_id, dataset_id, table_name = _table_parts(table_id)
+    sql = f"""
+    SELECT column_name
+    FROM `{project_id}.{dataset_id}.INFORMATION_SCHEMA.COLUMNS`
+    WHERE table_name = @table_name
+    """
+    params = [bigquery.ScalarQueryParameter("table_name", "STRING", table_name)]
+    rows = client.query(sql, job_config=bigquery.QueryJobConfig(query_parameters=params)).result()
+    return {row["column_name"] for row in rows}
+
+
+def _select_expr(column_name, available, fallback_type="FLOAT64"):
+    if column_name in available:
+        return column_name
+    return f"CAST(NULL AS {fallback_type}) AS {column_name}"
+
+
 def fetch_daily_signals(config, analysis_date, tickers=None, analysis_scope="candidates", max_tickers=None):
     client = bigquery.Client(project=config["project_id"])
+    available = _available_columns(client, config["signal_table"])
     params = [bigquery.ScalarQueryParameter("analysis_date", "DATE", analysis_date)]
     ticker_filter = ""
     if tickers:
@@ -124,6 +154,25 @@ def fetch_daily_signals(config, analysis_date, tickers=None, analysis_scope="can
       last_close,
       classification,
       financial_data_status,
+      {_select_expr("asset_type", available, "STRING")},
+      {_select_expr("sector", available, "STRING")},
+      {_select_expr("industry", available, "STRING")},
+      {_select_expr("peer_group", available, "STRING")},
+      {_select_expr("peer_count", available, "INT64")},
+      {_select_expr("peer_median_pe", available)},
+      {_select_expr("peer_median_forward_pe", available)},
+      {_select_expr("peer_median_price_to_sales", available)},
+      {_select_expr("peer_median_ev_to_ebitda", available)},
+      {_select_expr("peer_median_roe", available)},
+      {_select_expr("peer_median_profit_margin", available)},
+      {_select_expr("pe_percentile", available)},
+      {_select_expr("forward_pe_percentile", available)},
+      {_select_expr("price_to_sales_percentile", available)},
+      {_select_expr("ev_to_ebitda_percentile", available)},
+      {_select_expr("roe_percentile", available)},
+      {_select_expr("profit_margin_percentile", available)},
+      {_select_expr("peer_relative_score", available)},
+      {_select_expr("peer_valuation_label", available, "STRING")},
       valuation_score,
       value_component,
       quality_score,
@@ -241,6 +290,9 @@ def merge_analysis(config, row):
         @ai_risks AS ai_risks,
         @ai_opportunity AS ai_opportunity,
         @ai_decision_support AS ai_decision_support,
+        @ai_valuation_opinion AS ai_valuation_opinion,
+        @ai_signal_agreement AS ai_signal_agreement,
+        @ai_final_alert_action AS ai_final_alert_action,
         @external_sources_json AS external_sources_json,
         @external_context_summary AS external_context_summary,
         @data_discrepancies AS data_discrepancies,
@@ -273,6 +325,9 @@ def merge_analysis(config, row):
       ai_risks = S.ai_risks,
       ai_opportunity = S.ai_opportunity,
       ai_decision_support = S.ai_decision_support,
+      ai_valuation_opinion = S.ai_valuation_opinion,
+      ai_signal_agreement = S.ai_signal_agreement,
+      ai_final_alert_action = S.ai_final_alert_action,
       external_sources_json = S.external_sources_json,
       external_context_summary = S.external_context_summary,
       data_discrepancies = S.data_discrepancies,
@@ -298,6 +353,9 @@ def merge_analysis(config, row):
       ai_risks,
       ai_opportunity,
       ai_decision_support,
+      ai_valuation_opinion,
+      ai_signal_agreement,
+      ai_final_alert_action,
       external_sources_json,
       external_context_summary,
       data_discrepancies,
@@ -330,6 +388,9 @@ def merge_analysis(config, row):
       S.ai_risks,
       S.ai_opportunity,
       S.ai_decision_support,
+      S.ai_valuation_opinion,
+      S.ai_signal_agreement,
+      S.ai_final_alert_action,
       S.external_sources_json,
       S.external_context_summary,
       S.data_discrepancies,
@@ -371,6 +432,9 @@ def merge_analysis(config, row):
         bigquery.ScalarQueryParameter("ai_risks", "STRING", row.get("ai_risks")),
         bigquery.ScalarQueryParameter("ai_opportunity", "STRING", row.get("ai_opportunity")),
         bigquery.ScalarQueryParameter("ai_decision_support", "STRING", row.get("ai_decision_support")),
+        bigquery.ScalarQueryParameter("ai_valuation_opinion", "STRING", row.get("ai_valuation_opinion")),
+        bigquery.ScalarQueryParameter("ai_signal_agreement", "STRING", row.get("ai_signal_agreement")),
+        bigquery.ScalarQueryParameter("ai_final_alert_action", "STRING", row.get("ai_final_alert_action")),
         bigquery.ScalarQueryParameter("external_sources_json", "STRING", row.get("external_sources_json")),
         bigquery.ScalarQueryParameter("external_context_summary", "STRING", row.get("external_context_summary")),
         bigquery.ScalarQueryParameter("data_discrepancies", "STRING", row.get("data_discrepancies")),

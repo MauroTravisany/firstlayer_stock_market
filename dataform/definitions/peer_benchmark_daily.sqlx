@@ -1,0 +1,163 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "peer_benchmark_daily",
+  description: "Benchmark relativo de ratios de cada accion contra su grupo de peers.",
+  tags: ["portfolio", "peers", "valuation"],
+  bigquery: {
+    partitionBy: "analysis_date",
+    clusterBy: ["peer_group", "ticker"]
+  }
+}
+
+WITH analysis_dates AS (
+  SELECT DISTINCT fecha AS analysis_date
+  FROM `stocks-437902.acciones_dataset.valores_acciones_recientes`
+),
+profile AS (
+  SELECT *
+  FROM ${ref("asset_profile")}
+),
+members AS (
+  SELECT ticker, ticker AS benchmark_ticker, peer_group, TRUE AS is_portfolio_ticker
+  FROM profile
+  WHERE asset_type = "STOCK"
+  UNION DISTINCT
+  SELECT p.ticker, u.peer_ticker AS benchmark_ticker, p.peer_group, FALSE AS is_portfolio_ticker
+  FROM profile p
+  JOIN ${ref("peer_universe")} u
+    ON u.ticker = p.ticker
+),
+ratio_snapshots AS (
+  SELECT * EXCEPT(rn)
+  FROM (
+    SELECT
+      d.analysis_date,
+      m.ticker,
+      m.benchmark_ticker,
+      m.peer_group,
+      m.is_portfolio_ticker,
+      r.snapshot_date,
+      r.pe_ratio,
+      r.forward_pe,
+      r.price_to_sales,
+      r.ev_to_ebitda,
+      r.roe,
+      r.profit_margin,
+      r.operating_margin,
+      r.debt_to_equity,
+      r.current_ratio,
+      ROW_NUMBER() OVER (
+        PARTITION BY d.analysis_date, m.ticker, m.benchmark_ticker
+        ORDER BY r.snapshot_date DESC, r.loaded_at DESC
+      ) AS rn
+    FROM analysis_dates d
+    JOIN members m ON TRUE
+    LEFT JOIN `stocks-437902.acciones_dataset.financial_ratios_snapshot` r
+      ON r.ticker = m.benchmark_ticker
+     AND r.snapshot_date <= d.analysis_date
+  )
+  WHERE rn = 1
+),
+scored_members AS (
+  SELECT
+    *,
+    PERCENT_RANK() OVER (PARTITION BY analysis_date, ticker, peer_group ORDER BY pe_ratio) AS pe_percentile,
+    PERCENT_RANK() OVER (PARTITION BY analysis_date, ticker, peer_group ORDER BY forward_pe) AS forward_pe_percentile,
+    PERCENT_RANK() OVER (PARTITION BY analysis_date, ticker, peer_group ORDER BY price_to_sales) AS price_to_sales_percentile,
+    PERCENT_RANK() OVER (PARTITION BY analysis_date, ticker, peer_group ORDER BY ev_to_ebitda) AS ev_to_ebitda_percentile,
+    PERCENT_RANK() OVER (PARTITION BY analysis_date, ticker, peer_group ORDER BY roe) AS roe_percentile,
+    PERCENT_RANK() OVER (PARTITION BY analysis_date, ticker, peer_group ORDER BY profit_margin) AS profit_margin_percentile,
+    PERCENT_RANK() OVER (PARTITION BY analysis_date, ticker, peer_group ORDER BY debt_to_equity) AS debt_to_equity_percentile
+  FROM ratio_snapshots
+  WHERE pe_ratio IS NOT NULL
+     OR forward_pe IS NOT NULL
+     OR price_to_sales IS NOT NULL
+     OR ev_to_ebitda IS NOT NULL
+),
+peer_stats AS (
+  SELECT
+    analysis_date,
+    ticker,
+    peer_group,
+    COUNTIF(benchmark_ticker != ticker AND (pe_ratio IS NOT NULL OR forward_pe IS NOT NULL OR price_to_sales IS NOT NULL OR ev_to_ebitda IS NOT NULL)) AS peer_count,
+    APPROX_QUANTILES(IF(benchmark_ticker != ticker, pe_ratio, NULL), 100)[OFFSET(50)] AS peer_median_pe,
+    APPROX_QUANTILES(IF(benchmark_ticker != ticker, forward_pe, NULL), 100)[OFFSET(50)] AS peer_median_forward_pe,
+    APPROX_QUANTILES(IF(benchmark_ticker != ticker, price_to_sales, NULL), 100)[OFFSET(50)] AS peer_median_price_to_sales,
+    APPROX_QUANTILES(IF(benchmark_ticker != ticker, ev_to_ebitda, NULL), 100)[OFFSET(50)] AS peer_median_ev_to_ebitda,
+    APPROX_QUANTILES(IF(benchmark_ticker != ticker, roe, NULL), 100)[OFFSET(50)] AS peer_median_roe,
+    APPROX_QUANTILES(IF(benchmark_ticker != ticker, profit_margin, NULL), 100)[OFFSET(50)] AS peer_median_profit_margin,
+    APPROX_QUANTILES(IF(benchmark_ticker != ticker, debt_to_equity, NULL), 100)[OFFSET(50)] AS peer_median_debt_to_equity
+  FROM scored_members
+  GROUP BY analysis_date, ticker, peer_group
+),
+portfolio_member AS (
+  SELECT
+    analysis_date,
+    ticker,
+    peer_group,
+    pe_percentile,
+    forward_pe_percentile,
+    price_to_sales_percentile,
+    ev_to_ebitda_percentile,
+    roe_percentile,
+    profit_margin_percentile,
+    debt_to_equity_percentile
+  FROM scored_members
+  WHERE benchmark_ticker = ticker
+)
+
+SELECT
+  s.*,
+  p.pe_percentile,
+  p.forward_pe_percentile,
+  p.price_to_sales_percentile,
+  p.ev_to_ebitda_percentile,
+  p.roe_percentile,
+  p.profit_margin_percentile,
+  p.debt_to_equity_percentile,
+  ROUND(
+    CASE WHEN s.peer_count < 3 THEN 0
+         WHEN p.forward_pe_percentile IS NULL THEN 0
+         WHEN p.forward_pe_percentile <= 0.35 THEN 1
+         WHEN p.forward_pe_percentile >= 0.75 THEN -1
+         ELSE 0 END +
+    CASE WHEN s.peer_count < 3 THEN 0
+         WHEN p.price_to_sales_percentile IS NULL THEN 0
+         WHEN p.price_to_sales_percentile <= 0.35 THEN 1
+         WHEN p.price_to_sales_percentile >= 0.75 THEN -1
+         ELSE 0 END +
+    CASE WHEN s.peer_count < 3 THEN 0
+         WHEN p.ev_to_ebitda_percentile IS NULL THEN 0
+         WHEN p.ev_to_ebitda_percentile <= 0.35 THEN 1
+         WHEN p.ev_to_ebitda_percentile >= 0.75 THEN -1
+         ELSE 0 END +
+    CASE WHEN s.peer_count < 3 THEN 0
+         WHEN p.roe_percentile IS NULL THEN 0
+         WHEN p.roe_percentile >= 0.65 THEN 0.75
+         WHEN p.roe_percentile <= 0.25 THEN -0.75
+         ELSE 0 END +
+    CASE WHEN s.peer_count < 3 THEN 0
+         WHEN p.profit_margin_percentile IS NULL THEN 0
+         WHEN p.profit_margin_percentile >= 0.65 THEN 0.75
+         WHEN p.profit_margin_percentile <= 0.25 THEN -0.75
+         ELSE 0 END,
+    2
+  ) AS peer_relative_score,
+  CASE
+    WHEN s.peer_count < 3 THEN "PEERS_INSUFICIENTES"
+    WHEN p.forward_pe_percentile <= 0.35
+      AND p.price_to_sales_percentile <= 0.50
+      AND (p.roe_percentile IS NULL OR p.roe_percentile >= 0.50)
+      THEN "BARATA_VS_PEERS"
+    WHEN p.forward_pe_percentile >= 0.75
+      OR p.price_to_sales_percentile >= 0.75
+      OR p.ev_to_ebitda_percentile >= 0.75
+      THEN "CARA_VS_PEERS"
+    ELSE "EN_LINEA_CON_PEERS"
+  END AS peer_valuation_label
+FROM peer_stats s
+LEFT JOIN portfolio_member p
+  ON p.analysis_date = s.analysis_date
+ AND p.ticker = s.ticker
+ AND p.peer_group = s.peer_group

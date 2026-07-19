@@ -1,0 +1,37 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "asset_profile",
+  description: "Perfil manual de activos para separar acciones, ETFs y grupos comparables.",
+  tags: ["portfolio", "profile", "peers"]
+}
+
+SELECT *
+FROM UNNEST([
+  STRUCT("AAPL" AS ticker, "STOCK" AS asset_type, "Technology" AS sector, "Consumer Electronics" AS industry, "mega_cap_technology" AS peer_group),
+  STRUCT("AMZN", "STOCK", "Consumer Cyclical", "Internet Retail", "ecommerce_cloud"),
+  STRUCT("ASML", "STOCK", "Technology", "Semiconductor Equipment", "semiconductor_equipment"),
+  STRUCT("BBH", "ETF", "Healthcare", "Biotech ETF", "biotech_etf"),
+  STRUCT("BCH", "STOCK", "Financial Services", "Banking", "latin_america_banks"),
+  STRUCT("COIN", "STOCK", "Financial Services", "Crypto Exchange", "crypto_financials"),
+  STRUCT("DGRO", "ETF", "Diversified", "Dividend ETF", "dividend_etf"),
+  STRUCT("GOOG", "STOCK", "Communication Services", "Internet Content", "mega_cap_technology"),
+  STRUCT("GOOGL", "STOCK", "Communication Services", "Internet Content", "mega_cap_technology"),
+  STRUCT("GRID", "ETF", "Industrials", "Infrastructure ETF", "infrastructure_etf"),
+  STRUCT("INTC", "STOCK", "Technology", "Semiconductors", "semiconductors"),
+  STRUCT("KO", "STOCK", "Consumer Defensive", "Beverages Non-Alcoholic", "beverages_defensive"),
+  STRUCT("MCD", "STOCK", "Consumer Cyclical", "Restaurants", "restaurants"),
+  STRUCT("MELI", "STOCK", "Consumer Cyclical", "Ecommerce Marketplace", "ecommerce_marketplace"),
+  STRUCT("META", "STOCK", "Communication Services", "Internet Content", "mega_cap_technology"),
+  STRUCT("MSFT", "STOCK", "Technology", "Software Infrastructure", "mega_cap_technology"),
+  STRUCT("MSTR", "STOCK", "Technology", "Bitcoin Treasury", "crypto_financials"),
+  STRUCT("NFLX", "STOCK", "Communication Services", "Streaming", "streaming_media"),
+  STRUCT("NKE", "STOCK", "Consumer Cyclical", "Footwear Apparel", "apparel_footwear"),
+  STRUCT("NVDA", "STOCK", "Technology", "Semiconductors", "semiconductors"),
+  STRUCT("PFE", "STOCK", "Healthcare", "Pharmaceuticals", "large_pharma"),
+  STRUCT("SBUX", "STOCK", "Consumer Cyclical", "Restaurants", "restaurants"),
+  STRUCT("TSLA", "STOCK", "Consumer Cyclical", "Auto Manufacturers", "electric_vehicles"),
+  STRUCT("TTWO", "STOCK", "Communication Services", "Gaming", "gaming_interactive"),
+  STRUCT("URA", "ETF", "Energy", "Uranium ETF", "uranium_etf"),
+  STRUCT("XLE", "ETF", "Energy", "Energy ETF", "energy_etf")
+])

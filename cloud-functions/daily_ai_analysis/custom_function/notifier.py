@@ -38,6 +38,12 @@ def clear_opportunity_rows(analysis_rows, min_final_score=DEFAULT_MIN_FINAL_SCOR
             continue
         if confidence_score is None or float(confidence_score) < min_confidence:
             continue
+        if row.get("ai_final_alert_action") and row.get("ai_final_alert_action") != "ENVIAR_COMPRA":
+            continue
+        if row.get("ai_signal_agreement") == "CONTRADICE_MODELO":
+            continue
+        if row.get("ai_valuation_opinion") == "CARA":
+            continue
         if not _passes_buy_valuation_guardrails(row):
             continue
         rows.append(row)
@@ -54,6 +60,8 @@ def clear_sell_rows(analysis_rows, min_sell_score=DEFAULT_MIN_SELL_SCORE, min_co
         if sell_score is None or float(sell_score) < min_sell_score:
             continue
         if confidence_score is None or float(confidence_score) < min_confidence:
+            continue
+        if row.get("ai_final_alert_action") and row.get("ai_final_alert_action") != "ENVIAR_VENTA":
             continue
         rows.append(row)
     return sorted(rows, key=lambda item: item.get("sell_score") or 0, reverse=True)
@@ -104,6 +112,7 @@ def _metric_line(row):
         ("Fwd PE", row.get("forward_pe")),
         ("P/S", row.get("price_to_sales")),
         ("EV/EBITDA", row.get("ev_to_ebitda")),
+        ("Peer score", row.get("peer_relative_score")),
         ("ROE", row.get("roe")),
         ("Margen", row.get("profit_margin")),
     ]

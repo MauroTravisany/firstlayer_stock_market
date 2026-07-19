@@ -1,0 +1,33 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "peer_universe",
+  description: "Universo de peers para benchmarking relativo por industria.",
+  tags: ["portfolio", "peers"]
+}
+
+SELECT DISTINCT *
+FROM UNNEST([
+  STRUCT("AAPL" AS ticker, "MSFT" AS peer_ticker, "mega_cap_technology" AS peer_group),
+  STRUCT("AAPL", "GOOGL", "mega_cap_technology"), STRUCT("AAPL", "META", "mega_cap_technology"), STRUCT("AAPL", "AMZN", "mega_cap_technology"),
+  STRUCT("GOOG", "GOOGL", "mega_cap_technology"), STRUCT("GOOG", "META", "mega_cap_technology"), STRUCT("GOOG", "MSFT", "mega_cap_technology"), STRUCT("GOOG", "AAPL", "mega_cap_technology"),
+  STRUCT("GOOGL", "GOOG", "mega_cap_technology"), STRUCT("GOOGL", "META", "mega_cap_technology"), STRUCT("GOOGL", "MSFT", "mega_cap_technology"), STRUCT("GOOGL", "AAPL", "mega_cap_technology"),
+  STRUCT("META", "GOOG", "mega_cap_technology"), STRUCT("META", "GOOGL", "mega_cap_technology"), STRUCT("META", "MSFT", "mega_cap_technology"), STRUCT("META", "AAPL", "mega_cap_technology"),
+  STRUCT("MSFT", "AAPL", "mega_cap_technology"), STRUCT("MSFT", "GOOGL", "mega_cap_technology"), STRUCT("MSFT", "META", "mega_cap_technology"), STRUCT("MSFT", "ORCL", "mega_cap_technology"),
+  STRUCT("AMZN", "MELI", "ecommerce_cloud"), STRUCT("AMZN", "BABA", "ecommerce_cloud"), STRUCT("AMZN", "SHOP", "ecommerce_cloud"), STRUCT("AMZN", "EBAY", "ecommerce_cloud"),
+  STRUCT("MELI", "AMZN", "ecommerce_marketplace"), STRUCT("MELI", "BABA", "ecommerce_marketplace"), STRUCT("MELI", "SE", "ecommerce_marketplace"), STRUCT("MELI", "SHOP", "ecommerce_marketplace"),
+  STRUCT("NVDA", "AMD", "semiconductors"), STRUCT("NVDA", "AVGO", "semiconductors"), STRUCT("NVDA", "TSM", "semiconductors"), STRUCT("NVDA", "INTC", "semiconductors"),
+  STRUCT("INTC", "AMD", "semiconductors"), STRUCT("INTC", "NVDA", "semiconductors"), STRUCT("INTC", "QCOM", "semiconductors"), STRUCT("INTC", "MU", "semiconductors"),
+  STRUCT("ASML", "AMAT", "semiconductor_equipment"), STRUCT("ASML", "LRCX", "semiconductor_equipment"), STRUCT("ASML", "KLAC", "semiconductor_equipment"), STRUCT("ASML", "TER", "semiconductor_equipment"),
+  STRUCT("KO", "PEP", "beverages_defensive"), STRUCT("KO", "KDP", "beverages_defensive"), STRUCT("KO", "MNST", "beverages_defensive"), STRUCT("KO", "MDLZ", "beverages_defensive"),
+  STRUCT("MCD", "YUM", "restaurants"), STRUCT("MCD", "QSR", "restaurants"), STRUCT("MCD", "SBUX", "restaurants"), STRUCT("MCD", "CMG", "restaurants"),
+  STRUCT("SBUX", "MCD", "restaurants"), STRUCT("SBUX", "YUM", "restaurants"), STRUCT("SBUX", "QSR", "restaurants"), STRUCT("SBUX", "CMG", "restaurants"),
+  STRUCT("NKE", "ADDYY", "apparel_footwear"), STRUCT("NKE", "LULU", "apparel_footwear"), STRUCT("NKE", "DECK", "apparel_footwear"), STRUCT("NKE", "UAA", "apparel_footwear"),
+  STRUCT("PFE", "JNJ", "large_pharma"), STRUCT("PFE", "MRK", "large_pharma"), STRUCT("PFE", "BMY", "large_pharma"), STRUCT("PFE", "LLY", "large_pharma"),
+  STRUCT("NFLX", "DIS", "streaming_media"), STRUCT("NFLX", "PARA", "streaming_media"), STRUCT("NFLX", "WBD", "streaming_media"), STRUCT("NFLX", "ROKU", "streaming_media"),
+  STRUCT("TTWO", "EA", "gaming_interactive"), STRUCT("TTWO", "NTDOY", "gaming_interactive"), STRUCT("TTWO", "RBLX", "gaming_interactive"), STRUCT("TTWO", "SONY", "gaming_interactive"),
+  STRUCT("TSLA", "RIVN", "electric_vehicles"), STRUCT("TSLA", "GM", "electric_vehicles"), STRUCT("TSLA", "F", "electric_vehicles"), STRUCT("TSLA", "BYDDY", "electric_vehicles"),
+  STRUCT("COIN", "HOOD", "crypto_financials"), STRUCT("COIN", "MSTR", "crypto_financials"), STRUCT("COIN", "IBKR", "crypto_financials"), STRUCT("COIN", "CME", "crypto_financials"),
+  STRUCT("MSTR", "COIN", "crypto_financials"), STRUCT("MSTR", "HOOD", "crypto_financials"), STRUCT("MSTR", "IBKR", "crypto_financials"), STRUCT("MSTR", "CME", "crypto_financials"),
+  STRUCT("BCH", "BSAC", "latin_america_banks"), STRUCT("BCH", "ITUB", "latin_america_banks"), STRUCT("BCH", "BBD", "latin_america_banks"), STRUCT("BCH", "NU", "latin_america_banks")
+])

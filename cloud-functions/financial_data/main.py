@@ -41,9 +41,9 @@ def resolve_tickers(request_json, config):
     if "tickers" in request_json:
         return parse_tickers(request_json.get("tickers"))
 
-    from custom_function.portfolio_operations import fetch_enabled_tickers
+    from custom_function.portfolio_operations import fetch_enabled_tickers_with_peers
 
-    tickers = fetch_enabled_tickers(config["project_id"], config["portfolio_table"])
+    tickers = fetch_enabled_tickers_with_peers(config["project_id"], config["portfolio_table"], config["peer_universe_table"])
     if tickers:
         return tickers
 
