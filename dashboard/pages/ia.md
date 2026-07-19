@@ -2,16 +2,6 @@
 title: Analisis IA
 ---
 
-```sql ticker_options
-select
-  ticker,
-  concat(ticker, ' | ', coalesce(signal, 'SIN_SIGNAL'), ' | ', coalesce(sell_signal, 'SIN_VENTA')) as label
-from stocks.ai_analysis_latest
-order by
-  case when signal = 'COMPRAR_OBSERVAR' then 1 when sell_signal = 'VENTA_CLARA' then 2 else 3 end,
-  ticker
-```
-
 ```sql selected_ai
 select
   analysis_date,
@@ -35,7 +25,7 @@ select
   data_discrepancies,
   external_context_summary
 from stocks.ai_analysis_latest
-where ticker = coalesce(nullif('${inputs.empresa.value}', ''), (select ticker from ticker_options limit 1))
+where ticker = coalesce(nullif('${inputs.empresa.value}', ''), 'AAPL')
 limit 1
 ```
 
@@ -95,7 +85,34 @@ Este bloque resume el analisis global generado por IA para la fecha mas reciente
 
 Selecciona una empresa para leer la tesis completa sin navegar una tabla ancha. Interpreta `confidence_score` como confianza de la IA sobre la consistencia de datos internos, fuentes externas y senal cuantitativa.
 
-<Dropdown name=empresa data={ticker_options} value=ticker label=label title="Empresa"/>
+<Dropdown name=empresa title="Empresa">
+  <DropdownOption value="AAPL"/>
+  <DropdownOption value="AMZN"/>
+  <DropdownOption value="ASML"/>
+  <DropdownOption value="BBH"/>
+  <DropdownOption value="BCH"/>
+  <DropdownOption value="COIN"/>
+  <DropdownOption value="DGRO"/>
+  <DropdownOption value="GOOG"/>
+  <DropdownOption value="GOOGL"/>
+  <DropdownOption value="INTC"/>
+  <DropdownOption value="KO"/>
+  <DropdownOption value="MCD"/>
+  <DropdownOption value="MELI"/>
+  <DropdownOption value="META"/>
+  <DropdownOption value="MSFT"/>
+  <DropdownOption value="MSTR"/>
+  <DropdownOption value="NFLX"/>
+  <DropdownOption value="NKE"/>
+  <DropdownOption value="NVDA"/>
+  <DropdownOption value="PFE"/>
+  <DropdownOption value="SBUX"/>
+  <DropdownOption value="TSLA"/>
+  <DropdownOption value="TTWO"/>
+  <DropdownOption value="URA"/>
+  <DropdownOption value="XLE"/>
+  <DropdownOption value="GRID"/>
+</Dropdown>
 
 <Grid cols=4>
   <Value data={selected_ai} column=ticker title="Ticker"/>
