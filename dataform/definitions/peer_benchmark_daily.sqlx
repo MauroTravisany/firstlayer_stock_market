@@ -40,6 +40,7 @@ ratio_snapshots AS (
       r.snapshot_date,
       r.pe_ratio,
       r.forward_pe,
+      r.price_to_book,
       r.price_to_sales,
       r.ev_to_ebitda,
       r.roe,
@@ -64,6 +65,7 @@ scored_members AS (
     *,
     PERCENT_RANK() OVER (PARTITION BY analysis_date, ticker, peer_group ORDER BY pe_ratio) AS pe_percentile,
     PERCENT_RANK() OVER (PARTITION BY analysis_date, ticker, peer_group ORDER BY forward_pe) AS forward_pe_percentile,
+    PERCENT_RANK() OVER (PARTITION BY analysis_date, ticker, peer_group ORDER BY price_to_book) AS price_to_book_percentile,
     PERCENT_RANK() OVER (PARTITION BY analysis_date, ticker, peer_group ORDER BY price_to_sales) AS price_to_sales_percentile,
     PERCENT_RANK() OVER (PARTITION BY analysis_date, ticker, peer_group ORDER BY ev_to_ebitda) AS ev_to_ebitda_percentile,
     PERCENT_RANK() OVER (PARTITION BY analysis_date, ticker, peer_group ORDER BY roe) AS roe_percentile,
@@ -80,9 +82,10 @@ peer_stats AS (
     analysis_date,
     ticker,
     peer_group,
-    COUNTIF(benchmark_ticker != ticker AND (pe_ratio IS NOT NULL OR forward_pe IS NOT NULL OR price_to_sales IS NOT NULL OR ev_to_ebitda IS NOT NULL)) AS peer_count,
+    COUNTIF(benchmark_ticker != ticker AND (pe_ratio IS NOT NULL OR forward_pe IS NOT NULL OR price_to_book IS NOT NULL OR price_to_sales IS NOT NULL OR ev_to_ebitda IS NOT NULL)) AS peer_count,
     APPROX_QUANTILES(IF(benchmark_ticker != ticker, pe_ratio, NULL), 100)[OFFSET(50)] AS peer_median_pe,
     APPROX_QUANTILES(IF(benchmark_ticker != ticker, forward_pe, NULL), 100)[OFFSET(50)] AS peer_median_forward_pe,
+    APPROX_QUANTILES(IF(benchmark_ticker != ticker, price_to_book, NULL), 100)[OFFSET(50)] AS peer_median_price_to_book,
     APPROX_QUANTILES(IF(benchmark_ticker != ticker, price_to_sales, NULL), 100)[OFFSET(50)] AS peer_median_price_to_sales,
     APPROX_QUANTILES(IF(benchmark_ticker != ticker, ev_to_ebitda, NULL), 100)[OFFSET(50)] AS peer_median_ev_to_ebitda,
     APPROX_QUANTILES(IF(benchmark_ticker != ticker, roe, NULL), 100)[OFFSET(50)] AS peer_median_roe,
@@ -98,6 +101,7 @@ portfolio_member AS (
     peer_group,
     pe_percentile,
     forward_pe_percentile,
+    price_to_book_percentile,
     price_to_sales_percentile,
     ev_to_ebitda_percentile,
     roe_percentile,
@@ -111,6 +115,7 @@ SELECT
   s.*,
   p.pe_percentile,
   p.forward_pe_percentile,
+  p.price_to_book_percentile,
   p.price_to_sales_percentile,
   p.ev_to_ebitda_percentile,
   p.roe_percentile,
@@ -121,6 +126,11 @@ SELECT
          WHEN p.forward_pe_percentile IS NULL THEN 0
          WHEN p.forward_pe_percentile <= 0.35 THEN 1
          WHEN p.forward_pe_percentile >= 0.75 THEN -1
+         ELSE 0 END +
+    CASE WHEN s.peer_count < 3 THEN 0
+         WHEN p.price_to_book_percentile IS NULL THEN 0
+         WHEN p.price_to_book_percentile <= 0.35 THEN 1
+         WHEN p.price_to_book_percentile >= 0.75 THEN -1
          ELSE 0 END +
     CASE WHEN s.peer_count < 3 THEN 0
          WHEN p.price_to_sales_percentile IS NULL THEN 0
@@ -147,10 +157,12 @@ SELECT
   CASE
     WHEN s.peer_count < 3 THEN "PEERS_INSUFICIENTES"
     WHEN p.forward_pe_percentile <= 0.35
-      AND p.price_to_sales_percentile <= 0.50
+      AND (p.price_to_sales_percentile IS NULL OR p.price_to_sales_percentile <= 0.50)
+      AND (p.price_to_book_percentile IS NULL OR p.price_to_book_percentile <= 0.60)
       AND (p.roe_percentile IS NULL OR p.roe_percentile >= 0.50)
       THEN "BARATA_VS_PEERS"
     WHEN p.forward_pe_percentile >= 0.75
+      OR p.price_to_book_percentile >= 0.75
       OR p.price_to_sales_percentile >= 0.75
       OR p.ev_to_ebitda_percentile >= 0.75
       THEN "CARA_VS_PEERS"

@@ -36,6 +36,8 @@ SELECT
   margin_of_safety_pct,
   suggested_buy_price,
   suggested_sell_price,
+  buy_multiple_guardrail_pass,
+  buy_guardrail_reason,
   return_1d,
   return_5d,
   return_20d,

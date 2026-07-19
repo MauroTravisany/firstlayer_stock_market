@@ -263,6 +263,7 @@ def analyze_ticker(config, signal_row):
                     "Evalua los ratios disponibles segun valuation_model y primary_metric; no apliques la misma lectura a bancos, software, semiconductores, consumo defensivo, restaurantes, crypto-financials o ETFs. "
                     "Usa PE, forward PE, price to sales, price to book, EV/EBITDA, ROE, margenes, deuda, liquidez, FCF, momentum y volatilidad con la importancia que corresponda a la industria. "
                     "Evalua precio justo, precio objetivo conservador y margen de seguridad usando los campos internos fair_value_estimate, conservative_fair_value, margin_of_safety_pct, suggested_buy_price y suggested_sell_price. "
+                    "Usa adaptive_forward_pe_limit, adaptive_price_to_sales_limit, adaptive_ev_to_ebitda_limit, adaptive_price_to_book_limit y buy_multiple_guardrail_pass para saber si los multiplos pasan los limites dinamicos del modelo/peers. "
                     "Incluye analisis tecnico semanal/mensual como confirmacion secundaria usando return_20d, return_60d, return_120d, sma_20, sma_60, sma_120, high_252d, low_252d y technical_trend. "
                     "Explica el impacto de datos faltantes usando missing_data_impact y data_quality_score. "
                     "No confirmes una oportunidad clara solo porque signal lo diga; valida que los multiplos sean razonables y que no exista una contradiccion de valoracion. "

@@ -69,12 +69,14 @@ base AS (
     pb.peer_count,
     pb.peer_median_pe,
     pb.peer_median_forward_pe,
+    pb.peer_median_price_to_book,
     pb.peer_median_price_to_sales,
     pb.peer_median_ev_to_ebitda,
     pb.peer_median_roe,
     pb.peer_median_profit_margin,
     pb.pe_percentile,
     pb.forward_pe_percentile,
+    pb.price_to_book_percentile,
     pb.price_to_sales_percentile,
     pb.ev_to_ebitda_percentile,
     pb.roe_percentile,
@@ -189,6 +191,39 @@ fair_value AS (
     ) AS margin_of_safety_pct
   FROM scored
 ),
+adaptive_guardrails AS (
+  SELECT
+    *,
+    ROUND(LEAST(forward_pe_expensive, GREATEST(forward_pe_fair, COALESCE(peer_median_forward_pe * 1.15, forward_pe_fair))), 2) AS adaptive_forward_pe_limit,
+    ROUND(LEAST(pe_expensive, GREATEST(pe_fair, COALESCE(peer_median_pe * 1.15, pe_fair))), 2) AS adaptive_pe_limit,
+    ROUND(LEAST(ps_expensive, GREATEST(ps_fair, COALESCE(peer_median_price_to_sales * 1.15, ps_fair))), 2) AS adaptive_price_to_sales_limit,
+    ROUND(LEAST(ev_ebitda_expensive, GREATEST(ev_ebitda_fair, COALESCE(peer_median_ev_to_ebitda * 1.15, ev_ebitda_fair))), 2) AS adaptive_ev_to_ebitda_limit,
+    ROUND(LEAST(pb_expensive, GREATEST(pb_fair, COALESCE(peer_median_price_to_book * 1.15, pb_fair))), 2) AS adaptive_price_to_book_limit,
+    CASE
+      WHEN COALESCE(asset_type, "STOCK") != "STOCK" THEN FALSE
+      WHEN financial_data_status = "SIN_SNAPSHOT_FINANCIERO" THEN FALSE
+      WHEN valuation_model = "BANK_ROE_BOOK_VALUE" THEN
+        (price_to_book IS NULL OR price_to_book <= LEAST(pb_expensive, GREATEST(pb_fair, COALESCE(peer_median_price_to_book * 1.15, pb_fair))))
+        AND (roe IS NULL OR roe >= roe_good * 0.80)
+      WHEN primary_metric = "price_to_sales" THEN
+        (price_to_sales IS NULL OR price_to_sales <= LEAST(ps_expensive, GREATEST(ps_fair, COALESCE(peer_median_price_to_sales * 1.15, ps_fair))))
+        AND (forward_pe IS NULL OR forward_pe <= LEAST(forward_pe_expensive, GREATEST(forward_pe_fair, COALESCE(peer_median_forward_pe * 1.15, forward_pe_fair))))
+      WHEN primary_metric = "ev_to_ebitda" THEN
+        (ev_to_ebitda IS NULL OR ev_to_ebitda <= LEAST(ev_ebitda_expensive, GREATEST(ev_ebitda_fair, COALESCE(peer_median_ev_to_ebitda * 1.15, ev_ebitda_fair))))
+        AND (price_to_sales IS NULL OR price_to_sales <= LEAST(ps_expensive, GREATEST(ps_fair, COALESCE(peer_median_price_to_sales * 1.15, ps_fair))))
+      ELSE
+        (forward_pe IS NULL OR forward_pe <= LEAST(forward_pe_expensive, GREATEST(forward_pe_fair, COALESCE(peer_median_forward_pe * 1.15, forward_pe_fair))))
+        AND (price_to_sales IS NULL OR price_to_sales <= LEAST(ps_expensive, GREATEST(ps_fair, COALESCE(peer_median_price_to_sales * 1.15, ps_fair))))
+        AND (ev_to_ebitda IS NULL OR ev_to_ebitda <= LEAST(ev_ebitda_expensive, GREATEST(ev_ebitda_fair, COALESCE(peer_median_ev_to_ebitda * 1.15, ev_ebitda_fair))))
+    END AS buy_multiple_guardrail_pass,
+    CONCAT(
+      "lim_fpe=", COALESCE(CAST(ROUND(LEAST(forward_pe_expensive, GREATEST(forward_pe_fair, COALESCE(peer_median_forward_pe * 1.15, forward_pe_fair))), 2) AS STRING), "NA"),
+      "; lim_ps=", COALESCE(CAST(ROUND(LEAST(ps_expensive, GREATEST(ps_fair, COALESCE(peer_median_price_to_sales * 1.15, ps_fair))), 2) AS STRING), "NA"),
+      "; lim_ev_ebitda=", COALESCE(CAST(ROUND(LEAST(ev_ebitda_expensive, GREATEST(ev_ebitda_fair, COALESCE(peer_median_ev_to_ebitda * 1.15, ev_ebitda_fair))), 2) AS STRING), "NA"),
+      "; lim_pb=", COALESCE(CAST(ROUND(LEAST(pb_expensive, GREATEST(pb_fair, COALESCE(peer_median_price_to_book * 1.15, pb_fair))), 2) AS STRING), "NA")
+    ) AS buy_guardrail_reason
+  FROM fair_value
+),
 final_scored AS (
   SELECT
     *,
@@ -203,7 +238,7 @@ final_scored AS (
       risk_score,
       2
     ) AS final_score
-  FROM fair_value
+  FROM adaptive_guardrails
 ),
 sell_scored AS (
   SELECT
@@ -214,10 +249,11 @@ sell_scored AS (
       CASE WHEN quality_score < 0 THEN 1.5 WHEN quality_score >= 3 THEN -1 ELSE 0 END +
       CASE WHEN momentum_score < -1 THEN 1 WHEN momentum_score > 1 THEN -0.5 ELSE 0 END +
       CASE WHEN risk_score <= -2 THEN 1.5 WHEN risk_score < 0 THEN 0.5 ELSE 0 END +
-      CASE WHEN pe_ratio IS NOT NULL AND pe_ratio > 40 THEN 1 ELSE 0 END +
-      CASE WHEN forward_pe IS NOT NULL AND forward_pe > 35 THEN 1 ELSE 0 END +
-      CASE WHEN price_to_sales IS NOT NULL AND price_to_sales > 10 THEN 1 ELSE 0 END +
-      CASE WHEN ev_to_ebitda IS NOT NULL AND ev_to_ebitda > 25 THEN 1 ELSE 0 END,
+      CASE WHEN pe_ratio IS NOT NULL AND pe_ratio > pe_expensive THEN 1 ELSE 0 END +
+      CASE WHEN forward_pe IS NOT NULL AND forward_pe > forward_pe_expensive THEN 1 ELSE 0 END +
+      CASE WHEN price_to_sales IS NOT NULL AND price_to_sales > ps_expensive THEN 1 ELSE 0 END +
+      CASE WHEN ev_to_ebitda IS NOT NULL AND ev_to_ebitda > ev_ebitda_expensive THEN 1 ELSE 0 END +
+      CASE WHEN valuation_model = "BANK_ROE_BOOK_VALUE" AND price_to_book IS NOT NULL AND price_to_book > pb_expensive THEN 1 ELSE 0 END,
       2
     ) AS sell_score,
     ROUND(
@@ -251,12 +287,14 @@ SELECT
   peer_count,
   peer_median_pe,
   peer_median_forward_pe,
+  peer_median_price_to_book,
   peer_median_price_to_sales,
   peer_median_ev_to_ebitda,
   peer_median_roe,
   peer_median_profit_margin,
   pe_percentile,
   forward_pe_percentile,
+  price_to_book_percentile,
   price_to_sales_percentile,
   ev_to_ebitda_percentile,
   roe_percentile,
@@ -293,6 +331,13 @@ SELECT
   margin_of_safety_pct,
   suggested_buy_price,
   suggested_sell_price,
+  adaptive_forward_pe_limit,
+  adaptive_pe_limit,
+  adaptive_price_to_sales_limit,
+  adaptive_ev_to_ebitda_limit,
+  adaptive_price_to_book_limit,
+  buy_multiple_guardrail_pass,
+  buy_guardrail_reason,
   return_1d,
   return_5d,
   return_20d,
@@ -326,8 +371,7 @@ SELECT
       AND final_score >= 6
       AND margin_of_safety_pct >= 0.08
       AND data_quality_score >= -1
-      AND (price_to_sales IS NULL OR price_to_sales <= 6)
-      AND (ev_to_ebitda IS NULL OR ev_to_ebitda <= 22)
+      AND buy_multiple_guardrail_pass
       THEN "COMPRAR_OBSERVAR"
     WHEN classification = "CARA" AND sell_score >= 7 THEN "VENDER_OBSERVAR"
     WHEN classification = "BARATA" AND quality_score < 0 THEN "TRAMPA_DE_VALOR"
@@ -340,6 +384,8 @@ SELECT
     "valor=", CAST(ROUND(value_component, 2) AS STRING),
     "; modelo=", COALESCE(valuation_model, "NA"),
     "; ratio_principal=", COALESCE(primary_metric, "NA"),
+    "; guardrail_compra=", CAST(buy_multiple_guardrail_pass AS STRING),
+    "; ", buy_guardrail_reason,
     "; peers=", COALESCE(peer_valuation_label, "SIN_PEERS"),
     "; score_peer=", COALESCE(CAST(ROUND(peer_relative_score, 2) AS STRING), "NA"),
     "; margen_seguridad=", COALESCE(CAST(ROUND(margin_of_safety_pct * 100, 1) AS STRING), "NA"), "%",
