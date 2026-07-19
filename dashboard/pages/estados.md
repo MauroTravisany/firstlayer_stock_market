@@ -70,16 +70,30 @@ limit 200
 
 # Estados
 
+<div style="border-left: 4px solid #7c3aed; background: #faf5ff; padding: 14px 16px; border-radius: 6px; margin: 12px 0 18px;">
+  Esta vista responde si una empresa cambio de estado y cuanto tiempo lleva ahi. Es clave para no reaccionar solo a una alerta diaria aislada.
+</div>
+
+## Distribucion actual
+
+El grafico muestra cuantos activos estan en cada estado final. Sirve para ver si el portafolio se esta inclinando hacia compra, espera, sobrevaloracion o riesgo.
+
 <BarChart data={status_counts} x=company_status y=empresas/>
 
 ## Estado Actual
+
+Tabla compacta para celular. `dias_estado` indica persistencia: una senal reciente requiere mas cautela que una senal estable por varios dias.
 
 <DataTable data={current_status_mobile} rows=30/>
 
 ## Estado detallado
 
+Tabla auditable del estado actual. Incluye senales, valoracion, riesgo, tendencia, impacto de datos faltantes y fechas de cambios relevantes.
+
 <DataTable data={current_status} rows=30/>
 
 ## Cambios Relevantes
+
+Historial de cambios de estado. Interpreta `cambio_precio_pct` y `cambio_margen_seguridad_pct` como la magnitud del movimiento que acompano el cambio.
 
 <DataTable data={recent_changes} rows=30/>

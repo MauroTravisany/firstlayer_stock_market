@@ -38,8 +38,18 @@ limit 300
 
 # Backtesting
 
+<div style="border-left: 4px solid #334155; background: #f8fafc; padding: 14px 16px; border-radius: 6px; margin: 12px 0 18px;">
+  Esta vista valida historicamente si las senales funcionaron despues de emitirse. No predice el futuro, pero ayuda a ajustar reglas si una senal falla de forma repetida.
+</div>
+
+## Resumen de efectividad
+
+Tabla agregada por senal y estado de backtest. `retorno_20d_promedio`, `retorno_60d_promedio` y `tasa_acierto_60d` muestran si la senal agrego valor despues de 20 y 60 dias.
+
 <DataTable data={summary} rows=20/>
 
 ## Detalle
+
+Tabla de cada senal historica con retornos futuros conocidos. Si `backtest_status` esta pendiente, aun no existe suficiente tiempo posterior para evaluar esa senal.
 
 <DataTable data={latest} rows=25/>

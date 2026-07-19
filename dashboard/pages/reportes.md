@@ -46,14 +46,24 @@ limit 3
 
 # Reportes IA
 
+<div style="border-left: 4px solid #2563eb; background: #f8fafc; padding: 14px 16px; border-radius: 6px; margin: 12px 0 18px;">
+  Esta pagina guarda los resumenes generados por IA. Discord recibe una version corta para no saturar el canal; aqui queda la version completa para lectura y auditoria.
+</div>
+
 ## Ultimo resumen enviado
+
+Tabla con el ultimo reporte emitido. `vista_previa` permite revisar rapidamente el contenido, `alert_sent` confirma envio y `alert_error` muestra si Discord rechazo o fallo el mensaje.
 
 <DataTable data={latest_report} rows=1/>
 
 ## Reportes completos
 
+Historial reciente con el texto completo disponible en web. Usa esta seccion para leer el contexto que no cabe en Discord: oportunidades, ventas, riesgos y cambios de tendencia.
+
 <DataTable data={full_reports} rows=3/>
 
 ## Historial
+
+Registro operativo de los ultimos reportes. Los largos de texto ayudan a verificar que el resumen corto y el reporte completo se generaron correctamente.
 
 <DataTable data={report_history} rows=20/>

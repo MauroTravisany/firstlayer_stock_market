@@ -184,6 +184,10 @@ order by
 
 Fecha procesada: <Value data={latest_date} column=analysis_date/>
 
+<div style="border-left: 4px solid #2563eb; background: #f8fafc; padding: 14px 16px; border-radius: 6px; margin: 12px 0 18px;">
+  Vista ejecutiva del portafolio. Los scores combinan valoracion, calidad, momentum, tendencia tecnica, riesgo y validacion por IA. Una compra clara no significa comprar automaticamente: significa que el activo merece revision prioritaria con los datos disponibles.
+</div>
+
 <Grid cols=2>
   <Value data={kpis} column=activos title="Activos"/>
   <Value data={kpis} column=acciones title="Acciones"/>
@@ -200,21 +204,31 @@ Fecha procesada: <Value data={latest_date} column=analysis_date/>
 
 ## Acciones prioritarias
 
+Resumen movil de las empresas que requieren atencion primero. `score` prioriza compra, `venta` prioriza salida/revision y `margen_pct` muestra que tan lejos esta el precio respecto al valor de referencia calculado.
+
 <DataTable data={mobile_actions} rows=10/>
 
 ## Detalle prioritario
+
+Tabla de auditoria para entender por que una empresa aparece como compra, venta, cara o riesgo. Revisa `valuation_model`, `primary_metric`, precios sugeridos, riesgo y tendencia antes de tomar una decision.
 
 <DataTable data={top_actions} rows=12/>
 
 ## Compras claras
 
+Muestra maximo 5 oportunidades de compra ordenadas por score. `entrada` es el precio sugerido de compra y los limites adaptativos indican contra que multiples se esta comparando segun industria y pares.
+
 <DataTable data={buy_list} rows=5/>
 
 ## Ventas a revisar
 
+Muestra maximo 5 empresas con posible sobrevaloracion o deterioro. `revisar_sobre` es el precio/zona desde donde el sistema considera mas fuerte la tesis de venta.
+
 <DataTable data={sell_list} rows=5/>
 
 ## Distribucion de estados
+
+Estos graficos indican como esta repartido el portafolio por senal operativa y por estado final de empresa. Si aumenta la concentracion en riesgo, venta o datos a revisar, conviene mirar calidad de datos e historial.
 
 <BarChart data={signal_mix} x=signal y=activos/>
 
@@ -222,8 +236,12 @@ Fecha procesada: <Value data={latest_date} column=analysis_date/>
 
 ## Modelos de valoracion
 
+Indica que modelo domina en cada activo. Sirve para validar que una empresa se este evaluando con una metodologia coherente con su naturaleza: crecimiento, calidad defensiva, ETF, cyclical, etc.
+
 <DataTable data={model_distribution} rows=20/>
 
 ## Ranking auditable
+
+Tabla completa para trazabilidad diaria. Usa `final_score`, `sell_score`, multiples, comparacion contra pares, tendencia tecnica y datos faltantes para explicar el estado final de cada empresa.
 
 <DataTable data={ranking} rows=30/>

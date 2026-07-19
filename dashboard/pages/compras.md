@@ -75,6 +75,10 @@ limit 5
 
 # Compras
 
+<div style="border-left: 4px solid #0f766e; background: #f0fdfa; padding: 14px 16px; border-radius: 6px; margin: 12px 0 18px;">
+  Esta vista muestra solo candidatas con oportunidad clara de compra. La prioridad sube cuando hay descuento frente a pares/industria, buen score de calidad, riesgo controlado y una tesis de IA consistente.
+</div>
+
 <Grid cols=2>
   <Value data={kpis} column=compras title="Compras claras"/>
   <Value data={kpis} column=score_promedio title="Score promedio"/>
@@ -84,12 +88,18 @@ limit 5
 
 ## Ranking de compra
 
+Grafico rapido de conviccion. Mientras mas alto el `final_score`, mas fuerte es la combinacion entre valoracion, calidad, momentum, tecnica y riesgo.
+
 <BarChart data={score_breakdown} x=ticker y=final_score/>
 
 ## Vista rapida
 
+Tabla compacta para celular. `margen_pct` es el margen de seguridad estimado y `entrada` es el precio sugerido para que la oportunidad siga siendo atractiva.
+
 <DataTable data={oportunidades_mobile} rows=5/>
 
 ## Detalle fundamental
+
+Tabla completa de compra. Compara el precio actual contra limites adaptativos por industria/pares y revisa la explicacion de IA antes de ejecutar.
 
 <DataTable data={oportunidades} rows=5/>
