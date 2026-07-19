@@ -3,7 +3,7 @@ config {
   schema: "acciones_dataset",
   name: "looker_company_status_changes",
   description: "Vista para dashboard con cambios relevantes de estado por empresa.",
-  tags: ["portfolio", "status", "changes", "looker", "dashboard"]
+  tags: ["portfolio", "valuation", "daily", "status", "changes", "looker", "dashboard"]
 }
 
 SELECT *

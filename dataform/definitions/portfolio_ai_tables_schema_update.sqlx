@@ -1,7 +1,7 @@
 config {
   type: "operations",
   hasOutput: false,
-  tags: ["portfolio", "ai", "schema"]
+  tags: ["portfolio", "valuation", "daily", "ai", "schema"]
 }
 
 CREATE TABLE IF NOT EXISTS `stocks-437902.acciones_dataset.portfolio_ai_analysis_daily` (

@@ -3,7 +3,7 @@ config {
   schema: "acciones_dataset",
   name: "portfolio_company_status_latest",
   description: "Ultimo estado final por empresa, incluyendo antiguedad del estado y ultimo cambio relevante.",
-  tags: ["portfolio", "status", "latest"],
+  tags: ["portfolio", "valuation", "daily", "status", "latest"],
   bigquery: {
     clusterBy: ["company_status", "ticker"]
   },

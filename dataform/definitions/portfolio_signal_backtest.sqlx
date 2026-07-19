@@ -3,7 +3,7 @@ config {
   schema: "acciones_dataset",
   name: "portfolio_signal_backtest",
   description: "Auditoria historica de efectividad de senales usando retornos posteriores disponibles.",
-  tags: ["portfolio", "valuation", "backtest"],
+  tags: ["portfolio", "valuation", "daily", "backtest"],
   bigquery: {
     partitionBy: "analysis_date",
     clusterBy: ["signal", "ticker"]

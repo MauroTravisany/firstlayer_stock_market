@@ -3,7 +3,7 @@ config {
   schema: "acciones_dataset",
   name: "portfolio_company_status_daily",
   description: "Estado final diario normalizado por empresa, con estado anterior y banderas de cambio.",
-  tags: ["portfolio", "status", "daily"],
+  tags: ["portfolio", "valuation", "daily", "status"],
   bigquery: {
     partitionBy: "analysis_date",
     clusterBy: ["company_status", "ticker"]

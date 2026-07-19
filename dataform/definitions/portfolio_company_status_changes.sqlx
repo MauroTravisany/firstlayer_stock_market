@@ -3,7 +3,7 @@ config {
   schema: "acciones_dataset",
   name: "portfolio_company_status_changes",
   description: "Historial compacto de cambios relevantes de estado por empresa.",
-  tags: ["portfolio", "status", "changes"],
+  tags: ["portfolio", "valuation", "daily", "status", "changes"],
   bigquery: {
     partitionBy: "analysis_date",
     clusterBy: ["change_type", "ticker"]
