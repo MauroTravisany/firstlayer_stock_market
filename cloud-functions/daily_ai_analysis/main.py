@@ -155,6 +155,22 @@ def main(request):
         return json.dumps({"status": "error", "message": str(exc)}), 500, {"Content-Type": "application/json"}
 
     if not signals:
+        if analysis_scope == "remaining":
+            return (
+                json.dumps(
+                    {
+                        "status": "success",
+                        "summary_type": summary_type,
+                        "analysis_date": str(analysis_date),
+                        "analysis_scope": analysis_scope,
+                        "processed": 0,
+                        "alert_sent": False,
+                        "message": f"No remaining tickers found for {analysis_date}",
+                    }
+                ),
+                200,
+                {"Content-Type": "application/json"},
+            )
         return (
             json.dumps({"status": "error", "message": f"No signals found for {analysis_date}"}),
             404,
