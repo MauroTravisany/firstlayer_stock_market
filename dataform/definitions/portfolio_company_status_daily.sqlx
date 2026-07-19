@@ -60,6 +60,7 @@ WITH base AS (
     return_20d,
     return_60d,
     return_120d,
+    volatility_20d,
     signal_reason,
     sell_reason
   FROM ${ref("portfolio_daily_signal")}

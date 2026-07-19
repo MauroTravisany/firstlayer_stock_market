@@ -426,7 +426,7 @@ def build_weekly_summary(config, weekly_rows):
                     "Crea un resumen semanal en espanol para Discord. "
                     "Debe enfocarse en lo mas importante de la semana: cambios de estado, movimientos fuertes de precio, deterioro o mejora de riesgo, cambios de tendencia tecnica semanal/mensual y consideraciones para monitorear la proxima semana. "
                     "No des recomendacion financiera personalizada. No repitas todas las acciones si no hay cambios relevantes. "
-                    f"weekly_rows={json.dumps(weekly_rows, ensure_ascii=True)}"
+                    f"weekly_rows={json.dumps(weekly_rows, ensure_ascii=True, default=str)}"
                 ),
             },
         ],
