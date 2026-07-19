@@ -66,6 +66,8 @@ def ensure_tables(config):
       dashboard_summary STRING,
       alert_title STRING,
       alert_body STRING,
+      discord_summary STRING,
+      full_report STRING,
       alert_sent BOOL,
       alert_error STRING,
       model_name STRING,
@@ -99,6 +101,12 @@ def ensure_tables(config):
 
     client.query(
         f"ALTER TABLE {_table_ref(config['summary_table'])} ADD COLUMN IF NOT EXISTS summary_type STRING"
+    ).result()
+    client.query(
+        f"ALTER TABLE {_table_ref(config['summary_table'])} ADD COLUMN IF NOT EXISTS discord_summary STRING"
+    ).result()
+    client.query(
+        f"ALTER TABLE {_table_ref(config['summary_table'])} ADD COLUMN IF NOT EXISTS full_report STRING"
     ).result()
 
 
@@ -584,6 +592,8 @@ def merge_summary(config, row):
         @dashboard_summary AS dashboard_summary,
         @alert_title AS alert_title,
         @alert_body AS alert_body,
+        @discord_summary AS discord_summary,
+        @full_report AS full_report,
         @alert_sent AS alert_sent,
         @alert_error AS alert_error,
         @model_name AS model_name,
@@ -600,6 +610,8 @@ def merge_summary(config, row):
       dashboard_summary = S.dashboard_summary,
       alert_title = S.alert_title,
       alert_body = S.alert_body,
+      discord_summary = S.discord_summary,
+      full_report = S.full_report,
       alert_sent = S.alert_sent,
       alert_error = S.alert_error,
       model_name = S.model_name,
@@ -615,6 +627,8 @@ def merge_summary(config, row):
       dashboard_summary,
       alert_title,
       alert_body,
+      discord_summary,
+      full_report,
       alert_sent,
       alert_error,
       model_name,
@@ -630,6 +644,8 @@ def merge_summary(config, row):
       S.dashboard_summary,
       S.alert_title,
       S.alert_body,
+      S.discord_summary,
+      S.full_report,
       S.alert_sent,
       S.alert_error,
       S.model_name,
@@ -647,6 +663,8 @@ def merge_summary(config, row):
         bigquery.ScalarQueryParameter("dashboard_summary", "STRING", row.get("dashboard_summary")),
         bigquery.ScalarQueryParameter("alert_title", "STRING", row.get("alert_title")),
         bigquery.ScalarQueryParameter("alert_body", "STRING", row.get("alert_body")),
+        bigquery.ScalarQueryParameter("discord_summary", "STRING", row.get("discord_summary")),
+        bigquery.ScalarQueryParameter("full_report", "STRING", row.get("full_report")),
         bigquery.ScalarQueryParameter("alert_sent", "BOOL", row.get("alert_sent")),
         bigquery.ScalarQueryParameter("alert_error", "STRING", row.get("alert_error")),
         bigquery.ScalarQueryParameter("model_name", "STRING", row.get("model_name")),

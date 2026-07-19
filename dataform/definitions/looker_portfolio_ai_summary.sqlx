@@ -17,6 +17,8 @@ SELECT
   dashboard_summary,
   alert_title,
   alert_body,
+  discord_summary,
+  full_report,
   alert_sent,
   alert_error,
   model_name,

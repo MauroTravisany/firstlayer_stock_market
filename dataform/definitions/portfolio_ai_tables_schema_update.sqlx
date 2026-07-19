@@ -65,6 +65,8 @@ CREATE TABLE IF NOT EXISTS `stocks-437902.acciones_dataset.portfolio_ai_summary_
   dashboard_summary STRING,
   alert_title STRING,
   alert_body STRING,
+  discord_summary STRING,
+  full_report STRING,
   alert_sent BOOL,
   alert_error STRING,
   model_name STRING,
@@ -75,3 +77,9 @@ PARTITION BY analysis_date;
 
 ALTER TABLE `stocks-437902.acciones_dataset.portfolio_ai_summary_daily`
 ADD COLUMN IF NOT EXISTS summary_type STRING;
+
+ALTER TABLE `stocks-437902.acciones_dataset.portfolio_ai_summary_daily`
+ADD COLUMN IF NOT EXISTS discord_summary STRING;
+
+ALTER TABLE `stocks-437902.acciones_dataset.portfolio_ai_summary_daily`
+ADD COLUMN IF NOT EXISTS full_report STRING;

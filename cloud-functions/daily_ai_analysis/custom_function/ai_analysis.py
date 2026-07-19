@@ -90,6 +90,8 @@ SUMMARY_SCHEMA = {
         "risk_summary": {"type": "string"},
         "dashboard_summary": {"type": "string"},
         "alert_body": {"type": "string"},
+        "discord_summary": {"type": "string"},
+        "full_report": {"type": "string"},
     },
     "required": [
         "alert_title",
@@ -99,6 +101,8 @@ SUMMARY_SCHEMA = {
         "risk_summary",
         "dashboard_summary",
         "alert_body",
+        "discord_summary",
+        "full_report",
     ],
     "additionalProperties": False,
 }
@@ -115,6 +119,8 @@ WEEKLY_SUMMARY_SCHEMA = {
         "trend_changes": {"type": "string"},
         "watch_next_week": {"type": "string"},
         "alert_body": {"type": "string"},
+        "discord_summary": {"type": "string"},
+        "full_report": {"type": "string"},
     },
     "required": [
         "alert_title",
@@ -125,6 +131,8 @@ WEEKLY_SUMMARY_SCHEMA = {
         "trend_changes",
         "watch_next_week",
         "alert_body",
+        "discord_summary",
+        "full_report",
     ],
     "additionalProperties": False,
 }
@@ -400,6 +408,8 @@ def build_portfolio_summary(config, analysis_rows):
                 "content": (
                     "Crea un resumen ejecutivo en espanol para dashboard y alerta Slack/Discord. "
                     "Debe separar oportunidades de compra, posiciones caras con posible venta y riesgos. "
+                    "discord_summary debe ser muy conciso, maximo 900 caracteres, pensado para Discord. "
+                    "full_report debe ser el analisis mas completo posible para web/BigQuery, con secciones claras: panorama general, compras, ventas, cambios, riesgos, datos faltantes, tecnica y seguimiento. "
                     "No des recomendacion financiera personalizada. "
                     "Todos los campos de texto deben estar escritos en espanol. "
                     f"analysis_date={analysis_date}\n"
@@ -425,6 +435,8 @@ def build_weekly_summary(config, weekly_rows):
                 "content": (
                     "Crea un resumen semanal en espanol para Discord. "
                     "Debe enfocarse en lo mas importante de la semana: cambios de estado, movimientos fuertes de precio, deterioro o mejora de riesgo, cambios de tendencia tecnica semanal/mensual y consideraciones para monitorear la proxima semana. "
+                    "discord_summary debe ser muy conciso, maximo 900 caracteres, pensado para Discord. "
+                    "full_report debe ser el reporte semanal mas completo posible para web/BigQuery, con secciones claras: resumen ejecutivo, cambios de estado, ventas, oportunidades, riesgos, tendencias, calidad de datos y seguimiento para la proxima semana. "
                     "No des recomendacion financiera personalizada. No repitas todas las acciones si no hay cambios relevantes. "
                     f"weekly_rows={json.dumps(weekly_rows, ensure_ascii=True, default=str)}"
                 ),

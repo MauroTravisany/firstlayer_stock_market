@@ -366,20 +366,19 @@ def send_webhook_alert(config, summary, analysis_rows=None):
 
 
 def build_weekly_discord_payload(summary):
+    concise_summary = summary.get("discord_summary") or summary.get("weekly_summary")
     return {
         "embeds": [
             {
                 "title": summary.get("alert_title") or "Resumen semanal de cartera",
-                "description": _short_text(summary.get("weekly_summary"), 900),
+                "description": _short_text(concise_summary, 950),
                 "color": DISCORD_BLUE,
                 "fields": [
-                    {"name": "Movimientos importantes", "value": _short_text(summary.get("important_moves"), DISCORD_FIELD_LIMIT), "inline": False},
-                    {"name": "Cambios de estado", "value": _short_text(summary.get("state_changes"), DISCORD_FIELD_LIMIT), "inline": False},
-                    {"name": "Riesgos", "value": _short_text(summary.get("risk_changes"), DISCORD_FIELD_LIMIT), "inline": False},
-                    {"name": "Tendencias", "value": _short_text(summary.get("trend_changes"), DISCORD_FIELD_LIMIT), "inline": False},
-                    {"name": "Proxima semana", "value": _short_text(summary.get("watch_next_week"), DISCORD_FIELD_LIMIT), "inline": False},
+                    {"name": "Cambios clave", "value": _short_text(summary.get("state_changes"), 450), "inline": False},
+                    {"name": "Riesgos", "value": _short_text(summary.get("risk_changes"), 450), "inline": False},
+                    {"name": "Vigilar", "value": _short_text(summary.get("watch_next_week"), 450), "inline": False},
                 ],
-                "footer": {"text": "Resumen semanal generado con datos internos, valoracion, riesgo y tendencia tecnica"},
+                "footer": {"text": "Resumen corto. Reporte completo disponible en BigQuery/dashboard."},
             }
         ]
     }
@@ -394,7 +393,7 @@ def send_weekly_webhook_alert(config, summary):
     if webhook_type == "discord":
         response = requests.post(url, json=build_weekly_discord_payload(summary), timeout=30)
     else:
-        response = requests.post(url, json={"text": _truncate_text(summary.get("alert_body") or summary.get("weekly_summary") or "", SLACK_TEXT_LIMIT)}, timeout=30)
+        response = requests.post(url, json={"text": _truncate_text(summary.get("discord_summary") or summary.get("alert_body") or summary.get("weekly_summary") or "", SLACK_TEXT_LIMIT)}, timeout=30)
 
     if response.status_code >= 300:
         return False, f"Webhook error {response.status_code}: {response.text}"
