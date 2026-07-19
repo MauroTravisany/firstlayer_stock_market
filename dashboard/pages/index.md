@@ -77,6 +77,35 @@ order by
 limit 12
 ```
 
+```sql mobile_actions
+select
+  ticker,
+  case
+    when signal = 'COMPRAR_OBSERVAR' then 'Compra'
+    when sell_signal = 'VENTA_CLARA' or signal = 'VENDER_OBSERVAR' then 'Venta'
+    when signal = 'SOBREVALORADA' then 'Cara'
+    when risk_level = 'ALTO' then 'Riesgo'
+    else 'Seguir'
+  end as accion,
+  round(final_score, 1) as score,
+  round(sell_score, 1) as venta,
+  round(margin_of_safety_pct * 100, 1) as margen_pct,
+  round(last_close, 2) as precio
+from stocks.portfolio_latest
+where signal = 'COMPRAR_OBSERVAR'
+   or sell_signal = 'VENTA_CLARA'
+   or signal in ('VENDER_OBSERVAR', 'SOBREVALORADA', 'RIESGO_ALTO')
+order by
+  case
+    when signal = 'COMPRAR_OBSERVAR' then 1
+    when sell_signal = 'VENTA_CLARA' or signal = 'VENDER_OBSERVAR' then 2
+    else 3
+  end,
+  greatest(coalesce(final_score, 0), coalesce(sell_score, 0)) desc,
+  ticker
+limit 10
+```
+
 ```sql buy_list
 select
   ticker,
@@ -155,14 +184,14 @@ order by
 
 Fecha procesada: <Value data={latest_date} column=analysis_date/>
 
-<Grid cols=4>
+<Grid cols=2>
   <Value data={kpis} column=activos title="Activos"/>
   <Value data={kpis} column=acciones title="Acciones"/>
   <Value data={kpis} column=compras title="Compras claras"/>
   <Value data={kpis} column=ventas title="Ventas a revisar"/>
 </Grid>
 
-<Grid cols=4>
+<Grid cols=2>
   <Value data={kpis} column=score_promedio title="Score promedio"/>
   <Value data={kpis} column=etfs title="ETFs"/>
   <Value data={kpis} column=riesgo_alto title="Riesgo alto"/>
@@ -170,6 +199,10 @@ Fecha procesada: <Value data={latest_date} column=analysis_date/>
 </Grid>
 
 ## Acciones prioritarias
+
+<DataTable data={mobile_actions} rows=10/>
+
+## Detalle prioritario
 
 <DataTable data={top_actions} rows=12/>
 
@@ -183,10 +216,9 @@ Fecha procesada: <Value data={latest_date} column=analysis_date/>
 
 ## Distribucion de estados
 
-<Grid cols=2>
-  <BarChart data={signal_mix} x=signal y=activos/>
-  <BarChart data={status_mix} x=company_status y=activos/>
-</Grid>
+<BarChart data={signal_mix} x=signal y=activos/>
+
+<BarChart data={status_mix} x=company_status y=activos/>
 
 ## Modelos de valoracion
 

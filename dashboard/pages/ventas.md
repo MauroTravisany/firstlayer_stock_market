@@ -46,6 +46,20 @@ order by sell_score desc, confidence_score desc, ticker
 limit 5
 ```
 
+```sql ventas_mobile
+select
+  ticker,
+  round(sell_score, 1) as venta,
+  round(final_score, 1) as score,
+  round(margin_of_safety_pct * 100, 1) as margen_pct,
+  round(last_close, 2) as precio,
+  round(suggested_sell_price, 2) as revisar
+from stocks.portfolio_latest
+where sell_signal = 'VENTA_CLARA' or signal = 'VENDER_OBSERVAR'
+order by sell_score desc, confidence_score desc, ticker
+limit 5
+```
+
 ```sql sell_chart
 select
   ticker,
@@ -58,7 +72,7 @@ limit 5
 
 # Ventas
 
-<Grid cols=4>
+<Grid cols=2>
   <Value data={kpis} column=ventas title="Ventas a revisar"/>
   <Value data={kpis} column=score_venta_promedio title="Score venta"/>
   <Value data={kpis} column=margen_promedio_pct title="Margen promedio %"/>
@@ -68,6 +82,10 @@ limit 5
 ## Ranking de venta
 
 <BarChart data={sell_chart} x=ticker y=sell_score/>
+
+## Vista rapida
+
+<DataTable data={ventas_mobile} rows=5/>
 
 ## Detalle de salida
 

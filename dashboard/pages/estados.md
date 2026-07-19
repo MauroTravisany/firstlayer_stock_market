@@ -33,6 +33,19 @@ from stocks.company_status_latest
 order by status_group, final_score desc, ticker
 ```
 
+```sql current_status_mobile
+select
+  ticker,
+  company_status as estado,
+  classification as valoracion,
+  risk_level as riesgo,
+  technical_trend as tendencia,
+  round(final_score, 1) as score,
+  days_in_current_status as dias_estado
+from stocks.company_status_latest
+order by status_group, final_score desc, ticker
+```
+
 ```sql recent_changes
 select
   analysis_date,
@@ -60,6 +73,10 @@ limit 200
 <BarChart data={status_counts} x=company_status y=empresas/>
 
 ## Estado Actual
+
+<DataTable data={current_status_mobile} rows=30/>
+
+## Estado detallado
 
 <DataTable data={current_status} rows=30/>
 

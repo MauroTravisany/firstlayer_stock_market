@@ -4,7 +4,14 @@ title: Calidad de datos
 
 ```sql quality
 select
-  *
+  run_date,
+  pipeline,
+  ticker,
+  data_status,
+  severity,
+  rows_loaded,
+  analysis_impact,
+  message
 from stocks.data_quality_latest
 order by run_date desc, pipeline, ticker
 ```

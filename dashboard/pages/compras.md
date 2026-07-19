@@ -44,6 +44,20 @@ order by final_score desc, confidence_score desc, ticker
 limit 5
 ```
 
+```sql oportunidades_mobile
+select
+  ticker,
+  round(final_score, 1) as score,
+  round(margin_of_safety_pct * 100, 1) as margen_pct,
+  round(last_close, 2) as precio,
+  round(suggested_buy_price, 2) as entrada,
+  primary_metric as ratio
+from stocks.portfolio_latest
+where signal = 'COMPRAR_OBSERVAR'
+order by final_score desc, confidence_score desc, ticker
+limit 5
+```
+
 ```sql score_breakdown
 select
   ticker,
@@ -61,7 +75,7 @@ limit 5
 
 # Compras
 
-<Grid cols=4>
+<Grid cols=2>
   <Value data={kpis} column=compras title="Compras claras"/>
   <Value data={kpis} column=score_promedio title="Score promedio"/>
   <Value data={kpis} column=margen_promedio_pct title="Margen promedio %"/>
@@ -71,6 +85,10 @@ limit 5
 ## Ranking de compra
 
 <BarChart data={score_breakdown} x=ticker y=final_score/>
+
+## Vista rapida
+
+<DataTable data={oportunidades_mobile} rows=5/>
 
 ## Detalle fundamental
 

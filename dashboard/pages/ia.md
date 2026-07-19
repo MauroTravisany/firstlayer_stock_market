@@ -26,6 +26,22 @@ order by
   ticker
 ```
 
+```sql ai_mobile
+select
+  ticker,
+  signal,
+  sell_signal,
+  round(final_score, 1) as score,
+  round(sell_score, 1) as venta,
+  round(confidence_score, 2) as confianza,
+  substr(coalesce(ai_summary, ai_sell_thesis, ai_analysis), 1, 260) as resumen
+from stocks.ai_analysis_latest
+order by
+  case when signal = 'COMPRAR_OBSERVAR' then 1 when sell_signal = 'VENTA_CLARA' then 2 else 3 end,
+  greatest(coalesce(final_score, 0), coalesce(sell_score, 0)) desc,
+  ticker
+```
+
 ```sql daily_summary
 select
   analysis_date,
@@ -47,5 +63,9 @@ limit 1
 <DataTable data={daily_summary} rows=1/>
 
 ## Detalle por accion
+
+<DataTable data={ai_mobile} rows=30/>
+
+## Analisis completo
 
 <DataTable data={ai_rows} rows=30/>

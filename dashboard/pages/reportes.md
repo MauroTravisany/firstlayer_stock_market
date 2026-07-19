@@ -8,7 +8,7 @@ select
   summary_type,
   alert_title,
   discord_summary,
-  coalesce(full_report, alert_body, dashboard_summary) as reporte_completo,
+  substr(coalesce(full_report, alert_body, dashboard_summary), 1, 1200) as vista_previa,
   alert_sent,
   alert_error,
   created_at
@@ -37,10 +37,11 @@ select
   analysis_date,
   summary_type,
   alert_title,
+  substr(discord_summary, 1, 500) as resumen_discord,
   coalesce(full_report, alert_body, dashboard_summary) as reporte_completo
 from stocks.portfolio_ai_summary
 order by created_at desc
-limit 5
+limit 3
 ```
 
 # Reportes IA
@@ -51,7 +52,7 @@ limit 5
 
 ## Reportes completos
 
-<DataTable data={full_reports} rows=5/>
+<DataTable data={full_reports} rows=3/>
 
 ## Historial
 
