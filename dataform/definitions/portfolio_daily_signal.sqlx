@@ -175,7 +175,13 @@ SELECT
   free_cash_flow,
   CASE
     WHEN financial_data_status = "SIN_SNAPSHOT_FINANCIERO" THEN "DATOS_INSUFICIENTES"
-    WHEN classification = "BARATA" AND quality_score >= 2 AND final_score >= 6 THEN "COMPRAR_OBSERVAR"
+    WHEN classification = "BARATA"
+      AND valuation_score >= 2
+      AND quality_score >= 2
+      AND final_score >= 6
+      AND (price_to_sales IS NULL OR price_to_sales <= 6)
+      AND (ev_to_ebitda IS NULL OR ev_to_ebitda <= 22)
+      THEN "COMPRAR_OBSERVAR"
     WHEN classification = "CARA" AND sell_score >= 7 THEN "VENDER_OBSERVAR"
     WHEN classification = "BARATA" AND quality_score < 0 THEN "TRAMPA_DE_VALOR"
     WHEN classification = "CARA" AND final_score < -3 THEN "SOBREVALORADA"

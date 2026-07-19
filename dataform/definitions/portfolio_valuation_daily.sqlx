@@ -113,30 +113,34 @@ scored AS (
       CASE
         WHEN r.forward_pe IS NULL THEN 0
         WHEN r.forward_pe <= 18 THEN 2
-        WHEN r.forward_pe <= 28 THEN 1
-        WHEN r.forward_pe <= 45 THEN 0
-        ELSE -2
+        WHEN r.forward_pe <= 22 THEN 0.5
+        WHEN r.forward_pe <= 28 THEN 0
+        WHEN r.forward_pe <= 35 THEN -0.75
+        ELSE -1.5
       END +
       CASE
         WHEN r.pe_ratio IS NULL THEN 0
         WHEN r.pe_ratio <= 20 THEN 1
-        WHEN r.pe_ratio <= 35 THEN 0.5
-        WHEN r.pe_ratio > 60 THEN -1.5
-        ELSE -0.5
+        WHEN r.pe_ratio <= 25 THEN 0
+        WHEN r.pe_ratio <= 35 THEN -0.5
+        WHEN r.pe_ratio > 60 THEN -2
+        ELSE -1
       END +
       CASE
         WHEN r.price_to_sales IS NULL THEN 0
         WHEN r.price_to_sales <= 3 THEN 1
-        WHEN r.price_to_sales <= 8 THEN 0
-        WHEN r.price_to_sales > 12 THEN -1.5
-        ELSE -0.75
+        WHEN r.price_to_sales <= 5 THEN 0
+        WHEN r.price_to_sales <= 8 THEN -1
+        WHEN r.price_to_sales > 12 THEN -2
+        ELSE -1.5
       END +
       CASE
         WHEN r.ev_to_ebitda IS NULL THEN 0
         WHEN r.ev_to_ebitda <= 15 THEN 1
-        WHEN r.ev_to_ebitda <= 25 THEN 0
-        WHEN r.ev_to_ebitda > 40 THEN -1.5
-        ELSE -0.75
+        WHEN r.ev_to_ebitda <= 20 THEN 0
+        WHEN r.ev_to_ebitda <= 25 THEN -1
+        WHEN r.ev_to_ebitda > 40 THEN -2
+        ELSE -1.5
       END +
       CASE WHEN r.profit_margin >= 0.25 THEN 1 WHEN r.profit_margin < 0 THEN -1 ELSE 0 END +
       CASE WHEN r.operating_margin >= 0.25 THEN 0.5 WHEN r.operating_margin < 0 THEN -0.75 ELSE 0 END +
