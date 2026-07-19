@@ -3,11 +3,13 @@ config {
   schema: "acciones_dataset",
   name: "looker_portfolio_ai_summary",
   description: "Vista de resumen IA diario para tarjetas textuales en Looker Studio.",
-  tags: ["portfolio", "valuation", "daily", "looker", "dashboard", "ai"]
+  tags: ["portfolio", "valuation", "daily", "looker", "dashboard", "ai"],
+  dependencies: ["portfolio_ai_tables_schema_update"]
 }
 
 SELECT
   analysis_date,
+  COALESCE(summary_type, "daily") AS summary_type,
   portfolio_summary,
   top_opportunities,
   overvalued_summary,

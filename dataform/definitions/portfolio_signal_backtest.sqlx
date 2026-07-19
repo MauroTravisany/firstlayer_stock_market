@@ -1,0 +1,74 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "portfolio_signal_backtest",
+  description: "Auditoria historica de efectividad de senales usando retornos posteriores disponibles.",
+  tags: ["portfolio", "valuation", "backtest"],
+  bigquery: {
+    partitionBy: "analysis_date",
+    clusterBy: ["signal", "ticker"]
+  },
+  assertions: {
+    nonNull: ["analysis_date", "ticker", "signal"],
+    uniqueKey: ["analysis_date", "ticker"]
+  }
+}
+
+WITH base AS (
+  SELECT
+    analysis_date,
+    ticker,
+    signal,
+    sell_signal,
+    classification,
+    last_close,
+    final_score,
+    sell_score,
+    margin_of_safety_pct,
+    risk_level,
+    technical_trend
+  FROM ${ref("portfolio_daily_signal")}
+),
+future_prices AS (
+  SELECT
+    b.analysis_date,
+    b.ticker,
+    ARRAY_AGG(IF(p.analysis_date >= DATE_ADD(b.analysis_date, INTERVAL 5 DAY), p.last_close, NULL) IGNORE NULLS ORDER BY p.analysis_date LIMIT 1)[SAFE_OFFSET(0)] AS price_5d,
+    ARRAY_AGG(IF(p.analysis_date >= DATE_ADD(b.analysis_date, INTERVAL 20 DAY), p.last_close, NULL) IGNORE NULLS ORDER BY p.analysis_date LIMIT 1)[SAFE_OFFSET(0)] AS price_20d,
+    ARRAY_AGG(IF(p.analysis_date >= DATE_ADD(b.analysis_date, INTERVAL 60 DAY), p.last_close, NULL) IGNORE NULLS ORDER BY p.analysis_date LIMIT 1)[SAFE_OFFSET(0)] AS price_60d
+  FROM base b
+  LEFT JOIN base p
+    ON p.ticker = b.ticker
+   AND p.analysis_date > b.analysis_date
+   AND p.analysis_date <= DATE_ADD(b.analysis_date, INTERVAL 70 DAY)
+  GROUP BY b.analysis_date, b.ticker
+)
+
+SELECT
+  b.*,
+  fp.price_5d,
+  fp.price_20d,
+  fp.price_60d,
+  ROUND(SAFE_DIVIDE(fp.price_5d - b.last_close, b.last_close), 4) AS forward_return_5d,
+  ROUND(SAFE_DIVIDE(fp.price_20d - b.last_close, b.last_close), 4) AS forward_return_20d,
+  ROUND(SAFE_DIVIDE(fp.price_60d - b.last_close, b.last_close), 4) AS forward_return_60d,
+  CASE
+    WHEN b.signal = "COMPRAR_OBSERVAR" AND SAFE_DIVIDE(fp.price_60d - b.last_close, b.last_close) >= 0.05 THEN TRUE
+    WHEN b.signal IN ("VENDER_OBSERVAR", "SOBREVALORADA") AND SAFE_DIVIDE(fp.price_60d - b.last_close, b.last_close) <= 0 THEN TRUE
+    WHEN b.sell_signal IN ("VENTA_CLARA", "VENTA_PARCIAL_OBSERVAR") AND SAFE_DIVIDE(fp.price_60d - b.last_close, b.last_close) <= 0 THEN TRUE
+    ELSE FALSE
+  END AS signal_success_60d,
+  CASE
+    WHEN fp.price_60d IS NULL THEN "PENDIENTE_DATOS_FUTUROS"
+    WHEN b.signal = "COMPRAR_OBSERVAR" AND SAFE_DIVIDE(fp.price_60d - b.last_close, b.last_close) >= 0.05 THEN "ACIERTO_COMPRA"
+    WHEN b.signal = "COMPRAR_OBSERVAR" THEN "FALLO_COMPRA"
+    WHEN b.signal IN ("VENDER_OBSERVAR", "SOBREVALORADA") AND SAFE_DIVIDE(fp.price_60d - b.last_close, b.last_close) <= 0 THEN "ACIERTO_VENTA"
+    WHEN b.sell_signal IN ("VENTA_CLARA", "VENTA_PARCIAL_OBSERVAR") AND SAFE_DIVIDE(fp.price_60d - b.last_close, b.last_close) <= 0 THEN "ACIERTO_VENTA"
+    WHEN b.signal IN ("VENDER_OBSERVAR", "SOBREVALORADA") OR b.sell_signal IN ("VENTA_CLARA", "VENTA_PARCIAL_OBSERVAR") THEN "FALLO_VENTA"
+    ELSE "NO_EVALUABLE"
+  END AS backtest_status,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM base b
+LEFT JOIN future_prices fp
+  ON fp.analysis_date = b.analysis_date
+ AND fp.ticker = b.ticker

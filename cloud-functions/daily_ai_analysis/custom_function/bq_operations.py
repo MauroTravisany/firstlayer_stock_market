@@ -32,6 +32,9 @@ def ensure_tables(config):
       ai_summary STRING,
       ai_analysis STRING,
       ai_risks STRING,
+      ai_technical_view STRING,
+      ai_fair_value_view STRING,
+      ai_data_quality_view STRING,
       ai_opportunity STRING,
       ai_decision_support STRING,
       ai_valuation_opinion STRING,
@@ -55,6 +58,7 @@ def ensure_tables(config):
     summary_sql = f"""
     CREATE TABLE IF NOT EXISTS {_table_ref(config["summary_table"])} (
       analysis_date DATE NOT NULL,
+      summary_type STRING,
       portfolio_summary STRING,
       top_opportunities STRING,
       overvalued_summary STRING,
@@ -85,10 +89,17 @@ def ensure_tables(config):
         ("ai_valuation_opinion", "STRING"),
         ("ai_signal_agreement", "STRING"),
         ("ai_final_alert_action", "STRING"),
+        ("ai_technical_view", "STRING"),
+        ("ai_fair_value_view", "STRING"),
+        ("ai_data_quality_view", "STRING"),
     ]:
         client.query(
             f"ALTER TABLE {_table_ref(config['analysis_table'])} ADD COLUMN IF NOT EXISTS {column_name} {column_type}"
         ).result()
+
+    client.query(
+        f"ALTER TABLE {_table_ref(config['summary_table'])} ADD COLUMN IF NOT EXISTS summary_type STRING"
+    ).result()
 
 
 def get_analysis_date(config, requested_date=None):
@@ -173,6 +184,15 @@ def fetch_daily_signals(config, analysis_date, tickers=None, analysis_scope="can
       {_select_expr("profit_margin_percentile", available)},
       {_select_expr("peer_relative_score", available)},
       {_select_expr("peer_valuation_label", available, "STRING")},
+      {_select_expr("technical_score", available)},
+      {_select_expr("data_quality_score", available)},
+      {_select_expr("missing_data_impact", available, "STRING")},
+      {_select_expr("risk_level", available, "STRING")},
+      {_select_expr("technical_trend", available, "STRING")},
+      {_select_expr("fair_value_estimate", available)},
+      {_select_expr("conservative_fair_value", available)},
+      {_select_expr("margin_of_safety_pct", available)},
+      {_select_expr("suggested_buy_price", available)},
       valuation_score,
       value_component,
       quality_score,
@@ -186,6 +206,12 @@ def fetch_daily_signals(config, analysis_date, tickers=None, analysis_scope="can
       return_5d,
       return_20d,
       return_60d,
+      {_select_expr("return_120d", available)},
+      {_select_expr("sma_20", available)},
+      {_select_expr("sma_60", available)},
+      {_select_expr("sma_120", available)},
+      {_select_expr("high_252d", available)},
+      {_select_expr("low_252d", available)},
       volatility_20d,
       volume_vs_20d_avg,
       pe_ratio,
@@ -245,22 +271,87 @@ def fetch_existing_successful_analyses(config, analysis_date, tickers=None):
     return {row["ticker"]: dict(row) for row in client.query(sql, job_config=job_config).result()}
 
 
-def fetch_summary_state(config, analysis_date):
+def fetch_summary_state(config, analysis_date, summary_type="daily"):
     client = bigquery.Client(project=config["project_id"])
     sql = f"""
     SELECT alert_sent, alert_error
     FROM {_table_ref(config["summary_table"])}
     WHERE analysis_date = @analysis_date
+      AND COALESCE(summary_type, "daily") = @summary_type
       AND prompt_version = @prompt_version
     ORDER BY created_at DESC
     LIMIT 1
     """
     params = [
         bigquery.ScalarQueryParameter("analysis_date", "DATE", analysis_date),
+        bigquery.ScalarQueryParameter("summary_type", "STRING", summary_type),
         bigquery.ScalarQueryParameter("prompt_version", "STRING", config["prompt_version"]),
     ]
     rows = list(client.query(sql, job_config=bigquery.QueryJobConfig(query_parameters=params)).result())
     return dict(rows[0]) if rows else None
+
+
+def fetch_weekly_changes(config, analysis_date):
+    client = bigquery.Client(project=config["project_id"])
+    available = _available_columns(client, config["signal_table"])
+    sql = f"""
+    WITH week_rows AS (
+      SELECT
+        analysis_date,
+        ticker,
+        signal,
+        sell_signal,
+        classification,
+        last_close,
+        final_score,
+        sell_score,
+        {_select_expr("risk_level", available, "STRING")},
+        {_select_expr("technical_trend", available, "STRING")},
+        {_select_expr("margin_of_safety_pct", available)},
+        {_select_expr("conservative_fair_value", available)},
+        return_5d,
+        return_20d,
+        return_60d,
+        LAG(signal) OVER (PARTITION BY ticker ORDER BY analysis_date) AS previous_signal,
+        LAG(sell_signal) OVER (PARTITION BY ticker ORDER BY analysis_date) AS previous_sell_signal,
+        LAG(classification) OVER (PARTITION BY ticker ORDER BY analysis_date) AS previous_classification,
+        LAG(final_score) OVER (PARTITION BY ticker ORDER BY analysis_date) AS previous_final_score,
+        LAG(last_close) OVER (PARTITION BY ticker ORDER BY analysis_date) AS previous_close,
+        LAG({_select_expr("risk_level", available, "STRING").replace(' AS risk_level', '')}) OVER (PARTITION BY ticker ORDER BY analysis_date) AS previous_risk_level,
+        LAG({_select_expr("technical_trend", available, "STRING").replace(' AS technical_trend', '')}) OVER (PARTITION BY ticker ORDER BY analysis_date) AS previous_technical_trend
+      FROM {_table_ref(config["signal_table"])}
+      WHERE analysis_date BETWEEN DATE_SUB(@analysis_date, INTERVAL 7 DAY) AND @analysis_date
+    ),
+    latest AS (
+      SELECT *
+      FROM week_rows
+      WHERE analysis_date = @analysis_date
+    )
+    SELECT
+      *,
+      ROUND(SAFE_DIVIDE(last_close - previous_close, previous_close), 4) AS weekly_price_change,
+      ROUND(final_score - previous_final_score, 2) AS weekly_score_change,
+      CASE
+        WHEN signal != previous_signal OR sell_signal != previous_sell_signal OR classification != previous_classification THEN TRUE
+        ELSE FALSE
+      END AS state_changed,
+      CASE
+        WHEN risk_level != previous_risk_level THEN TRUE
+        ELSE FALSE
+      END AS risk_changed,
+      CASE
+        WHEN technical_trend != previous_technical_trend THEN TRUE
+        ELSE FALSE
+      END AS trend_changed
+    FROM latest
+    ORDER BY
+      state_changed DESC,
+      ABS(COALESCE(weekly_price_change, 0)) DESC,
+      ABS(COALESCE(weekly_score_change, 0)) DESC,
+      ticker
+    """
+    params = [bigquery.ScalarQueryParameter("analysis_date", "DATE", analysis_date)]
+    return [dict(row) for row in client.query(sql, job_config=bigquery.QueryJobConfig(query_parameters=params)).result()]
 
 
 def merge_analysis(config, row):
@@ -288,6 +379,9 @@ def merge_analysis(config, row):
         @ai_summary AS ai_summary,
         @ai_analysis AS ai_analysis,
         @ai_risks AS ai_risks,
+        @ai_technical_view AS ai_technical_view,
+        @ai_fair_value_view AS ai_fair_value_view,
+        @ai_data_quality_view AS ai_data_quality_view,
         @ai_opportunity AS ai_opportunity,
         @ai_decision_support AS ai_decision_support,
         @ai_valuation_opinion AS ai_valuation_opinion,
@@ -323,6 +417,9 @@ def merge_analysis(config, row):
       ai_summary = S.ai_summary,
       ai_analysis = S.ai_analysis,
       ai_risks = S.ai_risks,
+      ai_technical_view = S.ai_technical_view,
+      ai_fair_value_view = S.ai_fair_value_view,
+      ai_data_quality_view = S.ai_data_quality_view,
       ai_opportunity = S.ai_opportunity,
       ai_decision_support = S.ai_decision_support,
       ai_valuation_opinion = S.ai_valuation_opinion,
@@ -351,6 +448,9 @@ def merge_analysis(config, row):
       ai_summary,
       ai_analysis,
       ai_risks,
+      ai_technical_view,
+      ai_fair_value_view,
+      ai_data_quality_view,
       ai_opportunity,
       ai_decision_support,
       ai_valuation_opinion,
@@ -386,6 +486,9 @@ def merge_analysis(config, row):
       S.ai_summary,
       S.ai_analysis,
       S.ai_risks,
+      S.ai_technical_view,
+      S.ai_fair_value_view,
+      S.ai_data_quality_view,
       S.ai_opportunity,
       S.ai_decision_support,
       S.ai_valuation_opinion,
@@ -430,6 +533,9 @@ def merge_analysis(config, row):
         bigquery.ScalarQueryParameter("ai_summary", "STRING", row.get("ai_summary")),
         bigquery.ScalarQueryParameter("ai_analysis", "STRING", row.get("ai_analysis")),
         bigquery.ScalarQueryParameter("ai_risks", "STRING", row.get("ai_risks")),
+        bigquery.ScalarQueryParameter("ai_technical_view", "STRING", row.get("ai_technical_view")),
+        bigquery.ScalarQueryParameter("ai_fair_value_view", "STRING", row.get("ai_fair_value_view")),
+        bigquery.ScalarQueryParameter("ai_data_quality_view", "STRING", row.get("ai_data_quality_view")),
         bigquery.ScalarQueryParameter("ai_opportunity", "STRING", row.get("ai_opportunity")),
         bigquery.ScalarQueryParameter("ai_decision_support", "STRING", row.get("ai_decision_support")),
         bigquery.ScalarQueryParameter("ai_valuation_opinion", "STRING", row.get("ai_valuation_opinion")),
@@ -455,6 +561,7 @@ def merge_summary(config, row):
     USING (
       SELECT
         @analysis_date AS analysis_date,
+        @summary_type AS summary_type,
         @portfolio_summary AS portfolio_summary,
         @top_opportunities AS top_opportunities,
         @overvalued_summary AS overvalued_summary,
@@ -468,8 +575,9 @@ def merge_summary(config, row):
         @prompt_version AS prompt_version,
         CURRENT_TIMESTAMP() AS created_at
     ) S
-    ON T.analysis_date = S.analysis_date
+    ON T.analysis_date = S.analysis_date AND COALESCE(T.summary_type, "daily") = S.summary_type
     WHEN MATCHED THEN UPDATE SET
+      summary_type = S.summary_type,
       portfolio_summary = S.portfolio_summary,
       top_opportunities = S.top_opportunities,
       overvalued_summary = S.overvalued_summary,
@@ -484,6 +592,7 @@ def merge_summary(config, row):
       created_at = S.created_at
     WHEN NOT MATCHED THEN INSERT (
       analysis_date,
+      summary_type,
       portfolio_summary,
       top_opportunities,
       overvalued_summary,
@@ -498,6 +607,7 @@ def merge_summary(config, row):
       created_at
     ) VALUES (
       S.analysis_date,
+      S.summary_type,
       S.portfolio_summary,
       S.top_opportunities,
       S.overvalued_summary,
@@ -514,6 +624,7 @@ def merge_summary(config, row):
     """
     params = [
         bigquery.ScalarQueryParameter("analysis_date", "DATE", row["analysis_date"]),
+        bigquery.ScalarQueryParameter("summary_type", "STRING", row.get("summary_type", "daily")),
         bigquery.ScalarQueryParameter("portfolio_summary", "STRING", row.get("portfolio_summary")),
         bigquery.ScalarQueryParameter("top_opportunities", "STRING", row.get("top_opportunities")),
         bigquery.ScalarQueryParameter("overvalued_summary", "STRING", row.get("overvalued_summary")),

@@ -33,6 +33,7 @@ price_returns AS (
     SAFE_DIVIDE(close_price, LAG(close_price, 5) OVER ticker_window) - 1 AS return_5d,
     SAFE_DIVIDE(close_price, LAG(close_price, 20) OVER ticker_window) - 1 AS return_20d,
     SAFE_DIVIDE(close_price, LAG(close_price, 60) OVER ticker_window) - 1 AS return_60d,
+    SAFE_DIVIDE(close_price, LAG(close_price, 120) OVER ticker_window) - 1 AS return_120d,
     SAFE_DIVIDE(close_price, LAG(close_price, 1) OVER ticker_window) - 1 AS daily_return
   FROM price_daily
   WINDOW ticker_window AS (PARTITION BY ticker ORDER BY analysis_date)
@@ -47,14 +48,20 @@ price_features AS (
     return_5d,
     return_20d,
     return_60d,
+    return_120d,
     AVG(close_price) OVER ticker_20d AS sma_20,
     AVG(close_price) OVER ticker_60d AS sma_60,
+    AVG(close_price) OVER ticker_120d AS sma_120,
+    MAX(close_price) OVER ticker_252d AS high_252d,
+    MIN(close_price) OVER ticker_252d AS low_252d,
     STDDEV_POP(daily_return) OVER ticker_20d AS volatility_20d,
     SAFE_DIVIDE(volume, AVG(volume) OVER ticker_20d) AS volume_vs_20d_avg
   FROM price_returns
   WINDOW
     ticker_20d AS (PARTITION BY ticker ORDER BY analysis_date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW),
-    ticker_60d AS (PARTITION BY ticker ORDER BY analysis_date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW)
+    ticker_60d AS (PARTITION BY ticker ORDER BY analysis_date ROWS BETWEEN 59 PRECEDING AND CURRENT ROW),
+    ticker_120d AS (PARTITION BY ticker ORDER BY analysis_date ROWS BETWEEN 119 PRECEDING AND CURRENT ROW),
+    ticker_252d AS (PARTITION BY ticker ORDER BY analysis_date ROWS BETWEEN 251 PRECEDING AND CURRENT ROW)
 ),
 base AS (
   SELECT
@@ -82,8 +89,12 @@ base AS (
     p.return_5d,
     p.return_20d,
     p.return_60d,
+    p.return_120d,
     p.sma_20,
     p.sma_60,
+    p.sma_120,
+    p.high_252d,
+    p.low_252d,
     p.volatility_20d,
     p.volume_vs_20d_avg
   FROM ${ref("portfolio_valuation_daily")} v
@@ -120,11 +131,69 @@ scored AS (
       CASE WHEN sma_60 IS NULL THEN 0 WHEN last_close >= sma_60 THEN 0.5 ELSE -0.5 END
     ) AS momentum_score,
     (
+      CASE WHEN financial_data_status = "SIN_SNAPSHOT_FINANCIERO" THEN -3
+           WHEN financial_data_status = "FINANCIERO_REZAGADO" THEN -1
+           ELSE 0 END +
+      CASE WHEN pe_ratio IS NULL THEN -0.25 ELSE 0 END +
+      CASE WHEN forward_pe IS NULL THEN -0.25 ELSE 0 END +
+      CASE WHEN price_to_sales IS NULL THEN -0.25 ELSE 0 END +
+      CASE WHEN ev_to_ebitda IS NULL THEN -0.25 ELSE 0 END +
+      CASE WHEN roe IS NULL THEN -0.25 ELSE 0 END +
+      CASE WHEN profit_margin IS NULL THEN -0.25 ELSE 0 END
+    ) AS data_quality_score,
+    (
       CASE WHEN volatility_20d IS NULL THEN 0 WHEN volatility_20d <= 0.025 THEN 0.5 WHEN volatility_20d > 0.06 THEN -1.5 ELSE -0.5 END +
       CASE WHEN beta IS NULL THEN 0 WHEN beta <= 1.2 THEN 0.5 WHEN beta > 1.8 THEN -1 ELSE 0 END +
-      CASE WHEN volume_vs_20d_avg IS NULL THEN 0 WHEN volume_vs_20d_avg >= 1.5 AND return_1d < 0 THEN -0.5 ELSE 0 END
-    ) AS risk_score
+      CASE WHEN volume_vs_20d_avg IS NULL THEN 0 WHEN volume_vs_20d_avg >= 1.5 AND return_1d < 0 THEN -0.5 ELSE 0 END +
+      CASE WHEN debt_to_equity IS NULL THEN 0 WHEN debt_to_equity > 250 THEN -1 WHEN debt_to_equity <= 75 THEN 0.5 ELSE 0 END
+    ) AS risk_score,
+    (
+      CASE WHEN return_20d IS NULL THEN 0 WHEN return_20d > 0.08 THEN 1 WHEN return_20d < -0.08 THEN -1 ELSE 0 END +
+      CASE WHEN return_60d IS NULL THEN 0 WHEN return_60d > 0.12 THEN 1 WHEN return_60d < -0.15 THEN -1 ELSE 0 END +
+      CASE WHEN return_120d IS NULL THEN 0 WHEN return_120d > 0.18 THEN 1 WHEN return_120d < -0.20 THEN -1 ELSE 0 END +
+      CASE WHEN sma_20 IS NULL OR sma_60 IS NULL THEN 0 WHEN sma_20 >= sma_60 THEN 0.75 ELSE -0.75 END +
+      CASE WHEN sma_60 IS NULL OR sma_120 IS NULL THEN 0 WHEN sma_60 >= sma_120 THEN 0.75 ELSE -0.75 END +
+      CASE WHEN high_252d IS NULL OR last_close IS NULL THEN 0 WHEN SAFE_DIVIDE(last_close, high_252d) >= 0.95 THEN -0.5 ELSE 0 END
+    ) AS technical_score
   FROM base
+),
+fair_value AS (
+  SELECT
+    *,
+    ROUND(
+      last_close * COALESCE(
+        CASE WHEN forward_pe IS NOT NULL AND forward_pe > 0 THEN COALESCE(peer_median_forward_pe, 22) / forward_pe END,
+        CASE WHEN pe_ratio IS NOT NULL AND pe_ratio > 0 THEN COALESCE(peer_median_pe, 24) / pe_ratio END,
+        CASE WHEN price_to_sales IS NOT NULL AND price_to_sales > 0 THEN COALESCE(peer_median_price_to_sales, 4) / price_to_sales END,
+        CASE WHEN ev_to_ebitda IS NOT NULL AND ev_to_ebitda > 0 THEN COALESCE(peer_median_ev_to_ebitda, 16) / ev_to_ebitda END,
+        1
+      ),
+      2
+    ) AS fair_value_estimate,
+    ROUND(
+      last_close * COALESCE(
+        CASE WHEN forward_pe IS NOT NULL AND forward_pe > 0 THEN LEAST(COALESCE(peer_median_forward_pe, 22), 22) / forward_pe END,
+        CASE WHEN pe_ratio IS NOT NULL AND pe_ratio > 0 THEN LEAST(COALESCE(peer_median_pe, 24), 24) / pe_ratio END,
+        CASE WHEN price_to_sales IS NOT NULL AND price_to_sales > 0 THEN LEAST(COALESCE(peer_median_price_to_sales, 4), 4) / price_to_sales END,
+        CASE WHEN ev_to_ebitda IS NOT NULL AND ev_to_ebitda > 0 THEN LEAST(COALESCE(peer_median_ev_to_ebitda, 16), 16) / ev_to_ebitda END,
+        0.95
+      ),
+      2
+    ) AS conservative_fair_value,
+    ROUND(
+      SAFE_DIVIDE(
+        last_close * COALESCE(
+          CASE WHEN forward_pe IS NOT NULL AND forward_pe > 0 THEN LEAST(COALESCE(peer_median_forward_pe, 22), 22) / forward_pe END,
+          CASE WHEN pe_ratio IS NOT NULL AND pe_ratio > 0 THEN LEAST(COALESCE(peer_median_pe, 24), 24) / pe_ratio END,
+          CASE WHEN price_to_sales IS NOT NULL AND price_to_sales > 0 THEN LEAST(COALESCE(peer_median_price_to_sales, 4), 4) / price_to_sales END,
+          CASE WHEN ev_to_ebitda IS NOT NULL AND ev_to_ebitda > 0 THEN LEAST(COALESCE(peer_median_ev_to_ebitda, 16), 16) / ev_to_ebitda END,
+          0.95
+        ) - last_close,
+        last_close
+      ),
+      4
+    ) AS margin_of_safety_pct
+  FROM scored
 ),
 final_scored AS (
   SELECT
@@ -135,10 +204,12 @@ final_scored AS (
       value_component +
       quality_score +
       momentum_score +
+      technical_score +
+      data_quality_score +
       risk_score,
       2
     ) AS final_score
-  FROM scored
+  FROM fair_value
 ),
 sell_scored AS (
   SELECT
@@ -156,15 +227,19 @@ sell_scored AS (
       2
     ) AS sell_score,
     ROUND(
-      last_close *
-      CASE
-        WHEN classification = "CARA" AND risk_score <= -2 THEN 0.90
-        WHEN classification = "CARA" THEN 0.95
-        WHEN risk_score <= -2 THEN 0.92
-        ELSE 1.05
-      END,
+      GREATEST(
+        COALESCE(conservative_fair_value, last_close),
+        last_close *
+          CASE
+            WHEN classification = "CARA" AND risk_score <= -2 THEN 0.90
+            WHEN classification = "CARA" THEN 0.95
+            WHEN risk_score <= -2 THEN 0.92
+            ELSE 1.05
+          END
+      ),
       2
-    ) AS suggested_sell_price
+    ) AS suggested_sell_price,
+    ROUND(LEAST(COALESCE(conservative_fair_value * 0.85, last_close * 0.90), last_close * 0.90), 2) AS suggested_buy_price
   FROM final_scored
 )
 
@@ -197,14 +272,41 @@ SELECT
   value_component,
   quality_score,
   momentum_score,
+  technical_score,
   risk_score,
+  data_quality_score,
+  CASE
+    WHEN data_quality_score <= -3 THEN "ALTO"
+    WHEN data_quality_score <= -1 THEN "MEDIO"
+    ELSE "BAJO"
+  END AS missing_data_impact,
+  CASE
+    WHEN risk_score <= -2 THEN "ALTO"
+    WHEN risk_score < 0 THEN "MEDIO"
+    ELSE "BAJO"
+  END AS risk_level,
+  CASE
+    WHEN technical_score >= 2 THEN "ALCISTA"
+    WHEN technical_score <= -2 THEN "BAJISTA"
+    ELSE "NEUTRAL"
+  END AS technical_trend,
   final_score,
   sell_score,
+  fair_value_estimate,
+  conservative_fair_value,
+  margin_of_safety_pct,
+  suggested_buy_price,
   suggested_sell_price,
   return_1d,
   return_5d,
   return_20d,
   return_60d,
+  return_120d,
+  sma_20,
+  sma_60,
+  sma_120,
+  high_252d,
+  low_252d,
   volatility_20d,
   volume_vs_20d_avg,
   pe_ratio,
@@ -225,6 +327,8 @@ SELECT
       AND valuation_score >= 2
       AND quality_score >= 2
       AND final_score >= 6
+      AND margin_of_safety_pct >= 0.08
+      AND data_quality_score >= -1
       AND (price_to_sales IS NULL OR price_to_sales <= 6)
       AND (ev_to_ebitda IS NULL OR ev_to_ebitda <= 22)
       THEN "COMPRAR_OBSERVAR"
@@ -239,9 +343,14 @@ SELECT
     "valor=", CAST(ROUND(value_component, 2) AS STRING),
     "; peers=", COALESCE(peer_valuation_label, "SIN_PEERS"),
     "; score_peer=", COALESCE(CAST(ROUND(peer_relative_score, 2) AS STRING), "NA"),
+    "; margen_seguridad=", COALESCE(CAST(ROUND(margin_of_safety_pct * 100, 1) AS STRING), "NA"), "%",
+    "; valor_justo_conservador=", COALESCE(CAST(conservative_fair_value AS STRING), "NA"),
+    "; precio_compra_sugerido=", COALESCE(CAST(suggested_buy_price AS STRING), "NA"),
     "; calidad=", CAST(ROUND(quality_score, 2) AS STRING),
     "; momentum=", CAST(ROUND(momentum_score, 2) AS STRING),
+    "; tecnico=", CAST(ROUND(technical_score, 2) AS STRING),
     "; riesgo=", CAST(ROUND(risk_score, 2) AS STRING),
+    "; calidad_datos=", CAST(ROUND(data_quality_score, 2) AS STRING),
     "; venta=", CAST(ROUND(sell_score, 2) AS STRING),
     "; precio_venta_sugerido=", CAST(suggested_sell_price AS STRING)
   ) AS signal_reason,
@@ -256,12 +365,16 @@ SELECT
     "score_venta=", CAST(ROUND(sell_score, 2) AS STRING),
     "; clasificacion=", classification,
     "; peers=", COALESCE(peer_valuation_label, "SIN_PEERS"),
+    "; margen_seguridad=", COALESCE(CAST(ROUND(margin_of_safety_pct * 100, 1) AS STRING), "NA"), "%",
+    "; valor_justo_conservador=", COALESCE(CAST(conservative_fair_value AS STRING), "NA"),
     "; pe=", COALESCE(CAST(ROUND(pe_ratio, 2) AS STRING), "NA"),
     "; forward_pe=", COALESCE(CAST(ROUND(forward_pe, 2) AS STRING), "NA"),
     "; ps=", COALESCE(CAST(ROUND(price_to_sales, 2) AS STRING), "NA"),
     "; ev_ebitda=", COALESCE(CAST(ROUND(ev_to_ebitda, 2) AS STRING), "NA"),
     "; calidad=", CAST(ROUND(quality_score, 2) AS STRING),
     "; riesgo=", CAST(ROUND(risk_score, 2) AS STRING),
+    "; tecnico=", CAST(ROUND(technical_score, 2) AS STRING),
+    "; calidad_datos=", CAST(ROUND(data_quality_score, 2) AS STRING),
     "; precio_actual=", CAST(ROUND(last_close, 2) AS STRING),
     "; vender_sobre=", COALESCE(CAST(suggested_sell_price AS STRING), "NA")
   ) AS sell_reason,

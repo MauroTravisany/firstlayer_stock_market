@@ -56,6 +56,12 @@ jobs:
             'select * from `stocks-437902.acciones_dataset.looker_portfolio_history`' \
             > dashboard/data/portfolio_history.csv
 
+          if ! bq query --project_id="${{ secrets.GCP_PROJECT_ID }}" --use_legacy_sql=false --format=csv \
+            'select * from `stocks-437902.acciones_dataset.portfolio_signal_backtest`' \
+            > dashboard/data/portfolio_signal_backtest.csv; then
+            printf 'analysis_date,ticker,signal,sell_signal,classification,last_close,final_score,sell_score,margin_of_safety_pct,risk_level,technical_trend,price_5d,price_20d,price_60d,forward_return_5d,forward_return_20d,forward_return_60d,signal_success_60d,backtest_status,calculated_at\n' > dashboard/data/portfolio_signal_backtest.csv
+          fi
+
           bq query --project_id="${{ secrets.GCP_PROJECT_ID }}" --use_legacy_sql=false --format=csv \
             'select * from `stocks-437902.acciones_dataset.looker_portfolio_summary`' \
             > dashboard/data/portfolio_summary.csv
@@ -82,6 +88,11 @@ jobs:
             rows=$(( $(wc -l < "$csv_file") - 1 ))
             echo "rows=$rows"
             if [ "$rows" -le 0 ]; then
+              if [ "$(basename "$csv_file")" = "portfolio_signal_backtest.csv" ]; then
+                echo "CSV snapshot is empty but allowed until historical forward returns exist: $csv_file"
+                echo "::endgroup::"
+                continue
+              fi
               echo "CSV snapshot is empty: $csv_file" >&2
               exit 1
             fi

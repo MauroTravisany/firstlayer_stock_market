@@ -8,6 +8,7 @@ SLACK_TEXT_LIMIT = 12000
 DEFAULT_MIN_FINAL_SCORE = 6.0
 DEFAULT_MIN_CONFIDENCE = 0.65
 DEFAULT_MIN_SELL_SCORE = 7.0
+DEFAULT_MIN_MARGIN_OF_SAFETY = 0.08
 MAX_BUY_FORWARD_PE = 28
 MAX_BUY_PE = 35
 MAX_BUY_PRICE_TO_SALES = 6
@@ -15,6 +16,7 @@ MAX_BUY_EV_TO_EBITDA = 22
 DISCORD_GREEN = 0x2ECC71
 DISCORD_RED = 0xE74C3C
 DISCORD_GOLD = 0xF1C40F
+DISCORD_BLUE = 0x3498DB
 
 
 def _detect_webhook_type(config):
@@ -43,6 +45,8 @@ def clear_opportunity_rows(analysis_rows, min_final_score=DEFAULT_MIN_FINAL_SCOR
         if row.get("ai_signal_agreement") == "CONTRADICE_MODELO":
             continue
         if row.get("ai_valuation_opinion") == "CARA":
+            continue
+        if row.get("missing_data_impact") == "ALTO":
             continue
         if not _passes_buy_valuation_guardrails(row):
             continue
@@ -86,6 +90,9 @@ def _passes_buy_valuation_guardrails(row):
     valuation_score = _float_or_none(row.get("valuation_score"))
     if valuation_score is None or valuation_score < 2:
         return False
+    margin_of_safety = _float_or_none(row.get("margin_of_safety_pct"))
+    if margin_of_safety is None or margin_of_safety < DEFAULT_MIN_MARGIN_OF_SAFETY:
+        return False
 
     pe_ratio = _float_or_none(row.get("pe_ratio"))
     forward_pe = _float_or_none(row.get("forward_pe"))
@@ -112,6 +119,8 @@ def _metric_line(row):
         ("Fwd PE", row.get("forward_pe")),
         ("P/S", row.get("price_to_sales")),
         ("EV/EBITDA", row.get("ev_to_ebitda")),
+        ("Margen seguridad", row.get("margin_of_safety_pct")),
+        ("Valor justo", row.get("conservative_fair_value")),
         ("Peer score", row.get("peer_relative_score")),
         ("ROE", row.get("roe")),
         ("Margen", row.get("profit_margin")),
@@ -121,7 +130,7 @@ def _metric_line(row):
         if value is None:
             continue
         number = float(value)
-        if label in {"ROE", "Margen"}:
+        if label in {"ROE", "Margen", "Margen seguridad"}:
             parts.append(f"{label} {round(number * 100, 1)}%")
         else:
             parts.append(f"{label} {round(number, 2)}")
@@ -236,6 +245,11 @@ def _discord_buy_embed(row):
             {"name": "Confianza", "value": str(confidence), "inline": True},
             {"name": "Multiples", "value": _metric_line(row), "inline": False},
             {
+                "name": "Valoracion",
+                "value": _short_text(row.get("ai_fair_value_view") or row.get("signal_reason"), DISCORD_FIELD_LIMIT),
+                "inline": False,
+            },
+            {
                 "name": "Soporte",
                 "value": _short_text(row.get("ai_decision_support"), DISCORD_FIELD_LIMIT),
                 "inline": False,
@@ -346,6 +360,42 @@ def send_webhook_alert(config, summary, analysis_rows=None):
         payload = {"text": _truncate_text(text, SLACK_TEXT_LIMIT)}
 
     response = requests.post(url, json=payload, timeout=30)
+    if response.status_code >= 300:
+        return False, f"Webhook error {response.status_code}: {response.text}"
+    return True, None
+
+
+def build_weekly_discord_payload(summary):
+    return {
+        "embeds": [
+            {
+                "title": summary.get("alert_title") or "Resumen semanal de cartera",
+                "description": _short_text(summary.get("weekly_summary"), 900),
+                "color": DISCORD_BLUE,
+                "fields": [
+                    {"name": "Movimientos importantes", "value": _short_text(summary.get("important_moves"), DISCORD_FIELD_LIMIT), "inline": False},
+                    {"name": "Cambios de estado", "value": _short_text(summary.get("state_changes"), DISCORD_FIELD_LIMIT), "inline": False},
+                    {"name": "Riesgos", "value": _short_text(summary.get("risk_changes"), DISCORD_FIELD_LIMIT), "inline": False},
+                    {"name": "Tendencias", "value": _short_text(summary.get("trend_changes"), DISCORD_FIELD_LIMIT), "inline": False},
+                    {"name": "Proxima semana", "value": _short_text(summary.get("watch_next_week"), DISCORD_FIELD_LIMIT), "inline": False},
+                ],
+                "footer": {"text": "Resumen semanal generado con datos internos, valoracion, riesgo y tendencia tecnica"},
+            }
+        ]
+    }
+
+
+def send_weekly_webhook_alert(config, summary):
+    url = config.get("alert_webhook_url")
+    if not url:
+        return False, "ALERT_WEBHOOK_URL not configured"
+
+    webhook_type = _detect_webhook_type(config)
+    if webhook_type == "discord":
+        response = requests.post(url, json=build_weekly_discord_payload(summary), timeout=30)
+    else:
+        response = requests.post(url, json={"text": _truncate_text(summary.get("alert_body") or summary.get("weekly_summary") or "", SLACK_TEXT_LIMIT)}, timeout=30)
+
     if response.status_code >= 300:
         return False, f"Webhook error {response.status_code}: {response.text}"
     return True, None

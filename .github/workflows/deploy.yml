@@ -61,4 +61,32 @@ jobs:
               --memory 1Gi \
               --concurrency 1 \
               --max-instances 1 \
-              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},OPENAI_MODEL=gpt-5-mini,ALERT_WEBHOOK_TYPE=auto,PROMPT_VERSION=portfolio-ai-v3,AI_MAX_TICKERS=12,AI_ANALYSIS_TABLE_ID=portfolio_ai_analysis_daily,AI_SUMMARY_TABLE_ID=portfolio_ai_summary_daily"
+              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},OPENAI_MODEL=gpt-5-mini,ALERT_WEBHOOK_TYPE=auto,PROMPT_VERSION=portfolio-ai-v4,AI_MAX_TICKERS=12,AI_ANALYSIS_TABLE_ID=portfolio_ai_analysis_daily,AI_SUMMARY_TABLE_ID=portfolio_ai_summary_daily"
+
+      - name: Configure weekly AI summary scheduler
+        run: |
+          SERVICE_URL="$(gcloud run services describe stockaianalysis --platform managed --region us-east1 --format='value(status.url)')"
+          SERVICE_ACCOUNT="stock-alert-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
+          if gcloud scheduler jobs describe stock-ai-weekly-summary --location us-east1 >/dev/null 2>&1; then
+            gcloud scheduler jobs update http stock-ai-weekly-summary \
+              --location us-east1 \
+              --schedule "15 21 * * 5" \
+              --time-zone "America/Santiago" \
+              --uri "${SERVICE_URL}?summary_type=weekly" \
+              --http-method POST \
+              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
+              --oidc-token-audience "${SERVICE_URL}/" \
+              --message-body "{}" \
+              --attempt-deadline 1800s
+          else
+            gcloud scheduler jobs create http stock-ai-weekly-summary \
+              --location us-east1 \
+              --schedule "15 21 * * 5" \
+              --time-zone "America/Santiago" \
+              --uri "${SERVICE_URL}?summary_type=weekly" \
+              --http-method POST \
+              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
+              --oidc-token-audience "${SERVICE_URL}/" \
+              --message-body "{}" \
+              --attempt-deadline 1800s
+          fi

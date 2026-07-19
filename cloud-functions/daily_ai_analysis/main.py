@@ -11,6 +11,7 @@ from custom_function.ai_analysis import (
     build_analysis_row,
     build_error_analysis_row,
     build_portfolio_summary,
+    build_weekly_summary,
     ticker_input_hash,
 )
 from custom_function.bq_operations import (
@@ -18,11 +19,12 @@ from custom_function.bq_operations import (
     fetch_existing_successful_analyses,
     fetch_summary_state,
     fetch_daily_signals,
+    fetch_weekly_changes,
     get_analysis_date,
     merge_analysis,
     merge_summary,
 )
-from custom_function.notifier import build_alert_text, send_webhook_alert
+from custom_function.notifier import build_alert_text, send_webhook_alert, send_weekly_webhook_alert
 
 logging.basicConfig(level=logging.INFO)
 
@@ -49,9 +51,16 @@ def main(request):
     dry_run = parse_bool(request_json.get("dry_run", request.args.get("dry_run")), False)
     send_alert = parse_bool(request_json.get("send_alert", request.args.get("send_alert")), True)
     analysis_scope = (request_json.get("analysis_scope") or request.args.get("analysis_scope") or "candidates").lower()
+    summary_type = (request_json.get("summary_type") or request.args.get("summary_type") or "daily").lower()
     if analysis_scope not in {"candidates", "all"}:
         return (
             json.dumps({"status": "error", "message": "analysis_scope must be candidates or all"}),
+            400,
+            {"Content-Type": "application/json"},
+        )
+    if summary_type not in {"daily", "weekly"}:
+        return (
+            json.dumps({"status": "error", "message": "summary_type must be daily or weekly"}),
             400,
             {"Content-Type": "application/json"},
         )
@@ -60,6 +69,74 @@ def main(request):
         config = load_config()
         ensure_tables(config)
         analysis_date = get_analysis_date(config, request_json.get("analysis_date") or request.args.get("analysis_date"))
+        if summary_type == "weekly":
+            weekly_rows = fetch_weekly_changes(config, analysis_date)
+            summary_state = fetch_summary_state(config, analysis_date, "weekly")
+            if dry_run:
+                return (
+                    json.dumps(
+                        {
+                            "status": "dry_run",
+                            "summary_type": "weekly",
+                            "analysis_date": str(analysis_date),
+                            "rows": len(weekly_rows),
+                            "tickers": [row["ticker"] for row in weekly_rows],
+                        }
+                    ),
+                    200,
+                    {"Content-Type": "application/json"},
+                )
+            if summary_state and summary_state.get("alert_sent"):
+                return (
+                    json.dumps(
+                        {
+                            "status": "success",
+                            "summary_type": "weekly",
+                            "analysis_date": str(analysis_date),
+                            "alert_sent": True,
+                            "message": "Weekly alert already sent for this date.",
+                        }
+                    ),
+                    200,
+                    {"Content-Type": "application/json"},
+                )
+            weekly_summary = build_weekly_summary(config, weekly_rows)
+            alert_sent = False
+            alert_error = None
+            if send_alert:
+                alert_sent, alert_error = send_weekly_webhook_alert(config, weekly_summary)
+            merge_summary(
+                config,
+                {
+                    "analysis_date": analysis_date,
+                    "summary_type": "weekly",
+                    "portfolio_summary": weekly_summary["weekly_summary"],
+                    "top_opportunities": weekly_summary["important_moves"],
+                    "overvalued_summary": weekly_summary["state_changes"],
+                    "risk_summary": weekly_summary["risk_changes"],
+                    "dashboard_summary": weekly_summary["watch_next_week"],
+                    "alert_title": weekly_summary["alert_title"],
+                    "alert_body": weekly_summary["alert_body"],
+                    "alert_sent": alert_sent,
+                    "alert_error": alert_error,
+                    "model_name": config["openai_model"],
+                    "prompt_version": config["prompt_version"],
+                },
+            )
+            return (
+                json.dumps(
+                    {
+                        "status": "success" if not alert_error else "partial",
+                        "summary_type": "weekly",
+                        "analysis_date": str(analysis_date),
+                        "rows": len(weekly_rows),
+                        "alert_sent": alert_sent,
+                        "alert_error": alert_error,
+                    }
+                ),
+                200 if not alert_error else 207,
+                {"Content-Type": "application/json"},
+            )
         tickers = parse_tickers(request_json.get("tickers") or request.args.get("tickers") or os.environ.get("TICKERS"))
         signals = fetch_daily_signals(config, analysis_date, tickers, analysis_scope, config.get("max_tickers"))
         existing_success = fetch_existing_successful_analyses(
@@ -67,7 +144,7 @@ def main(request):
             analysis_date,
             [row["ticker"] for row in signals],
         )
-        summary_state = fetch_summary_state(config, analysis_date)
+        summary_state = fetch_summary_state(config, analysis_date, "daily")
     except Exception as exc:
         logging.exception("Error preparando daily_ai_analysis")
         return json.dumps({"status": "error", "message": str(exc)}), 500, {"Content-Type": "application/json"}
@@ -84,6 +161,7 @@ def main(request):
             json.dumps(
                 {
                     "status": "dry_run",
+                    "summary_type": summary_type,
                     "analysis_date": str(analysis_date),
                     "analysis_scope": analysis_scope,
                     "max_tickers": config.get("max_tickers"),
@@ -111,7 +189,7 @@ def main(request):
             parsed, input_hash = analyze_ticker(config, signal_row)
             analysis_row = build_analysis_row(config, signal_row, parsed, input_hash)
             merge_analysis(config, analysis_row)
-            analysis_rows.append(analysis_row)
+            analysis_rows.append({**signal_row, **analysis_row})
             results.append({"ticker": ticker, "status": "success"})
         except Exception as exc:
             logging.exception("Fallo analisis IA para %s", ticker)
@@ -120,7 +198,7 @@ def main(request):
                 merge_analysis(config, error_row)
             except Exception:
                 logging.exception("Fallo guardando error de analisis para %s", ticker)
-            analysis_rows.append(error_row)
+            analysis_rows.append({**signal_row, **error_row})
             results.append({"ticker": ticker, "status": "error", "message": str(exc)})
 
     alert_sent = False
@@ -133,6 +211,7 @@ def main(request):
             json.dumps(
                 {
                     "status": "success",
+                    "summary_type": summary_type,
                     "analysis_date": str(analysis_date),
                     "analysis_scope": analysis_scope,
                     "max_tickers": config.get("max_tickers"),
@@ -163,6 +242,7 @@ def main(request):
             config,
             {
                 "analysis_date": analysis_date,
+                "summary_type": "daily",
                 "portfolio_summary": portfolio_summary["portfolio_summary"],
                 "top_opportunities": portfolio_summary["top_opportunities"],
                 "overvalued_summary": portfolio_summary["overvalued_summary"],
@@ -186,6 +266,7 @@ def main(request):
         json.dumps(
             {
                 "status": "success" if status_code == 200 else "partial",
+                "summary_type": summary_type,
                 "analysis_date": str(analysis_date),
                 "analysis_scope": analysis_scope,
                 "max_tickers": config.get("max_tickers"),

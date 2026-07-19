@@ -16,6 +16,9 @@ TICKER_SCHEMA = {
         "valuation_view": {"type": "string"},
         "quality_view": {"type": "string"},
         "momentum_view": {"type": "string"},
+        "technical_view": {"type": "string"},
+        "fair_value_view": {"type": "string"},
+        "data_quality_view": {"type": "string"},
         "risk_view": {"type": "string"},
         "discrepancies": {"type": "string"},
         "opportunity": {"type": "string"},
@@ -54,6 +57,9 @@ TICKER_SCHEMA = {
         "valuation_view",
         "quality_view",
         "momentum_view",
+        "technical_view",
+        "fair_value_view",
+        "data_quality_view",
         "risk_view",
         "discrepancies",
         "opportunity",
@@ -98,6 +104,32 @@ SUMMARY_SCHEMA = {
 }
 
 
+WEEKLY_SUMMARY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "alert_title": {"type": "string"},
+        "weekly_summary": {"type": "string"},
+        "important_moves": {"type": "string"},
+        "state_changes": {"type": "string"},
+        "risk_changes": {"type": "string"},
+        "trend_changes": {"type": "string"},
+        "watch_next_week": {"type": "string"},
+        "alert_body": {"type": "string"},
+    },
+    "required": [
+        "alert_title",
+        "weekly_summary",
+        "important_moves",
+        "state_changes",
+        "risk_changes",
+        "trend_changes",
+        "watch_next_week",
+        "alert_body",
+    ],
+    "additionalProperties": False,
+}
+
+
 SYSTEM_PROMPT = """
 Eres un analista financiero objetivo. No das recomendacion financiera personalizada.
 Tu tarea es explicar datos de una cartera usando primero datos internos del sistema.
@@ -124,6 +156,9 @@ Reglas obligatorias:
 16. ai_valuation_opinion debe ser tu conclusion final independiente: BARATA, PRECIO_JUSTO, CARA o DATOS_INSUFICIENTES.
 17. ai_signal_agreement debe indicar si confirmas o contradices la senal cuantitativa.
 18. ai_final_alert_action solo debe ser ENVIAR_COMPRA cuando la tesis de compra sea clara, los multiplos sean razonables vs peers y no existan contradicciones relevantes.
+19. Usa fair_value_estimate, conservative_fair_value, margin_of_safety_pct, suggested_buy_price y suggested_sell_price para explicar precio justo y margen de seguridad. No los presentes como verdad exacta.
+20. Usa technical_trend, technical_score, return_20d, return_60d, return_120d y medias moviles como confirmacion secundaria. El analisis tecnico no debe superar a la valoracion fundamental.
+21. Usa missing_data_impact y data_quality_score para indicar si la conclusion es confiable. Si el impacto es ALTO, no envies una alerta clara.
 """
 
 
@@ -217,6 +252,9 @@ def analyze_ticker(config, signal_row):
                     "Analiza este ticker con los datos internos y contrasta con fuentes externas. "
                     "Incluye una tesis de venta objetiva cuando los datos sugieran sobrevaloracion, deterioro o riesgo elevado. "
                     "Evalua los ratios disponibles frente a umbrales razonables: PE, forward PE, price to sales, EV/EBITDA, ROE, margenes, deuda, liquidez, FCF, momentum y volatilidad. "
+                    "Evalua precio justo, precio objetivo conservador y margen de seguridad usando los campos internos fair_value_estimate, conservative_fair_value, margin_of_safety_pct, suggested_buy_price y suggested_sell_price. "
+                    "Incluye analisis tecnico semanal/mensual como confirmacion secundaria usando return_20d, return_60d, return_120d, sma_20, sma_60, sma_120, high_252d, low_252d y technical_trend. "
+                    "Explica el impacto de datos faltantes usando missing_data_impact y data_quality_score. "
                     "No confirmes una oportunidad clara solo porque signal lo diga; valida que los multiplos sean razonables y que no exista una contradiccion de valoracion. "
                     "Si la accion tiene calidad alta pero multiplos caros, explica que no es una compra clara y que requiere mejor precio o mayor margen de seguridad. "
                     "Usa peer_group, peer_valuation_label, peer_relative_score y percentiles relativos para comparar contra homologos. "
@@ -258,6 +296,9 @@ def build_analysis_row(config, signal_row, parsed, input_hash):
         "ai_summary": parsed.get("executive_summary"),
         "ai_analysis": parsed.get("internal_data_analysis"),
         "ai_risks": parsed.get("risk_view"),
+        "ai_technical_view": parsed.get("technical_view"),
+        "ai_fair_value_view": parsed.get("fair_value_view"),
+        "ai_data_quality_view": parsed.get("data_quality_view"),
         "ai_opportunity": parsed.get("opportunity"),
         "ai_decision_support": parsed.get("decision_support"),
         "ai_valuation_opinion": parsed.get("ai_valuation_opinion"),
@@ -297,6 +338,9 @@ def build_error_analysis_row(config, signal_row, exc):
         "ai_summary": "ERROR_GENERANDO_ANALISIS",
         "ai_analysis": str(exc),
         "ai_risks": None,
+        "ai_technical_view": None,
+        "ai_fair_value_view": None,
+        "ai_data_quality_view": None,
         "ai_opportunity": None,
         "ai_decision_support": None,
         "ai_valuation_opinion": "DATOS_INSUFICIENTES",
@@ -328,6 +372,10 @@ def build_portfolio_summary(config, analysis_rows):
             "risks": row.get("ai_risks"),
             "opportunity": row.get("ai_opportunity"),
             "confidence_score": row.get("confidence_score"),
+            "fair_value_estimate": row.get("fair_value_estimate"),
+            "conservative_fair_value": row.get("conservative_fair_value"),
+            "margin_of_safety_pct": row.get("margin_of_safety_pct"),
+            "suggested_buy_price": row.get("suggested_buy_price"),
             "sell_score": row.get("sell_score"),
             "sell_signal": row.get("sell_signal"),
             "suggested_sell_price": row.get("suggested_sell_price"),
@@ -360,5 +408,28 @@ def build_portfolio_summary(config, analysis_rows):
             },
         ],
         text=_json_schema("portfolio_summary", SUMMARY_SCHEMA),
+    )
+    return _extract_json(response)
+
+
+def build_weekly_summary(config, weekly_rows):
+    if not config.get("openai_api_key"):
+        raise RuntimeError("OPENAI_API_KEY secret is required to generate weekly summary")
+    client = OpenAI(api_key=config["openai_api_key"])
+    response = client.responses.create(
+        model=config["openai_model"],
+        input=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    "Crea un resumen semanal en espanol para Discord. "
+                    "Debe enfocarse en lo mas importante de la semana: cambios de estado, movimientos fuertes de precio, deterioro o mejora de riesgo, cambios de tendencia tecnica semanal/mensual y consideraciones para monitorear la proxima semana. "
+                    "No des recomendacion financiera personalizada. No repitas todas las acciones si no hay cambios relevantes. "
+                    f"weekly_rows={json.dumps(weekly_rows, ensure_ascii=True)}"
+                ),
+            },
+        ],
+        text=_json_schema("weekly_portfolio_summary", WEEKLY_SUMMARY_SCHEMA),
     )
     return _extract_json(response)

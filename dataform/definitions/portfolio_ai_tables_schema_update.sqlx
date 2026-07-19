@@ -1,0 +1,77 @@
+config {
+  type: "operations",
+  hasOutput: false,
+  tags: ["portfolio", "ai", "schema"]
+}
+
+CREATE TABLE IF NOT EXISTS `stocks-437902.acciones_dataset.portfolio_ai_analysis_daily` (
+  analysis_date DATE NOT NULL,
+  ticker STRING NOT NULL,
+  signal STRING,
+  classification STRING,
+  final_score FLOAT64,
+  valuation_score FLOAT64,
+  quality_score FLOAT64,
+  momentum_score FLOAT64,
+  risk_score FLOAT64,
+  sell_score FLOAT64,
+  sell_signal STRING,
+  suggested_sell_price FLOAT64,
+  ai_sell_thesis STRING,
+  ai_sell_reasons STRING,
+  ai_sell_price_view STRING,
+  ai_sell_decision_support STRING,
+  ai_summary STRING,
+  ai_analysis STRING,
+  ai_risks STRING,
+  ai_technical_view STRING,
+  ai_fair_value_view STRING,
+  ai_data_quality_view STRING,
+  ai_opportunity STRING,
+  ai_decision_support STRING,
+  ai_valuation_opinion STRING,
+  ai_signal_agreement STRING,
+  ai_final_alert_action STRING,
+  external_sources_json STRING,
+  external_context_summary STRING,
+  data_discrepancies STRING,
+  confidence_score FLOAT64,
+  confidence_reason STRING,
+  model_name STRING,
+  prompt_version STRING,
+  input_hash STRING,
+  raw_response_json STRING,
+  created_at TIMESTAMP NOT NULL
+)
+PARTITION BY analysis_date
+CLUSTER BY signal, ticker;
+
+ALTER TABLE `stocks-437902.acciones_dataset.portfolio_ai_analysis_daily`
+ADD COLUMN IF NOT EXISTS ai_technical_view STRING;
+
+ALTER TABLE `stocks-437902.acciones_dataset.portfolio_ai_analysis_daily`
+ADD COLUMN IF NOT EXISTS ai_fair_value_view STRING;
+
+ALTER TABLE `stocks-437902.acciones_dataset.portfolio_ai_analysis_daily`
+ADD COLUMN IF NOT EXISTS ai_data_quality_view STRING;
+
+CREATE TABLE IF NOT EXISTS `stocks-437902.acciones_dataset.portfolio_ai_summary_daily` (
+  analysis_date DATE NOT NULL,
+  summary_type STRING,
+  portfolio_summary STRING,
+  top_opportunities STRING,
+  overvalued_summary STRING,
+  risk_summary STRING,
+  dashboard_summary STRING,
+  alert_title STRING,
+  alert_body STRING,
+  alert_sent BOOL,
+  alert_error STRING,
+  model_name STRING,
+  prompt_version STRING,
+  created_at TIMESTAMP NOT NULL
+)
+PARTITION BY analysis_date;
+
+ALTER TABLE `stocks-437902.acciones_dataset.portfolio_ai_summary_daily`
+ADD COLUMN IF NOT EXISTS summary_type STRING;
