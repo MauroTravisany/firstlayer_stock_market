@@ -21,6 +21,12 @@ WITH base AS (
     signal,
     sell_signal,
     classification,
+    asset_type,
+    sector,
+    industry,
+    peer_group,
+    valuation_model,
+    primary_metric,
     CASE
       WHEN signal = "COMPRAR_OBSERVAR" THEN "OPORTUNIDAD_COMPRA"
       WHEN signal = "VENDER_OBSERVAR" OR sell_signal = "VENTA_CLARA" THEN "ALERTA_VENTA"
@@ -116,6 +122,8 @@ SELECT
   END AS change_type,
   CONCAT(
     "estado=", company_status,
+    "; modelo=", COALESCE(valuation_model, "NA"),
+    "; ratio_principal=", COALESCE(primary_metric, "NA"),
     "; anterior=", COALESCE(previous_company_status, "NA"),
     "; signal=", signal,
     "; venta=", COALESCE(sell_signal, "NA"),

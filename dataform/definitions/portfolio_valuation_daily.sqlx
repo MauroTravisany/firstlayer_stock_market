@@ -2,7 +2,7 @@ config {
   type: "table",
   schema: "acciones_dataset",
   name: "portfolio_valuation_daily",
-  description: "Clasificacion diaria de la cartera como BARATA, PRECIO_JUSTO o CARA usando ratios financieros y precios diarios.",
+  description: "Clasificacion diaria de la cartera como BARATA, PRECIO_JUSTO o CARA usando modelos de valoracion por industria.",
   tags: ["portfolio", "valuation", "daily"],
   bigquery: {
     partitionBy: "analysis_date",
@@ -11,7 +11,8 @@ config {
   assertions: {
     nonNull: ["analysis_date", "ticker", "classification"],
     uniqueKey: ["analysis_date", "ticker"]
-  }
+  },
+  dependencies: ["asset_profile", "valuation_model_profile"]
 }
 
 WITH price_daily AS (
@@ -73,10 +74,52 @@ latest_statement_for_price_day AS (
   )
   WHERE rn = 1
 ),
-scored AS (
+base AS (
   SELECT
     p.analysis_date,
     p.ticker,
+    ap.asset_type,
+    ap.sector,
+    ap.industry,
+    ap.peer_group,
+    COALESCE(vm.valuation_model, fallback.valuation_model) AS valuation_model,
+    COALESCE(vm.primary_metric, fallback.primary_metric) AS primary_metric,
+    COALESCE(vm.forward_pe_cheap, fallback.forward_pe_cheap) AS forward_pe_cheap,
+    COALESCE(vm.forward_pe_fair, fallback.forward_pe_fair) AS forward_pe_fair,
+    COALESCE(vm.forward_pe_expensive, fallback.forward_pe_expensive) AS forward_pe_expensive,
+    COALESCE(vm.forward_pe_extreme, fallback.forward_pe_extreme) AS forward_pe_extreme,
+    COALESCE(vm.forward_pe_weight, fallback.forward_pe_weight) AS forward_pe_weight,
+    COALESCE(vm.pe_cheap, fallback.pe_cheap) AS pe_cheap,
+    COALESCE(vm.pe_fair, fallback.pe_fair) AS pe_fair,
+    COALESCE(vm.pe_expensive, fallback.pe_expensive) AS pe_expensive,
+    COALESCE(vm.pe_extreme, fallback.pe_extreme) AS pe_extreme,
+    COALESCE(vm.pe_weight, fallback.pe_weight) AS pe_weight,
+    COALESCE(vm.ps_cheap, fallback.ps_cheap) AS ps_cheap,
+    COALESCE(vm.ps_fair, fallback.ps_fair) AS ps_fair,
+    COALESCE(vm.ps_expensive, fallback.ps_expensive) AS ps_expensive,
+    COALESCE(vm.ps_extreme, fallback.ps_extreme) AS ps_extreme,
+    COALESCE(vm.ps_weight, fallback.ps_weight) AS ps_weight,
+    COALESCE(vm.ev_ebitda_cheap, fallback.ev_ebitda_cheap) AS ev_ebitda_cheap,
+    COALESCE(vm.ev_ebitda_fair, fallback.ev_ebitda_fair) AS ev_ebitda_fair,
+    COALESCE(vm.ev_ebitda_expensive, fallback.ev_ebitda_expensive) AS ev_ebitda_expensive,
+    COALESCE(vm.ev_ebitda_extreme, fallback.ev_ebitda_extreme) AS ev_ebitda_extreme,
+    COALESCE(vm.ev_ebitda_weight, fallback.ev_ebitda_weight) AS ev_ebitda_weight,
+    COALESCE(vm.pb_cheap, fallback.pb_cheap) AS pb_cheap,
+    COALESCE(vm.pb_fair, fallback.pb_fair) AS pb_fair,
+    COALESCE(vm.pb_expensive, fallback.pb_expensive) AS pb_expensive,
+    COALESCE(vm.pb_extreme, fallback.pb_extreme) AS pb_extreme,
+    COALESCE(vm.pb_weight, fallback.pb_weight) AS pb_weight,
+    COALESCE(vm.profit_margin_good, fallback.profit_margin_good) AS profit_margin_good,
+    COALESCE(vm.profit_margin_bad, fallback.profit_margin_bad) AS profit_margin_bad,
+    COALESCE(vm.profit_margin_weight, fallback.profit_margin_weight) AS profit_margin_weight,
+    COALESCE(vm.operating_margin_good, fallback.operating_margin_good) AS operating_margin_good,
+    COALESCE(vm.operating_margin_bad, fallback.operating_margin_bad) AS operating_margin_bad,
+    COALESCE(vm.operating_margin_weight, fallback.operating_margin_weight) AS operating_margin_weight,
+    COALESCE(vm.roe_good, fallback.roe_good) AS roe_good,
+    COALESCE(vm.roe_bad, fallback.roe_bad) AS roe_bad,
+    COALESCE(vm.roe_weight, fallback.roe_weight) AS roe_weight,
+    COALESCE(vm.current_ratio_min, fallback.current_ratio_min) AS current_ratio_min,
+    COALESCE(vm.liquidity_weight, fallback.liquidity_weight) AS liquidity_weight,
     r.snapshot_date AS financial_snapshot_date,
     r.ratio_lag_days,
     p.first_open,
@@ -108,46 +151,7 @@ scored AS (
     s.revenue,
     s.net_income,
     s.total_debt,
-    s.free_cash_flow,
-    (
-      CASE
-        WHEN r.forward_pe IS NULL THEN 0
-        WHEN r.forward_pe <= 18 THEN 2
-        WHEN r.forward_pe <= 22 THEN 0.5
-        WHEN r.forward_pe <= 28 THEN 0
-        WHEN r.forward_pe <= 35 THEN -0.75
-        ELSE -1.5
-      END +
-      CASE
-        WHEN r.pe_ratio IS NULL THEN 0
-        WHEN r.pe_ratio <= 20 THEN 1
-        WHEN r.pe_ratio <= 25 THEN 0
-        WHEN r.pe_ratio <= 35 THEN -0.5
-        WHEN r.pe_ratio > 60 THEN -2
-        ELSE -1
-      END +
-      CASE
-        WHEN r.price_to_sales IS NULL THEN 0
-        WHEN r.price_to_sales <= 3 THEN 1
-        WHEN r.price_to_sales <= 5 THEN 0
-        WHEN r.price_to_sales <= 8 THEN -1
-        WHEN r.price_to_sales > 12 THEN -2
-        ELSE -1.5
-      END +
-      CASE
-        WHEN r.ev_to_ebitda IS NULL THEN 0
-        WHEN r.ev_to_ebitda <= 15 THEN 1
-        WHEN r.ev_to_ebitda <= 20 THEN 0
-        WHEN r.ev_to_ebitda <= 25 THEN -1
-        WHEN r.ev_to_ebitda > 40 THEN -2
-        ELSE -1.5
-      END +
-      CASE WHEN r.profit_margin >= 0.25 THEN 1 WHEN r.profit_margin < 0 THEN -1 ELSE 0 END +
-      CASE WHEN r.operating_margin >= 0.25 THEN 0.5 WHEN r.operating_margin < 0 THEN -0.75 ELSE 0 END +
-      CASE WHEN r.roe >= 0.20 THEN 0.5 WHEN r.roe < 0 THEN -0.75 ELSE 0 END +
-      CASE WHEN r.current_ratio IS NOT NULL AND r.current_ratio < 1 THEN -0.5 ELSE 0 END +
-      CASE WHEN p.day_change_pct > 3 THEN -0.5 WHEN p.day_change_pct < -3 THEN 0.5 ELSE 0 END
-    ) AS valuation_score
+    s.free_cash_flow
   FROM price_daily p
   LEFT JOIN ratios_for_price_day r
     ON r.ticker = p.ticker
@@ -155,14 +159,174 @@ scored AS (
   LEFT JOIN latest_statement_for_price_day s
     ON s.ticker = p.ticker
    AND s.analysis_date = p.analysis_date
+  LEFT JOIN ${ref("asset_profile")} ap
+    ON ap.ticker = p.ticker
+  LEFT JOIN ${ref("valuation_model_profile")} vm
+    ON vm.peer_group = ap.peer_group
+  LEFT JOIN ${ref("valuation_model_profile")} fallback
+    ON fallback.peer_group = "default_stock"
+),
+metric_scores AS (
+  SELECT
+    *,
+    CASE
+      WHEN asset_type = "ETF" THEN 0
+      WHEN forward_pe IS NULL OR forward_pe_weight = 0 THEN 0
+      WHEN forward_pe <= forward_pe_cheap THEN 2 * forward_pe_weight
+      WHEN forward_pe <= forward_pe_fair THEN 0.5 * forward_pe_weight
+      WHEN forward_pe <= forward_pe_expensive THEN 0
+      WHEN forward_pe <= forward_pe_extreme THEN -1 * forward_pe_weight
+      ELSE -2 * forward_pe_weight
+    END AS forward_pe_score,
+    CASE
+      WHEN asset_type = "ETF" THEN 0
+      WHEN pe_ratio IS NULL OR pe_weight = 0 THEN 0
+      WHEN pe_ratio <= pe_cheap THEN 1.5 * pe_weight
+      WHEN pe_ratio <= pe_fair THEN 0.25 * pe_weight
+      WHEN pe_ratio <= pe_expensive THEN -0.5 * pe_weight
+      WHEN pe_ratio <= pe_extreme THEN -1 * pe_weight
+      ELSE -2 * pe_weight
+    END AS pe_score,
+    CASE
+      WHEN asset_type = "ETF" THEN 0
+      WHEN price_to_sales IS NULL OR ps_weight = 0 THEN 0
+      WHEN price_to_sales <= ps_cheap THEN 1.5 * ps_weight
+      WHEN price_to_sales <= ps_fair THEN 0.25 * ps_weight
+      WHEN price_to_sales <= ps_expensive THEN -0.75 * ps_weight
+      WHEN price_to_sales <= ps_extreme THEN -1.5 * ps_weight
+      ELSE -2.25 * ps_weight
+    END AS price_to_sales_score,
+    CASE
+      WHEN asset_type = "ETF" THEN 0
+      WHEN ev_to_ebitda IS NULL OR ev_ebitda_weight = 0 THEN 0
+      WHEN ev_to_ebitda <= ev_ebitda_cheap THEN 1.5 * ev_ebitda_weight
+      WHEN ev_to_ebitda <= ev_ebitda_fair THEN 0.25 * ev_ebitda_weight
+      WHEN ev_to_ebitda <= ev_ebitda_expensive THEN -0.75 * ev_ebitda_weight
+      WHEN ev_to_ebitda <= ev_ebitda_extreme THEN -1.5 * ev_ebitda_weight
+      ELSE -2.25 * ev_ebitda_weight
+    END AS ev_to_ebitda_score,
+    CASE
+      WHEN asset_type = "ETF" THEN 0
+      WHEN price_to_book IS NULL OR pb_weight = 0 THEN 0
+      WHEN price_to_book <= pb_cheap THEN 1.5 * pb_weight
+      WHEN price_to_book <= pb_fair THEN 0.25 * pb_weight
+      WHEN price_to_book <= pb_expensive THEN -0.75 * pb_weight
+      WHEN price_to_book <= pb_extreme THEN -1.5 * pb_weight
+      ELSE -2.25 * pb_weight
+    END AS price_to_book_score,
+    CASE
+      WHEN asset_type = "ETF" THEN 0
+      WHEN profit_margin IS NULL OR profit_margin_weight = 0 THEN 0
+      WHEN profit_margin >= profit_margin_good THEN 1 * profit_margin_weight
+      WHEN profit_margin < profit_margin_bad THEN -1 * profit_margin_weight
+      ELSE 0
+    END AS profit_margin_score,
+    CASE
+      WHEN asset_type = "ETF" THEN 0
+      WHEN operating_margin IS NULL OR operating_margin_weight = 0 THEN 0
+      WHEN operating_margin >= operating_margin_good THEN 1 * operating_margin_weight
+      WHEN operating_margin < operating_margin_bad THEN -1 * operating_margin_weight
+      ELSE 0
+    END AS operating_margin_score,
+    CASE
+      WHEN asset_type = "ETF" THEN 0
+      WHEN roe IS NULL OR roe_weight = 0 THEN 0
+      WHEN roe >= roe_good THEN 1 * roe_weight
+      WHEN roe < roe_bad THEN -1 * roe_weight
+      ELSE 0
+    END AS roe_score,
+    CASE
+      WHEN asset_type = "ETF" THEN 0
+      WHEN current_ratio IS NULL OR liquidity_weight = 0 THEN 0
+      WHEN current_ratio < current_ratio_min THEN -1 * liquidity_weight
+      ELSE 0
+    END AS liquidity_score,
+    CASE
+      WHEN asset_type = "ETF" THEN 0
+      WHEN day_change_pct > 3 THEN -0.5
+      WHEN day_change_pct < -3 THEN 0.5
+      ELSE 0
+    END AS price_action_score
+  FROM base
+),
+scored AS (
+  SELECT
+    *,
+    ROUND(
+      forward_pe_score +
+      pe_score +
+      price_to_sales_score +
+      ev_to_ebitda_score +
+      price_to_book_score +
+      profit_margin_score +
+      operating_margin_score +
+      roe_score +
+      liquidity_score +
+      price_action_score,
+      2
+    ) AS valuation_score
+  FROM metric_scores
 )
+
 SELECT
-  *,
+  analysis_date,
+  ticker,
+  asset_type,
+  sector,
+  industry,
+  peer_group,
+  valuation_model,
+  primary_metric,
+  financial_snapshot_date,
+  ratio_lag_days,
+  first_open,
+  last_close,
+  day_low,
+  day_high,
+  volume,
+  day_change_pct,
+  ratio_price,
+  market_cap,
+  pe_ratio,
+  forward_pe,
+  price_to_book,
+  price_to_sales,
+  ev_to_ebitda,
+  dividend_yield,
+  beta,
+  roe,
+  roa,
+  profit_margin,
+  gross_margin,
+  operating_margin,
+  debt_to_equity,
+  current_ratio,
+  period_end_date,
+  fiscal_year,
+  fiscal_quarter,
+  currency,
+  revenue,
+  net_income,
+  total_debt,
+  free_cash_flow,
+  forward_pe_score,
+  pe_score,
+  price_to_sales_score,
+  ev_to_ebitda_score,
+  price_to_book_score,
+  profit_margin_score,
+  operating_margin_score,
+  roe_score,
+  liquidity_score,
+  price_action_score,
+  valuation_score,
   CASE
+    WHEN asset_type = "ETF" THEN "ETF_TRACKING_ONLY"
     WHEN pe_ratio IS NULL
       AND forward_pe IS NULL
       AND price_to_sales IS NULL
       AND ev_to_ebitda IS NULL
+      AND price_to_book IS NULL
       THEN "SIN_DATOS_FUNDAMENTALES"
     WHEN valuation_score >= 2 THEN "BARATA"
     WHEN valuation_score >= 0 THEN "PRECIO_JUSTO"

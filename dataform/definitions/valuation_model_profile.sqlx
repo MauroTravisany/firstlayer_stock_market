@@ -1,0 +1,42 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "valuation_model_profile",
+  description: "Pesos y umbrales de valoracion por grupo comparable para ajustar la lectura de multiplos segun industria.",
+  tags: ["portfolio", "valuation", "daily", "rules"]
+}
+
+SELECT *
+FROM UNNEST([
+  STRUCT(
+    "default_stock" AS peer_group, "GENERAL_STOCK" AS valuation_model, "forward_pe" AS primary_metric,
+    18.0 AS forward_pe_cheap, 28.0 AS forward_pe_fair, 35.0 AS forward_pe_expensive, 60.0 AS forward_pe_extreme, 1.2 AS forward_pe_weight,
+    20.0 AS pe_cheap, 30.0 AS pe_fair, 40.0 AS pe_expensive, 70.0 AS pe_extreme, 0.8 AS pe_weight,
+    3.0 AS ps_cheap, 6.0 AS ps_fair, 9.0 AS ps_expensive, 14.0 AS ps_extreme, 0.7 AS ps_weight,
+    14.0 AS ev_ebitda_cheap, 20.0 AS ev_ebitda_fair, 28.0 AS ev_ebitda_expensive, 45.0 AS ev_ebitda_extreme, 0.9 AS ev_ebitda_weight,
+    2.0 AS pb_cheap, 4.0 AS pb_fair, 7.0 AS pb_expensive, 12.0 AS pb_extreme, 0.2 AS pb_weight,
+    0.20 AS profit_margin_good, 0.05 AS profit_margin_bad, 0.6 AS profit_margin_weight,
+    0.20 AS operating_margin_good, 0.05 AS operating_margin_bad, 0.5 AS operating_margin_weight,
+    0.15 AS roe_good, 0.05 AS roe_bad, 0.5 AS roe_weight,
+    1.0 AS current_ratio_min, 0.3 AS liquidity_weight
+  ),
+  STRUCT("mega_cap_technology", "MEGA_CAP_QUALITY_GROWTH", "forward_pe", 24.0, 34.0, 42.0, 65.0, 1.1, 25.0, 35.0, 45.0, 75.0, 0.6, 5.0, 8.0, 12.0, 18.0, 0.9, 18.0, 26.0, 35.0, 55.0, 0.7, 5.0, 10.0, 16.0, 25.0, 0.1, 0.22, 0.10, 0.7, 0.25, 0.10, 0.6, 0.18, 0.08, 0.5, 1.0, 0.2),
+  STRUCT("ecommerce_cloud", "ECOMMERCE_CLOUD_GROWTH", "price_to_sales", 30.0, 45.0, 60.0, 90.0, 0.4, 35.0, 55.0, 75.0, 100.0, 0.3, 2.5, 4.5, 7.0, 11.0, 1.5, 18.0, 28.0, 40.0, 60.0, 0.6, 4.0, 8.0, 12.0, 20.0, 0.1, 0.08, -0.02, 0.5, 0.06, -0.03, 0.7, 0.10, 0.00, 0.3, 1.0, 0.3),
+  STRUCT("ecommerce_marketplace", "MARKETPLACE_GROWTH", "price_to_sales", 32.0, 48.0, 65.0, 95.0, 0.4, 35.0, 55.0, 75.0, 100.0, 0.3, 5.0, 8.0, 12.0, 18.0, 1.5, 22.0, 32.0, 45.0, 65.0, 0.7, 6.0, 10.0, 16.0, 25.0, 0.1, 0.10, 0.00, 0.6, 0.08, -0.02, 0.7, 0.12, 0.02, 0.3, 1.0, 0.3),
+  STRUCT("semiconductors", "SEMICONDUCTOR_CYCLE", "forward_pe", 22.0, 32.0, 42.0, 70.0, 1.0, 25.0, 38.0, 50.0, 80.0, 0.5, 6.0, 10.0, 16.0, 24.0, 0.8, 18.0, 28.0, 40.0, 60.0, 1.2, 5.0, 9.0, 15.0, 24.0, 0.1, 0.20, 0.05, 0.7, 0.22, 0.05, 0.7, 0.15, 0.03, 0.4, 1.0, 0.2),
+  STRUCT("semiconductor_equipment", "SEMICAP_EQUIPMENT", "ev_to_ebitda", 20.0, 30.0, 40.0, 65.0, 0.8, 24.0, 36.0, 48.0, 75.0, 0.5, 5.0, 8.0, 12.0, 18.0, 0.5, 16.0, 23.0, 32.0, 50.0, 1.4, 5.0, 9.0, 14.0, 22.0, 0.1, 0.22, 0.08, 0.7, 0.24, 0.08, 0.8, 0.15, 0.04, 0.4, 1.0, 0.2),
+  STRUCT("beverages_defensive", "DEFENSIVE_COMPOUNDER", "forward_pe", 18.0, 24.0, 30.0, 45.0, 1.0, 22.0, 28.0, 36.0, 55.0, 0.5, 4.0, 6.5, 9.0, 13.0, 1.1, 16.0, 22.0, 30.0, 45.0, 0.8, 8.0, 14.0, 22.0, 35.0, 0.1, 0.22, 0.10, 0.9, 0.24, 0.12, 0.8, 0.18, 0.08, 0.5, 1.0, 0.2),
+  STRUCT("restaurants", "RESTAURANTS_BRAND_CASHFLOW", "ev_to_ebitda", 20.0, 30.0, 40.0, 60.0, 0.7, 24.0, 34.0, 45.0, 70.0, 0.5, 3.0, 5.0, 8.0, 12.0, 0.7, 16.0, 23.0, 32.0, 45.0, 1.4, 6.0, 10.0, 16.0, 26.0, 0.1, 0.12, 0.04, 0.6, 0.18, 0.08, 0.9, 0.12, 0.03, 0.3, 1.0, 0.2),
+  STRUCT("apparel_footwear", "APPAREL_BRAND_CYCLICAL", "forward_pe", 18.0, 26.0, 34.0, 55.0, 1.0, 20.0, 30.0, 42.0, 65.0, 0.6, 2.0, 3.5, 5.5, 8.0, 1.0, 12.0, 18.0, 26.0, 40.0, 1.0, 4.0, 7.0, 11.0, 18.0, 0.1, 0.12, 0.03, 0.8, 0.12, 0.03, 0.7, 0.12, 0.02, 0.5, 1.2, 0.3),
+  STRUCT("large_pharma", "LARGE_PHARMA_VALUE", "forward_pe", 14.0, 20.0, 26.0, 40.0, 1.2, 16.0, 24.0, 32.0, 50.0, 0.6, 3.0, 5.0, 7.5, 11.0, 0.5, 11.0, 16.0, 24.0, 35.0, 1.1, 3.0, 5.0, 8.0, 12.0, 0.1, 0.18, 0.04, 0.7, 0.20, 0.06, 0.7, 0.12, 0.02, 0.5, 1.0, 0.3),
+  STRUCT("streaming_media", "STREAMING_MEDIA_GROWTH", "forward_pe", 22.0, 34.0, 46.0, 75.0, 0.8, 26.0, 40.0, 55.0, 85.0, 0.5, 3.0, 5.5, 8.5, 13.0, 1.2, 16.0, 24.0, 34.0, 55.0, 0.9, 6.0, 10.0, 16.0, 25.0, 0.1, 0.12, 0.02, 0.6, 0.16, 0.04, 0.8, 0.12, 0.02, 0.3, 1.0, 0.3),
+  STRUCT("gaming_interactive", "GAMING_IP_CYCLE", "ev_to_ebitda", 22.0, 34.0, 46.0, 75.0, 0.7, 25.0, 40.0, 55.0, 85.0, 0.5, 4.0, 7.0, 10.0, 16.0, 0.9, 16.0, 24.0, 34.0, 55.0, 1.2, 4.0, 8.0, 14.0, 22.0, 0.1, 0.10, 0.00, 0.5, 0.14, 0.02, 0.7, 0.10, 0.00, 0.3, 1.0, 0.3),
+  STRUCT("electric_vehicles", "EV_HIGH_GROWTH", "price_to_sales", 45.0, 70.0, 95.0, 140.0, 0.2, 50.0, 80.0, 120.0, 180.0, 0.2, 4.0, 7.0, 11.0, 18.0, 1.6, 25.0, 40.0, 60.0, 90.0, 0.4, 8.0, 14.0, 24.0, 35.0, 0.1, 0.08, -0.04, 0.5, 0.08, -0.04, 0.5, 0.08, -0.02, 0.3, 1.0, 0.3),
+  STRUCT("crypto_financials", "CRYPTO_SENSITIVE_FINANCIALS", "price_to_sales", 35.0, 55.0, 75.0, 120.0, 0.3, 45.0, 70.0, 100.0, 150.0, 0.2, 4.0, 7.0, 11.0, 18.0, 1.4, 18.0, 30.0, 45.0, 70.0, 0.6, 4.0, 8.0, 14.0, 22.0, 0.2, 0.12, -0.05, 0.4, 0.12, -0.05, 0.5, 0.10, -0.02, 0.3, 1.0, 0.2),
+  STRUCT("latin_america_banks", "BANK_ROE_BOOK_VALUE", "price_to_book", 12.0, 18.0, 25.0, 40.0, 0.1, 10.0, 14.0, 20.0, 35.0, 0.1, 3.0, 5.0, 8.0, 12.0, 0.1, 10.0, 14.0, 20.0, 30.0, 0.1, 1.0, 1.6, 2.3, 3.5, 2.0, 0.20, 0.05, 0.2, 0.20, 0.05, 0.2, 0.16, 0.08, 1.4, 0.0, 0.0),
+  STRUCT("biotech_etf", "ETF_TRACKING_ONLY", "technical_trend", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+  STRUCT("dividend_etf", "ETF_TRACKING_ONLY", "technical_trend", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+  STRUCT("infrastructure_etf", "ETF_TRACKING_ONLY", "technical_trend", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+  STRUCT("uranium_etf", "ETF_TRACKING_ONLY", "technical_trend", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+  STRUCT("energy_etf", "ETF_TRACKING_ONLY", "technical_trend", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+])

@@ -202,6 +202,7 @@ def _missing_ratio_fields(signal_row):
     ratio_fields = [
         "pe_ratio",
         "forward_pe",
+        "price_to_book",
         "price_to_sales",
         "ev_to_ebitda",
         "roe",
@@ -259,13 +260,15 @@ def analyze_ticker(config, signal_row):
                 "content": (
                     "Analiza este ticker con los datos internos y contrasta con fuentes externas. "
                     "Incluye una tesis de venta objetiva cuando los datos sugieran sobrevaloracion, deterioro o riesgo elevado. "
-                    "Evalua los ratios disponibles frente a umbrales razonables: PE, forward PE, price to sales, EV/EBITDA, ROE, margenes, deuda, liquidez, FCF, momentum y volatilidad. "
+                    "Evalua los ratios disponibles segun valuation_model y primary_metric; no apliques la misma lectura a bancos, software, semiconductores, consumo defensivo, restaurantes, crypto-financials o ETFs. "
+                    "Usa PE, forward PE, price to sales, price to book, EV/EBITDA, ROE, margenes, deuda, liquidez, FCF, momentum y volatilidad con la importancia que corresponda a la industria. "
                     "Evalua precio justo, precio objetivo conservador y margen de seguridad usando los campos internos fair_value_estimate, conservative_fair_value, margin_of_safety_pct, suggested_buy_price y suggested_sell_price. "
                     "Incluye analisis tecnico semanal/mensual como confirmacion secundaria usando return_20d, return_60d, return_120d, sma_20, sma_60, sma_120, high_252d, low_252d y technical_trend. "
                     "Explica el impacto de datos faltantes usando missing_data_impact y data_quality_score. "
                     "No confirmes una oportunidad clara solo porque signal lo diga; valida que los multiplos sean razonables y que no exista una contradiccion de valoracion. "
                     "Si la accion tiene calidad alta pero multiplos caros, explica que no es una compra clara y que requiere mejor precio o mayor margen de seguridad. "
                     "Usa peer_group, peer_valuation_label, peer_relative_score y percentiles relativos para comparar contra homologos. "
+                    "Si asset_type es ETF, evalualo como instrumento de seguimiento/allocacion y no como empresa con fundamentales corporativos. "
                     "Si peer_count es menor a 3, baja la confianza y declara que la comparacion relativa es limitada. "
                     "Si missing_internal_ratios no esta vacio, busca esos ratios faltantes en fuentes externas confiables y usalos solo como contraste externo. "
                     "Cuando uses un ratio externo, indica fuente, fecha aproximada si esta disponible, y advierte que no reemplaza al dato interno de BigQuery. "

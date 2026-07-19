@@ -66,10 +66,6 @@ price_features AS (
 base AS (
   SELECT
     v.*,
-    ap.asset_type,
-    ap.sector,
-    ap.industry,
-    ap.peer_group,
     pb.peer_count,
     pb.peer_median_pe,
     pb.peer_median_forward_pe,
@@ -98,8 +94,6 @@ base AS (
     p.volatility_20d,
     p.volume_vs_20d_avg
   FROM ${ref("portfolio_valuation_daily")} v
-  LEFT JOIN ${ref("asset_profile")} ap
-    ON ap.ticker = v.ticker
   LEFT JOIN ${ref("peer_benchmark_daily")} pb
     ON pb.ticker = v.ticker
    AND pb.analysis_date = v.analysis_date
@@ -252,6 +246,8 @@ SELECT
   sector,
   industry,
   peer_group,
+  valuation_model,
+  primary_metric,
   peer_count,
   peer_median_pe,
   peer_median_forward_pe,
@@ -311,6 +307,7 @@ SELECT
   volume_vs_20d_avg,
   pe_ratio,
   forward_pe,
+  price_to_book,
   price_to_sales,
   ev_to_ebitda,
   roe,
@@ -341,6 +338,8 @@ SELECT
   END AS signal,
   CONCAT(
     "valor=", CAST(ROUND(value_component, 2) AS STRING),
+    "; modelo=", COALESCE(valuation_model, "NA"),
+    "; ratio_principal=", COALESCE(primary_metric, "NA"),
     "; peers=", COALESCE(peer_valuation_label, "SIN_PEERS"),
     "; score_peer=", COALESCE(CAST(ROUND(peer_relative_score, 2) AS STRING), "NA"),
     "; margen_seguridad=", COALESCE(CAST(ROUND(margin_of_safety_pct * 100, 1) AS STRING), "NA"), "%",
@@ -364,6 +363,8 @@ SELECT
   CONCAT(
     "score_venta=", CAST(ROUND(sell_score, 2) AS STRING),
     "; clasificacion=", classification,
+    "; modelo=", COALESCE(valuation_model, "NA"),
+    "; ratio_principal=", COALESCE(primary_metric, "NA"),
     "; peers=", COALESCE(peer_valuation_label, "SIN_PEERS"),
     "; margen_seguridad=", COALESCE(CAST(ROUND(margin_of_safety_pct * 100, 1) AS STRING), "NA"), "%",
     "; valor_justo_conservador=", COALESCE(CAST(conservative_fair_value AS STRING), "NA"),
