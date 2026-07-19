@@ -148,21 +148,38 @@ def _select_expr(column_name, available, fallback_type="FLOAT64"):
 def fetch_daily_signals(config, analysis_date, tickers=None, analysis_scope="candidates", max_tickers=None):
     client = bigquery.Client(project=config["project_id"])
     available = _available_columns(client, config["signal_table"])
-    params = [bigquery.ScalarQueryParameter("analysis_date", "DATE", analysis_date)]
+    params = [
+        bigquery.ScalarQueryParameter("analysis_date", "DATE", analysis_date),
+        bigquery.ScalarQueryParameter("prompt_version", "STRING", config["prompt_version"]),
+        bigquery.ScalarQueryParameter("model_name", "STRING", config["openai_model"]),
+    ]
     ticker_filter = ""
     if tickers:
         ticker_filter = "AND ticker IN UNNEST(@tickers)"
         params.append(bigquery.ArrayQueryParameter("tickers", "STRING", tickers))
     scope_filter = ""
-    if analysis_scope != "all":
+    if analysis_scope == "candidates":
         scope_filter = """
         AND (
           signal IN ("COMPRAR_OBSERVAR", "VENDER_OBSERVAR")
           OR sell_signal = "VENTA_CLARA"
         )
         """
+    elif analysis_scope == "remaining":
+        scope_filter = f"""
+        AND NOT EXISTS (
+          SELECT 1
+          FROM {_table_ref(config["analysis_table"])} a
+          WHERE a.analysis_date = @analysis_date
+            AND a.ticker = s.ticker
+            AND a.prompt_version = @prompt_version
+            AND a.model_name = @model_name
+            AND a.ai_summary IS NOT NULL
+            AND a.ai_summary != "ERROR_GENERANDO_ANALISIS"
+        )
+        """
     limit_clause = ""
-    if max_tickers and analysis_scope != "all" and not tickers:
+    if max_tickers and analysis_scope == "candidates" and not tickers:
         limit_clause = "LIMIT @max_tickers"
         params.append(bigquery.ScalarQueryParameter("max_tickers", "INT64", int(max_tickers)))
 
@@ -247,7 +264,7 @@ def fetch_daily_signals(config, analysis_date, tickers=None, analysis_scope="can
       signal,
       signal_reason,
       sell_reason
-    FROM {_table_ref(config["signal_table"])}
+    FROM {_table_ref(config["signal_table"])} s
     WHERE analysis_date = @analysis_date
     {ticker_filter}
     {scope_filter}

@@ -53,9 +53,9 @@ def main(request):
     force_summary = parse_bool(request_json.get("force_summary", request.args.get("force_summary")), False)
     analysis_scope = (request_json.get("analysis_scope") or request.args.get("analysis_scope") or "candidates").lower()
     summary_type = (request_json.get("summary_type") or request.args.get("summary_type") or "daily").lower()
-    if analysis_scope not in {"candidates", "all"}:
+    if analysis_scope not in {"candidates", "remaining", "all"}:
         return (
-            json.dumps({"status": "error", "message": "analysis_scope must be candidates or all"}),
+            json.dumps({"status": "error", "message": "analysis_scope must be candidates, remaining or all"}),
             400,
             {"Content-Type": "application/json"},
         )
@@ -209,6 +209,27 @@ def main(request):
     alert_sent = False
     alert_error = None
     alert_title = None
+    if analysis_scope == "remaining":
+        status_code = 207 if any(item["status"] == "error" for item in results) else 200
+        return (
+            json.dumps(
+                {
+                    "status": "success" if status_code == 200 else "partial",
+                    "summary_type": summary_type,
+                    "analysis_date": str(analysis_date),
+                    "analysis_scope": analysis_scope,
+                    "max_tickers": config.get("max_tickers"),
+                    "processed": len(results),
+                    "results": results,
+                    "alert_sent": False,
+                    "alert_error": None,
+                    "message": "Remaining tickers processed without alert or summary overwrite.",
+                }
+            ),
+            status_code,
+            {"Content-Type": "application/json"},
+        )
+
     all_tickers_skipped = results and all(item["status"] == "skipped_existing" for item in results)
     already_alerted = bool(summary_state and summary_state.get("alert_sent"))
     if all_tickers_skipped and already_alerted:
