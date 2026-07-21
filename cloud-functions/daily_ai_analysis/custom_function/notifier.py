@@ -54,6 +54,25 @@ def clear_opportunity_rows(analysis_rows, min_final_score=DEFAULT_MIN_FINAL_SCOR
     return sorted(rows, key=lambda item: item.get("final_score") or 0, reverse=True)
 
 
+def observe_opportunity_rows(analysis_rows, clear_rows=None, min_final_score=DEFAULT_MIN_FINAL_SCORE):
+    clear_tickers = {row.get("ticker") for row in (clear_rows or [])}
+    rows = []
+    for row in analysis_rows:
+        if row.get("ticker") in clear_tickers:
+            continue
+        if row.get("signal") != "COMPRAR_OBSERVAR":
+            continue
+        final_score = row.get("final_score")
+        if final_score is None or float(final_score) < min_final_score:
+            continue
+        if row.get("missing_data_impact") == "ALTO":
+            continue
+        if row.get("ai_valuation_opinion") == "CARA":
+            continue
+        rows.append(row)
+    return sorted(rows, key=lambda item: item.get("final_score") or 0, reverse=True)
+
+
 def clear_sell_rows(analysis_rows, min_sell_score=DEFAULT_MIN_SELL_SCORE, min_confidence=DEFAULT_MIN_CONFIDENCE):
     rows = []
     for row in analysis_rows:
@@ -137,8 +156,8 @@ def _metric_line(row):
     return " | ".join(parts) if parts else "Ratios principales no disponibles."
 
 
-def build_alert_text(summary, opportunity_rows=None, sell_rows=None):
-    if opportunity_rows is not None or sell_rows is not None:
+def build_alert_text(summary, opportunity_rows=None, sell_rows=None, observe_rows=None):
+    if opportunity_rows is not None or sell_rows is not None or observe_rows is not None:
         lines = [f"*{summary['alert_title']}*", ""]
         if opportunity_rows:
             lines.append("Oportunidades claras de compra detectadas:")
@@ -152,8 +171,22 @@ def build_alert_text(summary, opportunity_rows=None, sell_rows=None):
                         summary=f"{_metric_line(row)}. {row.get('ai_summary') or row.get('ai_opportunity') or 'Ver detalle en Looker Studio.'}",
                     )
                 )
-        if sell_rows:
+        if observe_rows:
             if opportunity_rows:
+                lines.append("")
+            lines.append("Compras a observar:")
+            for row in observe_rows:
+                confidence = _normalized_confidence(row.get("confidence_score"))
+                lines.append(
+                    "- {ticker}: score={score}, confianza={confidence}. {summary}".format(
+                        ticker=row.get("ticker"),
+                        score=round(float(row.get("final_score") or 0), 2),
+                        confidence=round(confidence, 2),
+                        summary=f"{_metric_line(row)}. {row.get('ai_decision_support') or row.get('ai_opportunity') or row.get('ai_summary') or 'Ver detalle en Looker Studio.'}",
+                    )
+                )
+        if sell_rows:
+            if opportunity_rows or observe_rows:
                 lines.append("")
             lines.append("Alertas claras de venta/sobrevaloracion:")
             for row in sell_rows:
@@ -264,6 +297,34 @@ def _discord_buy_embed(row):
     }
 
 
+def _discord_observe_buy_embed(row):
+    ticker = row.get("ticker")
+    score = round(float(row.get("final_score") or 0), 2)
+    confidence = round(_normalized_confidence(row.get("confidence_score")), 2)
+    return {
+        "title": f"{ticker} | compra a observar",
+        "description": _short_text(row.get("ai_opportunity") or row.get("ai_summary"), DISCORD_FIELD_LIMIT),
+        "color": DISCORD_GOLD,
+        "fields": [
+            {"name": "Score", "value": str(score), "inline": True},
+            {"name": "Confianza", "value": str(confidence), "inline": True},
+            {"name": "Estado IA", "value": str(row.get("ai_final_alert_action") or "NO_DEFINIDO"), "inline": True},
+            {"name": "Multiples", "value": _metric_line(row), "inline": False},
+            {
+                "name": "Por que observar",
+                "value": _short_text(row.get("ai_decision_support") or row.get("ai_fair_value_view"), DISCORD_FIELD_LIMIT),
+                "inline": False,
+            },
+            {
+                "name": "Riesgos / cautela",
+                "value": _short_text(row.get("ai_risks") or row.get("data_discrepancies"), DISCORD_FIELD_LIMIT),
+                "inline": False,
+            },
+        ],
+        "footer": {"text": "Compra a observar: no es compra clara. Validar precio, datos y tesis antes de actuar."},
+    }
+
+
 def _discord_sell_embed(row):
     ticker = row.get("ticker")
     score = round(float(row.get("sell_score") or 0), 2)
@@ -290,8 +351,9 @@ def _discord_sell_embed(row):
     }
 
 
-def build_discord_payload(summary, opportunity_rows, sell_rows=None):
+def build_discord_payload(summary, opportunity_rows, sell_rows=None, observe_rows=None):
     sell_rows = sell_rows or []
+    observe_rows = observe_rows or []
     embeds = []
     if opportunity_rows:
         embeds.append(
@@ -301,6 +363,16 @@ def build_discord_payload(summary, opportunity_rows, sell_rows=None):
                 "color": DISCORD_GREEN,
                 "fields": _buy_fields(opportunity_rows),
                 "footer": {"text": "Detalle completo en Looker Studio / BigQuery"},
+            }
+        )
+    if observe_rows:
+        embeds.append(
+            {
+                "title": "Compras a observar",
+                "description": "Acciones con `COMPRAR_OBSERVAR` que no califican como compra clara por confianza, datos o valuation guardrails.",
+                "color": DISCORD_GOLD,
+                "fields": _buy_fields(observe_rows),
+                "footer": {"text": "No es alerta de compra clara. Revisar detalle completo en dashboard / BigQuery"},
             }
         )
     if sell_rows:
@@ -324,10 +396,12 @@ def build_discord_payload(summary, opportunity_rows, sell_rows=None):
     return {"embeds": embeds}
 
 
-def build_discord_messages(summary, opportunity_rows, sell_rows=None):
+def build_discord_messages(summary, opportunity_rows, sell_rows=None, observe_rows=None):
     messages = []
     for row in (opportunity_rows or [])[:DISCORD_MAX_FIELDS_PER_SECTION]:
         messages.append({"embeds": [_discord_buy_embed(row)]})
+    for row in (observe_rows or [])[:DISCORD_MAX_FIELDS_PER_SECTION]:
+        messages.append({"embeds": [_discord_observe_buy_embed(row)]})
     for row in (sell_rows or [])[:DISCORD_MAX_FIELDS_PER_SECTION]:
         messages.append({"embeds": [_discord_sell_embed(row)]})
     if not messages:
@@ -341,15 +415,16 @@ def send_webhook_alert(config, summary, analysis_rows=None):
         return False, "ALERT_WEBHOOK_URL not configured"
 
     opportunity_rows = clear_opportunity_rows(analysis_rows or [])
+    observe_rows = observe_opportunity_rows(analysis_rows or [], opportunity_rows)
     sell_rows = clear_sell_rows(analysis_rows or [])
-    if not opportunity_rows and not sell_rows:
+    if not opportunity_rows and not observe_rows and not sell_rows:
         return False, "NO_CLEAR_OPPORTUNITIES"
 
-    text = build_alert_text(summary, opportunity_rows, sell_rows)
+    text = build_alert_text(summary, opportunity_rows, sell_rows, observe_rows)
     webhook_type = _detect_webhook_type(config)
     if webhook_type == "discord":
         errors = []
-        for payload in build_discord_messages(summary, opportunity_rows, sell_rows):
+        for payload in build_discord_messages(summary, opportunity_rows, sell_rows, observe_rows):
             response = requests.post(url, json=payload, timeout=30)
             if response.status_code >= 300:
                 errors.append(f"{response.status_code}: {response.text}")

@@ -45,6 +45,15 @@ final_score >= 6.0
 confidence_score >= 0.65
 ```
 
+Compra a observar:
+
+```text
+signal = COMPRAR_OBSERVAR
+final_score >= 6.0
+missing_data_impact != ALTO
+ai_valuation_opinion != CARA
+```
+
 Venta clara:
 
 ```text
@@ -53,7 +62,7 @@ sell_score >= 7.0
 confidence_score >= 0.65
 ```
 
-Si no hay compra o venta clara, el analisis se guarda en BigQuery pero no se envia alerta.
+Si no hay compra clara, compra a observar o venta clara, el analisis se guarda en BigQuery pero no se envia alerta.
 
 ## Ejecucion
 
