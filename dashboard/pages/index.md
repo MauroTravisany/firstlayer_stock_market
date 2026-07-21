@@ -13,7 +13,7 @@ select
   sum(case when asset_type = 'STOCK' then 1 else 0 end) as acciones,
   sum(case when asset_type = 'ETF' then 1 else 0 end) as etfs,
   round(avg(final_score), 2) as score_promedio,
-  sum(case when signal = 'COMPRAR_OBSERVAR' then 1 else 0 end) as compras,
+  sum(case when signal = 'COMPRAR_OBSERVAR' then 1 else 0 end) as compras_observar,
   sum(case when sell_signal = 'VENTA_CLARA' or signal = 'VENDER_OBSERVAR' then 1 else 0 end) as ventas,
   sum(case when risk_level = 'ALTO' then 1 else 0 end) as riesgo_alto,
   sum(case when missing_data_impact in ('ALTO', 'MEDIO') then 1 else 0 end) as datos_observar
@@ -108,19 +108,24 @@ limit 10
 
 ```sql buy_list
 select
-  ticker,
-  valuation_model,
-  primary_metric,
-  round(final_score, 2) as score,
-  round(margin_of_safety_pct * 100, 1) as margen_pct,
-  round(last_close, 2) as precio,
-  round(suggested_buy_price, 2) as entrada,
-  round(adaptive_price_to_sales_limit, 2) as limite_ps,
-  round(adaptive_forward_pe_limit, 2) as limite_fpe,
-  ai_summary
-from stocks.portfolio_latest
-where signal = 'COMPRAR_OBSERVAR'
-order by final_score desc, ticker
+  p.ticker,
+  case
+    when a.ai_final_alert_action = 'ENVIAR_COMPRA' and p.confidence_score >= 0.65 then 'COMPRA_CLARA'
+    else 'COMPRA_OBSERVAR'
+  end as tipo_alerta,
+  p.valuation_model,
+  p.primary_metric,
+  round(p.final_score, 2) as score,
+  round(p.margin_of_safety_pct * 100, 1) as margen_pct,
+  round(p.last_close, 2) as precio,
+  round(p.suggested_buy_price, 2) as entrada,
+  round(p.adaptive_price_to_sales_limit, 2) as limite_ps,
+  round(p.adaptive_forward_pe_limit, 2) as limite_fpe,
+  p.ai_summary
+from stocks.portfolio_latest p
+left join stocks.ai_analysis_latest a using(ticker)
+where p.signal = 'COMPRAR_OBSERVAR'
+order by p.final_score desc, p.ticker
 limit 5
 ```
 
@@ -191,7 +196,7 @@ Fecha procesada: <Value data={latest_date} column=analysis_date/>
 <Grid cols=2>
   <Value data={kpis} column=activos title="Activos"/>
   <Value data={kpis} column=acciones title="Acciones"/>
-  <Value data={kpis} column=compras title="Compras claras"/>
+  <Value data={kpis} column=compras_observar title="Compras a observar"/>
   <Value data={kpis} column=ventas title="Ventas a revisar"/>
 </Grid>
 
@@ -214,9 +219,9 @@ Tabla de auditoria para entender por que una empresa aparece como compra, venta,
 
 <DataTable data={top_actions} rows=12/>
 
-## Compras claras
+## Compras a observar
 
-Muestra maximo 5 oportunidades de compra ordenadas por score. `entrada` es el precio sugerido de compra y los limites adaptativos indican contra que multiples se esta comparando segun industria y pares.
+Muestra maximo 5 oportunidades de compra ordenadas por score. `tipo_alerta` separa compra clara de compra a observar; `entrada` es el precio sugerido de compra y los limites adaptativos indican contra que multiples se esta comparando segun industria y pares.
 
 <DataTable data={buy_list} rows=5/>
 
