@@ -2,30 +2,39 @@
 title: Analisis IA
 ---
 
+```sql ticker_options
+select ticker
+from stocks.portfolio_latest
+order by ticker
+```
+
 ```sql selected_ai
 select
-  analysis_date,
-  ticker,
-  signal,
-  sell_signal,
-  round(final_score, 2) as final_score,
-  round(sell_score, 2) as sell_score,
-  round(confidence_score, 2) as confidence_score,
-  ai_summary,
-  ai_opportunity,
-  ai_analysis,
-  ai_fair_value_view,
-  ai_technical_view,
-  ai_risks,
-  ai_sell_thesis,
-  ai_sell_reasons,
-  ai_sell_price_view,
-  ai_decision_support,
-  ai_sell_decision_support,
-  data_discrepancies,
-  external_context_summary
-from stocks.ai_analysis_latest
-where ticker = coalesce(nullif('${inputs.empresa.value}', ''), 'AAPL')
+  p.analysis_date,
+  p.ticker,
+  p.classification,
+  p.signal,
+  p.sell_signal,
+  round(p.final_score, 2) as final_score,
+  round(p.sell_score, 2) as sell_score,
+  round(p.confidence_score, 2) as confidence_score,
+  coalesce(a.ai_summary, p.ai_summary, 'Sin analisis IA reciente para este ticker.') as ai_summary,
+  coalesce(a.ai_opportunity, p.ai_opportunity, 'Sin oportunidad IA registrada.') as ai_opportunity,
+  coalesce(a.ai_analysis, p.ai_analysis, 'Sin analisis IA reciente para este ticker.') as ai_analysis,
+  coalesce(a.ai_fair_value_view, p.ai_fair_value_view, 'Sin lectura IA de valor justo registrada.') as ai_fair_value_view,
+  coalesce(a.ai_technical_view, p.ai_technical_view, 'Sin lectura tecnica IA registrada.') as ai_technical_view,
+  coalesce(a.ai_risks, p.ai_risks, 'Sin riesgos IA registrados.') as ai_risks,
+  coalesce(a.ai_sell_thesis, p.ai_sell_thesis, 'Sin tesis de venta IA registrada.') as ai_sell_thesis,
+  coalesce(a.ai_sell_reasons, p.ai_sell_reasons, 'Sin razones de venta IA registradas.') as ai_sell_reasons,
+  coalesce(a.ai_sell_price_view, p.ai_sell_price_view, 'Sin lectura IA de precio de venta registrada.') as ai_sell_price_view,
+  coalesce(a.ai_decision_support, p.ai_decision_support, 'Sin soporte IA de decision registrado.') as ai_decision_support,
+  coalesce(a.ai_sell_decision_support, p.ai_sell_decision_support, 'Sin soporte IA de venta registrado.') as ai_sell_decision_support,
+  coalesce(a.data_discrepancies, p.data_discrepancies, 'Sin discrepancias registradas.') as data_discrepancies,
+  coalesce(a.external_context_summary, p.external_context_summary, 'Sin contexto externo registrado.') as external_context_summary,
+  case when a.ticker is null then 'SIN_IA_RECIENTE' else 'IA_OK' end as estado_ia
+from stocks.portfolio_latest p
+left join stocks.ai_analysis_latest a using(ticker)
+where p.ticker = coalesce(nullif('${inputs.empresa.value}', ''), 'AAPL')
 limit 1
 ```
 
@@ -33,7 +42,7 @@ limit 1
 select
   ticker,
   round(final_score, 1) as score
-from stocks.ai_analysis_latest
+from stocks.portfolio_latest
 order by
   case when signal = 'COMPRAR_OBSERVAR' then 1 when sell_signal = 'VENTA_CLARA' then 2 else 3 end,
   greatest(coalesce(final_score, 0), coalesce(sell_score, 0)) desc,
@@ -85,34 +94,13 @@ Este bloque resume el analisis global generado por IA para la fecha mas reciente
 
 Selecciona una empresa para leer la tesis completa sin navegar una tabla ancha. Interpreta `confidence_score` como confianza de la IA sobre la consistencia de datos internos, fuentes externas y senal cuantitativa.
 
-<Dropdown name=empresa title="Empresa">
-  <DropdownOption value="AAPL"/>
-  <DropdownOption value="AMZN"/>
-  <DropdownOption value="ASML"/>
-  <DropdownOption value="BBH"/>
-  <DropdownOption value="BCH"/>
-  <DropdownOption value="COIN"/>
-  <DropdownOption value="DGRO"/>
-  <DropdownOption value="GOOG"/>
-  <DropdownOption value="GOOGL"/>
-  <DropdownOption value="INTC"/>
-  <DropdownOption value="KO"/>
-  <DropdownOption value="MCD"/>
-  <DropdownOption value="MELI"/>
-  <DropdownOption value="META"/>
-  <DropdownOption value="MSFT"/>
-  <DropdownOption value="MSTR"/>
-  <DropdownOption value="NFLX"/>
-  <DropdownOption value="NKE"/>
-  <DropdownOption value="NVDA"/>
-  <DropdownOption value="PFE"/>
-  <DropdownOption value="SBUX"/>
-  <DropdownOption value="TSLA"/>
-  <DropdownOption value="TTWO"/>
-  <DropdownOption value="URA"/>
-  <DropdownOption value="XLE"/>
-  <DropdownOption value="GRID"/>
-</Dropdown>
+<Dropdown
+  name=empresa
+  title="Empresa"
+  data={ticker_options}
+  value=ticker
+  defaultValue="AAPL"
+/>
 
 <Grid cols=4>
   <Value data={selected_ai} column=ticker title="Ticker"/>
@@ -124,6 +112,11 @@ Selecciona una empresa para leer la tesis completa sin navegar una tabla ancha. 
 <Grid cols=2>
   <Value data={selected_ai} column=sell_signal title="Senal venta"/>
   <Value data={selected_ai} column=confidence_score title="Confianza"/>
+</Grid>
+
+<Grid cols=2>
+  <Value data={selected_ai} column=classification title="Clasificacion"/>
+  <Value data={selected_ai} column=estado_ia title="Estado IA"/>
 </Grid>
 
 <div style="border-left: 4px solid #2563eb; background: #f8fafc; padding: 14px 16px; border-radius: 6px; margin: 12px 0;">
