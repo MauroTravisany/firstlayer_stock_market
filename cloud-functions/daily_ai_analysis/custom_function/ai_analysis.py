@@ -167,6 +167,11 @@ Reglas obligatorias:
 19. Usa fair_value_estimate, conservative_fair_value, margin_of_safety_pct, suggested_buy_price y suggested_sell_price para explicar precio justo y margen de seguridad. No los presentes como verdad exacta.
 20. Usa technical_trend, technical_score, return_20d, return_60d, return_120d y medias moviles como confirmacion secundaria. El analisis tecnico no debe superar a la valoracion fundamental.
 21. Usa missing_data_impact y data_quality_score para indicar si la conclusion es confiable. Si el impacto es ALTO, no envies una alerta clara.
+22. Escribe para un inversionista no tecnico: primero interpreta en lenguaje natural y despues menciona los ratios que respaldan la conclusion.
+23. Cada vez que menciones PE, forward PE, P/S, P/B, EV/EBITDA, ROE, margen, deuda o flujo de caja, explica en una frase que significa para decidir compra, observacion o venta.
+24. Evita frases cargadas de jerga como "multiples exigentes" sin explicacion. Prefiere "el mercado esta pagando caro por cada dolar de ventas" o "el precio ya descuenta mucho crecimiento".
+25. Para compra, explica claramente: por que podria estar barata, que debe mejorar o mantenerse, que precio/zona haria mas atractiva la entrada y que riesgos invalidarian la tesis.
+26. Para venta, explica claramente: por que podria estar cara, si el riesgo es precio alto, deterioro del negocio o perdida de tendencia, que ratio lo muestra y que condicion permitiria mantenerla.
 """
 
 
@@ -259,6 +264,8 @@ def analyze_ticker(config, signal_row):
                 "role": "user",
                 "content": (
                     "Analiza este ticker con los datos internos y contrasta con fuentes externas. "
+                    "Usa lenguaje funcional y natural: una persona debe entender la conclusion aunque no conozca los ratios. "
+                    "Primero di la lectura simple, luego muestra los ratios como evidencia y explica que significa cada uno. "
                     "Incluye una tesis de venta objetiva cuando los datos sugieran sobrevaloracion, deterioro o riesgo elevado. "
                     "Evalua los ratios disponibles segun valuation_model y primary_metric; no apliques la misma lectura a bancos, software, semiconductores, consumo defensivo, restaurantes, crypto-financials o ETFs. "
                     "Usa PE, forward PE, price to sales, price to book, EV/EBITDA, ROE, margenes, deuda, liquidez, FCF, momentum y volatilidad con la importancia que corresponda a la industria. "
@@ -274,6 +281,8 @@ def analyze_ticker(config, signal_row):
                     "Si missing_internal_ratios no esta vacio, busca esos ratios faltantes en fuentes externas confiables y usalos solo como contraste externo. "
                     "Cuando uses un ratio externo, indica fuente, fecha aproximada si esta disponible, y advierte que no reemplaza al dato interno de BigQuery. "
                     "Si no hay caso de venta, dilo claramente y explica que condiciones activarian una revision de venta. "
+                    "Evita textos demasiado tecnicos en executive_summary, opportunity, sell_thesis, sell_reasons, decision_support y sell_decision_support. "
+                    "En esos campos, traduce los ratios a implicancias practicas: barato/caro frente a ganancias, ventas, flujo operativo, deuda, margen, calidad y tendencia. "
                     "Usa busqueda web para contexto reciente y cita las fuentes usadas dentro de sources. "
                     "Todos los textos explicativos deben estar en espanol. "
                     f"Payload JSON:\n{json.dumps(payload, ensure_ascii=True)}"
@@ -411,6 +420,7 @@ def build_portfolio_summary(config, analysis_rows):
                 "role": "user",
                 "content": (
                     "Crea un resumen ejecutivo en espanol para dashboard y alerta Slack/Discord. "
+                    "Usa lenguaje natural, breve y funcional. Los ratios deben aparecer como respaldo, con explicacion simple de que significan. "
                     "Debe separar oportunidades de compra, posiciones caras con posible venta y riesgos. "
                     "discord_summary debe ser muy conciso, maximo 900 caracteres, pensado para Discord. "
                     "full_report debe ser el analisis mas completo posible para web/BigQuery, con secciones claras: panorama general, compras, ventas, cambios, riesgos, datos faltantes, tecnica y seguimiento. "
@@ -438,6 +448,7 @@ def build_weekly_summary(config, weekly_rows):
                 "role": "user",
                 "content": (
                     "Crea un resumen semanal en espanol para Discord. "
+                    "Usa lenguaje natural, breve y funcional. Si mencionas ratios o estados tecnicos, explica su significado practico. "
                     "Debe enfocarse en lo mas importante de la semana: cambios de estado, movimientos fuertes de precio, deterioro o mejora de riesgo, cambios de tendencia tecnica semanal/mensual y consideraciones para monitorear la proxima semana. "
                     "discord_summary debe ser muy conciso, maximo 900 caracteres, pensado para Discord. "
                     "full_report debe ser el reporte semanal mas completo posible para web/BigQuery, con secciones claras: resumen ejecutivo, cambios de estado, ventas, oportunidades, riesgos, tendencias, calidad de datos y seguimiento para la proxima semana. "

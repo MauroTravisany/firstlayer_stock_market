@@ -156,6 +156,75 @@ def _metric_line(row):
     return " | ".join(parts) if parts else "Ratios principales no disponibles."
 
 
+def _ratio_status(value, limit, lower_is_better=True):
+    if value is None or limit is None:
+        return None
+    value = float(value)
+    limit = float(limit)
+    if limit <= 0:
+        return None
+    ratio = value / limit
+    if lower_is_better:
+        if ratio <= 0.85:
+            return "comodo"
+        if ratio <= 1.05:
+            return "cerca del limite razonable"
+        return "exigente"
+    if ratio >= 1.15:
+        return "fuerte"
+    if ratio >= 0.95:
+        return "razonable"
+    return "debil"
+
+
+def _plain_ratio_explanation(row, mode):
+    notes = []
+    forward_pe = _float_or_none(row.get("forward_pe"))
+    forward_pe_limit = _float_or_none(row.get("adaptive_forward_pe_limit"))
+    price_to_sales = _float_or_none(row.get("price_to_sales"))
+    price_to_sales_limit = _float_or_none(row.get("adaptive_price_to_sales_limit"))
+    ev_to_ebitda = _float_or_none(row.get("ev_to_ebitda"))
+    ev_to_ebitda_limit = _float_or_none(row.get("adaptive_ev_to_ebitda_limit"))
+    margin_of_safety = _float_or_none(row.get("margin_of_safety_pct"))
+    peer_label = row.get("peer_valuation_label")
+    primary_metric = row.get("primary_metric")
+
+    if margin_of_safety is not None:
+        if margin_of_safety > 0:
+            notes.append(f"el precio tiene un margen estimado de {round(margin_of_safety * 100, 1)}% bajo el valor conservador")
+        else:
+            notes.append(f"el precio esta {round(abs(margin_of_safety) * 100, 1)}% sobre el valor conservador")
+
+    pe_status = _ratio_status(forward_pe, forward_pe_limit)
+    if pe_status:
+        notes.append(f"ganancias futuras: Forward PE {round(forward_pe, 2)} esta {pe_status} frente al limite {round(forward_pe_limit, 2)}")
+
+    ps_status = _ratio_status(price_to_sales, price_to_sales_limit)
+    if ps_status:
+        notes.append(f"ventas: P/S {round(price_to_sales, 2)} esta {ps_status} frente al limite {round(price_to_sales_limit, 2)}")
+
+    ev_status = _ratio_status(ev_to_ebitda, ev_to_ebitda_limit)
+    if ev_status:
+        notes.append(f"flujo operativo: EV/EBITDA {round(ev_to_ebitda, 2)} esta {ev_status} frente al limite {round(ev_to_ebitda_limit, 2)}")
+
+    if peer_label:
+        notes.append(f"comparada con empresas similares aparece como {peer_label}")
+    if primary_metric:
+        notes.append(f"el ratio mas relevante para este caso es {primary_metric}")
+
+    if not notes:
+        return "No hay suficientes ratios consistentes para explicar la valoracion con confianza."
+
+    prefix = "Lectura simple"
+    if mode == "buy":
+        prefix = "Por que podria ser interesante"
+    elif mode == "observe":
+        prefix = "Por que solo observar"
+    elif mode == "sell":
+        prefix = "Por que revisar venta"
+    return prefix + ": " + "; ".join(notes[:5]) + "."
+
+
 def build_alert_text(summary, opportunity_rows=None, sell_rows=None, observe_rows=None):
     if opportunity_rows is not None or sell_rows is not None or observe_rows is not None:
         lines = [f"*{summary['alert_title']}*", ""]
@@ -168,7 +237,7 @@ def build_alert_text(summary, opportunity_rows=None, sell_rows=None, observe_row
                         ticker=row.get("ticker"),
                         score=round(float(row.get("final_score") or 0), 2),
                         confidence=round(confidence, 2),
-                        summary=f"{_metric_line(row)}. {row.get('ai_summary') or row.get('ai_opportunity') or 'Ver detalle en Looker Studio.'}",
+                        summary=f"{_plain_ratio_explanation(row, 'buy')} {row.get('ai_summary') or row.get('ai_opportunity') or 'Ver detalle en Looker Studio.'}",
                     )
                 )
         if observe_rows:
@@ -182,7 +251,7 @@ def build_alert_text(summary, opportunity_rows=None, sell_rows=None, observe_row
                         ticker=row.get("ticker"),
                         score=round(float(row.get("final_score") or 0), 2),
                         confidence=round(confidence, 2),
-                        summary=f"{_metric_line(row)}. {row.get('ai_decision_support') or row.get('ai_opportunity') or row.get('ai_summary') or 'Ver detalle en Looker Studio.'}",
+                        summary=f"{_plain_ratio_explanation(row, 'observe')} {row.get('ai_decision_support') or row.get('ai_opportunity') or row.get('ai_summary') or 'Ver detalle en Looker Studio.'}",
                     )
                 )
         if sell_rows:
@@ -198,7 +267,7 @@ def build_alert_text(summary, opportunity_rows=None, sell_rows=None, observe_row
                         price=round(float(row.get("last_close") or 0), 2),
                         sell_price=round(float(row.get("suggested_sell_price") or 0), 2),
                         confidence=round(confidence, 2),
-                        summary=row.get("ai_sell_thesis") or row.get("ai_sell_reasons") or "Ver detalle en Looker Studio.",
+                        summary=f"{_plain_ratio_explanation(row, 'sell')} {row.get('ai_sell_thesis') or row.get('ai_sell_reasons') or 'Ver detalle en Looker Studio.'}",
                     )
                 )
         lines.append("")
@@ -274,11 +343,12 @@ def _discord_buy_embed(row):
         "description": _short_text(row.get("ai_summary") or row.get("ai_opportunity"), DISCORD_FIELD_LIMIT),
         "color": DISCORD_GREEN,
         "fields": [
+            {"name": "Lectura rapida", "value": _short_text(_plain_ratio_explanation(row, "buy"), DISCORD_FIELD_LIMIT), "inline": False},
             {"name": "Score", "value": str(score), "inline": True},
             {"name": "Confianza", "value": str(confidence), "inline": True},
-            {"name": "Multiples", "value": _metric_line(row), "inline": False},
+            {"name": "Ratios usados", "value": _metric_line(row), "inline": False},
             {
-                "name": "Valoracion",
+                "name": "Interpretacion",
                 "value": _short_text(row.get("ai_fair_value_view") or row.get("signal_reason"), DISCORD_FIELD_LIMIT),
                 "inline": False,
             },
@@ -306,10 +376,11 @@ def _discord_observe_buy_embed(row):
         "description": _short_text(row.get("ai_opportunity") or row.get("ai_summary"), DISCORD_FIELD_LIMIT),
         "color": DISCORD_GOLD,
         "fields": [
+            {"name": "Lectura rapida", "value": _short_text(_plain_ratio_explanation(row, "observe"), DISCORD_FIELD_LIMIT), "inline": False},
             {"name": "Score", "value": str(score), "inline": True},
             {"name": "Confianza", "value": str(confidence), "inline": True},
             {"name": "Estado IA", "value": str(row.get("ai_final_alert_action") or "NO_DEFINIDO"), "inline": True},
-            {"name": "Multiples", "value": _metric_line(row), "inline": False},
+            {"name": "Ratios usados", "value": _metric_line(row), "inline": False},
             {
                 "name": "Por que observar",
                 "value": _short_text(row.get("ai_decision_support") or row.get("ai_fair_value_view"), DISCORD_FIELD_LIMIT),
@@ -336,13 +407,14 @@ def _discord_sell_embed(row):
         "description": _short_text(row.get("ai_sell_thesis") or row.get("ai_sell_reasons"), DISCORD_FIELD_LIMIT),
         "color": DISCORD_RED,
         "fields": [
+            {"name": "Lectura rapida", "value": _short_text(_plain_ratio_explanation(row, "sell"), DISCORD_FIELD_LIMIT), "inline": False},
             {"name": "Score venta", "value": str(score), "inline": True},
             {"name": "Precio actual", "value": str(price), "inline": True},
             {"name": "Zona revision", "value": str(sell_price), "inline": True},
             {"name": "Confianza", "value": str(confidence), "inline": True},
-            {"name": "Multiples", "value": _metric_line(row), "inline": False},
+            {"name": "Ratios usados", "value": _metric_line(row), "inline": False},
             {
-                "name": "Razon",
+                "name": "Interpretacion",
                 "value": _short_text(row.get("ai_sell_decision_support") or row.get("ai_sell_price_view"), DISCORD_FIELD_LIMIT),
                 "inline": False,
             },
