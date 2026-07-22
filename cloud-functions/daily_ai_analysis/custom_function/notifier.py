@@ -2,7 +2,7 @@ import requests
 
 
 DISCORD_CONTENT_LIMIT = 2000
-DISCORD_FIELD_LIMIT = 650
+DISCORD_FIELD_LIMIT = 950
 DISCORD_MAX_FIELDS_PER_SECTION = 5
 SLACK_TEXT_LIMIT = 12000
 DEFAULT_MIN_FINAL_SCORE = 6.0
@@ -102,6 +102,8 @@ def _normalized_confidence(value):
 def _float_or_none(value):
     if value is None:
         return None
+    if value == "":
+        return None
     return float(value)
 
 
@@ -156,6 +158,76 @@ def _metric_line(row):
     return " | ".join(parts) if parts else "Ratios principales no disponibles."
 
 
+def _format_number(value, decimals=2):
+    if value is None:
+        return "no disponible"
+    return str(round(float(value), decimals))
+
+
+def _format_percent(value):
+    if value is None:
+        return "no disponible"
+    return f"{round(float(value) * 100, 1)}%"
+
+
+def _format_money(value):
+    if value is None:
+        return "no disponible"
+    return f"{round(float(value), 2)}"
+
+
+def _buy_price_explanation(row):
+    last_close = _float_or_none(row.get("last_close"))
+    suggested_buy = _float_or_none(row.get("suggested_buy_price"))
+    fair_value = _float_or_none(row.get("conservative_fair_value"))
+    margin_of_safety = _float_or_none(row.get("margin_of_safety_pct"))
+
+    parts = []
+    if last_close is not None:
+        parts.append(f"precio actual { _format_money(last_close) }")
+    if suggested_buy is not None:
+        parts.append(f"precio tentativo de compra { _format_money(suggested_buy) }")
+        if last_close is not None and last_close > 0:
+            drop_pct = (last_close - suggested_buy) / last_close
+            if drop_pct > 0:
+                parts.append(f"faltaria que baje cerca de {round(drop_pct * 100, 1)}% para llegar a esa zona")
+            else:
+                parts.append("ya esta en o bajo la zona tentativa de compra")
+    if fair_value is not None:
+        parts.append(f"valor conservador estimado { _format_money(fair_value) }")
+    if margin_of_safety is not None:
+        if margin_of_safety > 0:
+            parts.append(f"margen de seguridad estimado {_format_percent(margin_of_safety)}")
+        else:
+            parts.append(f"sin margen de seguridad: esta {_format_percent(abs(margin_of_safety))} sobre el valor conservador")
+
+    if not parts:
+        return "No hay precio tentativo suficiente para calcular zona de entrada."
+    return "Zona de compra: " + "; ".join(parts) + "."
+
+
+def _sell_price_explanation(row):
+    last_close = _float_or_none(row.get("last_close"))
+    suggested_sell = _float_or_none(row.get("suggested_sell_price"))
+    fair_value = _float_or_none(row.get("conservative_fair_value"))
+    parts = []
+    if last_close is not None:
+        parts.append(f"precio actual { _format_money(last_close) }")
+    if suggested_sell is not None:
+        parts.append(f"zona para revisar venta { _format_money(suggested_sell) }")
+        if last_close is not None and suggested_sell > 0:
+            gap_pct = (last_close - suggested_sell) / suggested_sell
+            if gap_pct > 0:
+                parts.append(f"esta cerca de {round(gap_pct * 100, 1)}% sobre esa zona")
+            else:
+                parts.append(f"faltaria subir cerca de {round(abs(gap_pct) * 100, 1)}% para llegar a esa zona")
+    if fair_value is not None:
+        parts.append(f"valor conservador estimado { _format_money(fair_value) }")
+    if not parts:
+        return "No hay precio suficiente para calcular zona de venta."
+    return "Zona de venta: " + "; ".join(parts) + "."
+
+
 def _ratio_status(value, limit, lower_is_better=True):
     if value is None or limit is None:
         return None
@@ -177,6 +249,118 @@ def _ratio_status(value, limit, lower_is_better=True):
     return "debil"
 
 
+def _ratio_sentence(name, value, meaning, reading, limit=None, limit_label="limite razonable"):
+    if value is None:
+        return None
+    text = f"{name} esta en {_format_number(value)}. {meaning} {reading}"
+    if limit is not None:
+        text += f" Referencia del modelo: {limit_label} {_format_number(limit)}."
+    return text
+
+
+def _percent_ratio_sentence(name, value, meaning, reading):
+    if value is None:
+        return None
+    return f"{name} esta en {_format_percent(value)}. {meaning} {reading}"
+
+
+def _detailed_ratio_explanation(row):
+    lines = []
+    pe_ratio = _float_or_none(row.get("pe_ratio"))
+    pe_limit = _float_or_none(row.get("adaptive_pe_limit"))
+    forward_pe = _float_or_none(row.get("forward_pe"))
+    forward_pe_limit = _float_or_none(row.get("adaptive_forward_pe_limit"))
+    price_to_sales = _float_or_none(row.get("price_to_sales"))
+    price_to_sales_limit = _float_or_none(row.get("adaptive_price_to_sales_limit"))
+    price_to_book = _float_or_none(row.get("price_to_book"))
+    price_to_book_limit = _float_or_none(row.get("adaptive_price_to_book_limit"))
+    ev_to_ebitda = _float_or_none(row.get("ev_to_ebitda"))
+    ev_to_ebitda_limit = _float_or_none(row.get("adaptive_ev_to_ebitda_limit"))
+    roe = _float_or_none(row.get("roe"))
+    profit_margin = _float_or_none(row.get("profit_margin"))
+    debt_to_equity = _float_or_none(row.get("debt_to_equity"))
+
+    ratio_reading = _ratio_status(pe_ratio, pe_limit) if pe_limit is not None else None
+    lines.append(
+        _ratio_sentence(
+            "PE",
+            pe_ratio,
+            "Indica cuanto paga el mercado por las ganancias actuales.",
+            f"Lectura: {ratio_reading}." if ratio_reading else "Mientras mas alto, mas crecimiento futuro exige el precio.",
+            pe_limit,
+        )
+    )
+    ratio_reading = _ratio_status(forward_pe, forward_pe_limit) if forward_pe_limit is not None else None
+    lines.append(
+        _ratio_sentence(
+            "Forward PE",
+            forward_pe,
+            "Indica cuanto se paga por las ganancias esperadas.",
+            f"Lectura: {ratio_reading}." if ratio_reading else "Sirve para ver si el precio ya descuenta demasiado optimismo.",
+            forward_pe_limit,
+        )
+    )
+    ratio_reading = _ratio_status(price_to_sales, price_to_sales_limit) if price_to_sales_limit is not None else None
+    lines.append(
+        _ratio_sentence(
+            "P/S",
+            price_to_sales,
+            "Indica cuanto se paga por cada dolar de ventas.",
+            f"Lectura: {ratio_reading}." if ratio_reading else "Es clave en empresas de crecimiento donde las ganancias aun no reflejan todo el negocio.",
+            price_to_sales_limit,
+        )
+    )
+    ratio_reading = _ratio_status(price_to_book, price_to_book_limit) if price_to_book_limit is not None else None
+    lines.append(
+        _ratio_sentence(
+            "P/B",
+            price_to_book,
+            "Compara el precio con el valor contable.",
+            f"Lectura: {ratio_reading}." if ratio_reading else "Es mas util en bancos, financieras o negocios intensivos en activos.",
+            price_to_book_limit,
+        )
+    )
+    ratio_reading = _ratio_status(ev_to_ebitda, ev_to_ebitda_limit) if ev_to_ebitda_limit is not None else None
+    lines.append(
+        _ratio_sentence(
+            "EV/EBITDA",
+            ev_to_ebitda,
+            "Mide cuanto se paga por el flujo operativo antes de deuda e impuestos.",
+            f"Lectura: {ratio_reading}." if ratio_reading else "Ayuda a comparar empresas con distinta deuda.",
+            ev_to_ebitda_limit,
+        )
+    )
+    lines.append(
+        _percent_ratio_sentence(
+            "ROE",
+            roe,
+            "Mide que tan rentable es la empresa usando su patrimonio.",
+            "Mientras mas alto y sostenible, mejor calidad del negocio.",
+        )
+    )
+    lines.append(
+        _percent_ratio_sentence(
+            "Margen neto",
+            profit_margin,
+            "Muestra que parte de las ventas termina como ganancia.",
+            "Margenes altos o estables dan mas defensa si el negocio se desacelera.",
+        )
+    )
+    lines.append(
+        _ratio_sentence(
+            "Deuda/patrimonio",
+            debt_to_equity,
+            "Muestra que tan apalancada esta la empresa.",
+            "Si es alto, una caida del negocio o tasas altas pueden aumentar el riesgo.",
+        )
+    )
+
+    clean_lines = [line for line in lines if line]
+    if not clean_lines:
+        return "Ratios explicados: no hay suficientes ratios disponibles para una lectura completa."
+    return "Ratios explicados:\n" + "\n".join(f"- {line}" for line in clean_lines)
+
+
 def _plain_ratio_explanation(row, mode):
     notes = []
     forward_pe = _float_or_none(row.get("forward_pe"))
@@ -188,13 +372,9 @@ def _plain_ratio_explanation(row, mode):
     margin_of_safety = _float_or_none(row.get("margin_of_safety_pct"))
     peer_label = row.get("peer_valuation_label")
     primary_metric = row.get("primary_metric")
+    buy_price = _buy_price_explanation(row) if mode in {"buy", "observe"} else _sell_price_explanation(row)
 
-    if margin_of_safety is not None:
-        if margin_of_safety > 0:
-            notes.append(f"el precio tiene un margen estimado de {round(margin_of_safety * 100, 1)}% bajo el valor conservador")
-        else:
-            notes.append(f"el precio esta {round(abs(margin_of_safety) * 100, 1)}% sobre el valor conservador")
-
+    notes.append(buy_price.rstrip("."))
     pe_status = _ratio_status(forward_pe, forward_pe_limit)
     if pe_status:
         notes.append(f"ganancias futuras: Forward PE {round(forward_pe, 2)} esta {pe_status} frente al limite {round(forward_pe_limit, 2)}")
@@ -344,9 +524,11 @@ def _discord_buy_embed(row):
         "color": DISCORD_GREEN,
         "fields": [
             {"name": "Lectura rapida", "value": _short_text(_plain_ratio_explanation(row, "buy"), DISCORD_FIELD_LIMIT), "inline": False},
+            {"name": "Precio tentativo", "value": _short_text(_buy_price_explanation(row), DISCORD_FIELD_LIMIT), "inline": False},
             {"name": "Score", "value": str(score), "inline": True},
             {"name": "Confianza", "value": str(confidence), "inline": True},
-            {"name": "Ratios usados", "value": _metric_line(row), "inline": False},
+            {"name": "Ratios resumidos", "value": _metric_line(row), "inline": False},
+            {"name": "Que significa cada ratio", "value": _short_text(_detailed_ratio_explanation(row), DISCORD_FIELD_LIMIT), "inline": False},
             {
                 "name": "Interpretacion",
                 "value": _short_text(row.get("ai_fair_value_view") or row.get("signal_reason"), DISCORD_FIELD_LIMIT),
@@ -377,10 +559,12 @@ def _discord_observe_buy_embed(row):
         "color": DISCORD_GOLD,
         "fields": [
             {"name": "Lectura rapida", "value": _short_text(_plain_ratio_explanation(row, "observe"), DISCORD_FIELD_LIMIT), "inline": False},
+            {"name": "Precio tentativo", "value": _short_text(_buy_price_explanation(row), DISCORD_FIELD_LIMIT), "inline": False},
             {"name": "Score", "value": str(score), "inline": True},
             {"name": "Confianza", "value": str(confidence), "inline": True},
             {"name": "Estado IA", "value": str(row.get("ai_final_alert_action") or "NO_DEFINIDO"), "inline": True},
-            {"name": "Ratios usados", "value": _metric_line(row), "inline": False},
+            {"name": "Ratios resumidos", "value": _metric_line(row), "inline": False},
+            {"name": "Que significa cada ratio", "value": _short_text(_detailed_ratio_explanation(row), DISCORD_FIELD_LIMIT), "inline": False},
             {
                 "name": "Por que observar",
                 "value": _short_text(row.get("ai_decision_support") or row.get("ai_fair_value_view"), DISCORD_FIELD_LIMIT),
@@ -408,11 +592,13 @@ def _discord_sell_embed(row):
         "color": DISCORD_RED,
         "fields": [
             {"name": "Lectura rapida", "value": _short_text(_plain_ratio_explanation(row, "sell"), DISCORD_FIELD_LIMIT), "inline": False},
+            {"name": "Precio tentativo", "value": _short_text(_sell_price_explanation(row), DISCORD_FIELD_LIMIT), "inline": False},
             {"name": "Score venta", "value": str(score), "inline": True},
             {"name": "Precio actual", "value": str(price), "inline": True},
             {"name": "Zona revision", "value": str(sell_price), "inline": True},
             {"name": "Confianza", "value": str(confidence), "inline": True},
-            {"name": "Ratios usados", "value": _metric_line(row), "inline": False},
+            {"name": "Ratios resumidos", "value": _metric_line(row), "inline": False},
+            {"name": "Que significa cada ratio", "value": _short_text(_detailed_ratio_explanation(row), DISCORD_FIELD_LIMIT), "inline": False},
             {
                 "name": "Interpretacion",
                 "value": _short_text(row.get("ai_sell_decision_support") or row.get("ai_sell_price_view"), DISCORD_FIELD_LIMIT),

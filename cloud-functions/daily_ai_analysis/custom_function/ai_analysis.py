@@ -172,6 +172,10 @@ Reglas obligatorias:
 24. Evita frases cargadas de jerga como "multiples exigentes" sin explicacion. Prefiere "el mercado esta pagando caro por cada dolar de ventas" o "el precio ya descuenta mucho crecimiento".
 25. Para compra, explica claramente: por que podria estar barata, que debe mejorar o mantenerse, que precio/zona haria mas atractiva la entrada y que riesgos invalidarian la tesis.
 26. Para venta, explica claramente: por que podria estar cara, si el riesgo es precio alto, deterioro del negocio o perdida de tendencia, que ratio lo muestra y que condicion permitiria mantenerla.
+27. En opportunity y decision_support incluye una mini explicacion de precio: precio actual, suggested_buy_price, cuanto faltaria bajar en porcentaje si el precio actual esta arriba de suggested_buy_price, y margen de seguridad.
+28. En sell_thesis, sell_reasons y sell_decision_support incluye una mini explicacion de precio: precio actual, suggested_sell_price, si ya esta en zona de revision o cuanto faltaria para llegar.
+29. No pongas solo "PE 20" o "P/S 5"; escribe "PE esta en 20: significa que el mercado paga 20 veces las ganancias actuales; es razonable/caro/barato frente a la referencia".
+30. Mantén el lenguaje simple pero completo: la persona debe entender que significa cada ratio sin estudiar finanzas.
 """
 
 
@@ -266,6 +270,7 @@ def analyze_ticker(config, signal_row):
                     "Analiza este ticker con los datos internos y contrasta con fuentes externas. "
                     "Usa lenguaje funcional y natural: una persona debe entender la conclusion aunque no conozca los ratios. "
                     "Primero di la lectura simple, luego muestra los ratios como evidencia y explica que significa cada uno. "
+                    "Incluye precio actual, precio tentativo de compra/venta y porcentaje aproximado que falta para llegar a esa zona cuando existan los datos. "
                     "Incluye una tesis de venta objetiva cuando los datos sugieran sobrevaloracion, deterioro o riesgo elevado. "
                     "Evalua los ratios disponibles segun valuation_model y primary_metric; no apliques la misma lectura a bancos, software, semiconductores, consumo defensivo, restaurantes, crypto-financials o ETFs. "
                     "Usa PE, forward PE, price to sales, price to book, EV/EBITDA, ROE, margenes, deuda, liquidez, FCF, momentum y volatilidad con la importancia que corresponda a la industria. "
@@ -283,6 +288,7 @@ def analyze_ticker(config, signal_row):
                     "Si no hay caso de venta, dilo claramente y explica que condiciones activarian una revision de venta. "
                     "Evita textos demasiado tecnicos en executive_summary, opportunity, sell_thesis, sell_reasons, decision_support y sell_decision_support. "
                     "En esos campos, traduce los ratios a implicancias practicas: barato/caro frente a ganancias, ventas, flujo operativo, deuda, margen, calidad y tendencia. "
+                    "No escribas listas de ratios sin interpretacion. Cada ratio relevante debe tener valor actual y significado practico en una frase breve. "
                     "Usa busqueda web para contexto reciente y cita las fuentes usadas dentro de sources. "
                     "Todos los textos explicativos deben estar en espanol. "
                     f"Payload JSON:\n{json.dumps(payload, ensure_ascii=True)}"
