@@ -31,6 +31,8 @@ jobs:
               --region us-east1 \
               --no-allow-unauthenticated \
               --clear-base-image \
+              --command python \
+              --args main.py \
               --timeout 900 \
               --concurrency 1 \
               --max-instances 1 \
