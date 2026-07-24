@@ -59,3 +59,20 @@ WHERE ticker = 'AMD';
 ```
 
 No es necesario cambiar Cloud Scheduler ni redeployar servicios para modificar el portafolio.
+
+## Criptoactivos
+
+Para cripto se usan los tickers de Yahoo Finance con sufijo `-USD`, por ejemplo:
+
+```text
+BTC-USD
+ETH-USD
+```
+
+Estos activos deben quedar con:
+
+```text
+asset_type = crypto
+```
+
+El sistema no les aplica PE, P/S, EV/EBITDA, ROE ni deuda, porque no son empresas. Se evalúan por precio, tendencia, volatilidad, distancia contra máximos, medias móviles y relación BTC/ETH para detectar dominancia de Bitcoin o posible rotación hacia Ethereum/altcoins.

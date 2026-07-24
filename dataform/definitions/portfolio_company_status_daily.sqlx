@@ -28,6 +28,10 @@ WITH base AS (
     valuation_model,
     primary_metric,
     CASE
+      WHEN signal = "CRYPTO_ACUMULAR_OBSERVAR" THEN "CRYPTO_ACUMULAR"
+      WHEN signal = "CRYPTO_SOBREEXTENDIDO" THEN "CRYPTO_SOBREEXTENDIDO"
+      WHEN signal = "CRYPTO_RIESGO_ALTO" THEN "CRYPTO_RIESGO_ALTO"
+      WHEN signal = "CRYPTO_MANTENER" THEN "CRYPTO_MANTENER"
       WHEN signal = "COMPRAR_OBSERVAR" THEN "OPORTUNIDAD_COMPRA"
       WHEN signal = "VENDER_OBSERVAR" OR sell_signal = "VENTA_CLARA" THEN "ALERTA_VENTA"
       WHEN signal = "TRAMPA_DE_VALOR" THEN "TRAMPA_DE_VALOR"
@@ -38,6 +42,8 @@ WITH base AS (
       ELSE "MANTENER"
     END AS company_status,
     CASE
+      WHEN signal IN ("CRYPTO_ACUMULAR_OBSERVAR", "CRYPTO_MANTENER") THEN "CRYPTO"
+      WHEN signal IN ("CRYPTO_SOBREEXTENDIDO", "CRYPTO_RIESGO_ALTO") THEN "RIESGO"
       WHEN signal = "COMPRAR_OBSERVAR" THEN "COMPRA"
       WHEN signal = "VENDER_OBSERVAR" OR sell_signal IN ("VENTA_CLARA", "VENTA_PARCIAL_OBSERVAR") THEN "VENTA"
       WHEN signal IN ("RIESGO_ALTO", "TRAMPA_DE_VALOR", "SOBREVALORADA") THEN "RIESGO"
@@ -69,6 +75,9 @@ WITH base AS (
     return_60d,
     return_120d,
     volatility_20d,
+    eth_btc_ratio,
+    eth_vs_btc_60d,
+    crypto_regime,
     signal_reason,
     sell_reason
   FROM ${ref("portfolio_daily_signal")}

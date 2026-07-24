@@ -33,5 +33,7 @@ FROM UNNEST([
   STRUCT("TSLA", "STOCK", "Consumer Cyclical", "Auto Manufacturers", "electric_vehicles"),
   STRUCT("TTWO", "STOCK", "Communication Services", "Gaming", "gaming_interactive"),
   STRUCT("URA", "ETF", "Energy", "Uranium ETF", "uranium_etf"),
-  STRUCT("XLE", "ETF", "Energy", "Energy ETF", "energy_etf")
+  STRUCT("XLE", "ETF", "Energy", "Energy ETF", "energy_etf"),
+  STRUCT("BTC-USD", "CRYPTO", "Digital Assets", "Bitcoin", "crypto_major"),
+  STRUCT("ETH-USD", "CRYPTO", "Digital Assets", "Ethereum", "crypto_major")
 ])

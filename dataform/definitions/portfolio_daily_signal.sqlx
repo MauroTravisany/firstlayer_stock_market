@@ -63,6 +63,33 @@ price_features AS (
     ticker_120d AS (PARTITION BY ticker ORDER BY analysis_date ROWS BETWEEN 119 PRECEDING AND CURRENT ROW),
     ticker_252d AS (PARTITION BY ticker ORDER BY analysis_date ROWS BETWEEN 251 PRECEDING AND CURRENT ROW)
 ),
+crypto_context AS (
+  SELECT
+    analysis_date,
+    MAX(IF(ticker = "BTC-USD", close_price, NULL)) AS btc_close,
+    MAX(IF(ticker = "ETH-USD", close_price, NULL)) AS eth_close,
+    MAX(IF(ticker = "BTC-USD", return_20d, NULL)) AS btc_return_20d,
+    MAX(IF(ticker = "BTC-USD", return_60d, NULL)) AS btc_return_60d,
+    MAX(IF(ticker = "ETH-USD", return_20d, NULL)) AS eth_return_20d,
+    MAX(IF(ticker = "ETH-USD", return_60d, NULL)) AS eth_return_60d,
+    SAFE_DIVIDE(MAX(IF(ticker = "ETH-USD", close_price, NULL)), MAX(IF(ticker = "BTC-USD", close_price, NULL))) AS eth_btc_ratio,
+    MAX(IF(ticker = "ETH-USD", return_60d, NULL)) - MAX(IF(ticker = "BTC-USD", return_60d, NULL)) AS eth_vs_btc_60d,
+    CASE
+      WHEN MAX(IF(ticker = "BTC-USD", return_60d, NULL)) > 0.08
+        AND MAX(IF(ticker = "ETH-USD", return_60d, NULL)) - MAX(IF(ticker = "BTC-USD", return_60d, NULL)) > 0.08
+        THEN "ALTCOIN_ROTATION"
+      WHEN MAX(IF(ticker = "BTC-USD", return_60d, NULL)) > 0.08
+        AND COALESCE(MAX(IF(ticker = "ETH-USD", return_60d, NULL)) - MAX(IF(ticker = "BTC-USD", return_60d, NULL)), 0) <= 0.08
+        THEN "BTC_DOMINANTE"
+      WHEN MAX(IF(ticker = "BTC-USD", return_60d, NULL)) < -0.12
+        AND MAX(IF(ticker = "ETH-USD", return_60d, NULL)) < -0.12
+        THEN "CRYPTO_DEBIL"
+      ELSE "CRYPTO_NEUTRAL"
+    END AS crypto_regime
+  FROM price_features
+  WHERE ticker IN ("BTC-USD", "ETH-USD")
+  GROUP BY analysis_date
+),
 base AS (
   SELECT
     v.*,
@@ -94,7 +121,16 @@ base AS (
     p.high_252d,
     p.low_252d,
     p.volatility_20d,
-    p.volume_vs_20d_avg
+    p.volume_vs_20d_avg,
+    c.btc_close,
+    c.eth_close,
+    c.btc_return_20d,
+    c.btc_return_60d,
+    c.eth_return_20d,
+    c.eth_return_60d,
+    c.eth_btc_ratio,
+    c.eth_vs_btc_60d,
+    c.crypto_regime
   FROM ${ref("portfolio_valuation_daily")} v
   LEFT JOIN ${ref("peer_benchmark_daily")} pb
     ON pb.ticker = v.ticker
@@ -102,43 +138,68 @@ base AS (
   LEFT JOIN price_features p
     ON p.ticker = v.ticker
    AND p.analysis_date = v.analysis_date
+  LEFT JOIN crypto_context c
+    ON c.analysis_date = v.analysis_date
 ),
 scored AS (
   SELECT
     *,
     (
-      CASE WHEN classification = "BARATA" THEN 3
+      CASE
+           WHEN asset_type = "CRYPTO" AND high_252d IS NOT NULL AND SAFE_DIVIDE(last_close, high_252d) <= 0.65 AND (sma_20 IS NULL OR last_close >= sma_20 OR return_60d > 0) THEN 2
+           WHEN asset_type = "CRYPTO" AND high_252d IS NOT NULL AND SAFE_DIVIDE(last_close, high_252d) <= 0.80 THEN 1
+           WHEN asset_type = "CRYPTO" AND high_252d IS NOT NULL AND SAFE_DIVIDE(last_close, high_252d) >= 0.95 THEN -1
+           WHEN classification = "BARATA" THEN 3
            WHEN classification = "PRECIO_JUSTO" THEN 1
            WHEN classification = "CARA" THEN -3
            ELSE -1 END
     ) AS value_component,
     (
+      CASE WHEN asset_type = "CRYPTO" THEN 0 ELSE
       CASE WHEN profit_margin >= 0.20 THEN 1.5 WHEN profit_margin < 0 THEN -1.5 ELSE 0 END +
       CASE WHEN operating_margin >= 0.20 THEN 1 WHEN operating_margin < 0 THEN -1 ELSE 0 END +
       CASE WHEN roe >= 0.15 THEN 1 WHEN roe < 0 THEN -1 ELSE 0 END +
       CASE WHEN free_cash_flow > 0 THEN 1 WHEN free_cash_flow < 0 THEN -1 ELSE 0 END +
       CASE WHEN debt_to_equity IS NULL THEN 0 WHEN debt_to_equity <= 100 THEN 0.5 WHEN debt_to_equity > 250 THEN -1 ELSE 0 END +
       CASE WHEN current_ratio IS NULL THEN 0 WHEN current_ratio >= 1.5 THEN 0.5 WHEN current_ratio < 1 THEN -0.5 ELSE 0 END
+      END
     ) AS quality_score,
     (
       CASE WHEN return_20d IS NULL THEN 0 WHEN return_20d BETWEEN -0.12 AND 0.12 THEN 0.5 WHEN return_20d > 0.20 THEN -0.5 WHEN return_20d < -0.20 THEN -0.5 ELSE 0 END +
       CASE WHEN return_60d IS NULL THEN 0 WHEN return_60d > 0.05 THEN 1 WHEN return_60d < -0.15 THEN -1 ELSE 0 END +
       CASE WHEN sma_20 IS NULL THEN 0 WHEN last_close >= sma_20 THEN 0.5 ELSE -0.5 END +
-      CASE WHEN sma_60 IS NULL THEN 0 WHEN last_close >= sma_60 THEN 0.5 ELSE -0.5 END
+      CASE WHEN sma_60 IS NULL THEN 0 WHEN last_close >= sma_60 THEN 0.5 ELSE -0.5 END +
+      CASE
+        WHEN asset_type != "CRYPTO" THEN 0
+        WHEN ticker = "ETH-USD" AND eth_vs_btc_60d > 0.08 THEN 1
+        WHEN ticker = "ETH-USD" AND eth_vs_btc_60d < -0.08 THEN -0.5
+        WHEN ticker = "BTC-USD" AND crypto_regime = "BTC_DOMINANTE" THEN 0.75
+        WHEN ticker = "BTC-USD" AND crypto_regime = "ALTCOIN_ROTATION" THEN 0.25
+        ELSE 0
+      END
     ) AS momentum_score,
     (
-      CASE WHEN financial_data_status = "SIN_SNAPSHOT_FINANCIERO" THEN -3
+      CASE WHEN asset_type = "CRYPTO" THEN 0
+           WHEN financial_data_status = "SIN_SNAPSHOT_FINANCIERO" THEN -3
            WHEN financial_data_status = "FINANCIERO_REZAGADO" THEN -1
            ELSE 0 END +
-      CASE WHEN pe_ratio IS NULL THEN -0.25 ELSE 0 END +
-      CASE WHEN forward_pe IS NULL THEN -0.25 ELSE 0 END +
-      CASE WHEN price_to_sales IS NULL THEN -0.25 ELSE 0 END +
-      CASE WHEN ev_to_ebitda IS NULL THEN -0.25 ELSE 0 END +
-      CASE WHEN roe IS NULL THEN -0.25 ELSE 0 END +
-      CASE WHEN profit_margin IS NULL THEN -0.25 ELSE 0 END
+      CASE WHEN asset_type = "CRYPTO" THEN 0 WHEN pe_ratio IS NULL THEN -0.25 ELSE 0 END +
+      CASE WHEN asset_type = "CRYPTO" THEN 0 WHEN forward_pe IS NULL THEN -0.25 ELSE 0 END +
+      CASE WHEN asset_type = "CRYPTO" THEN 0 WHEN price_to_sales IS NULL THEN -0.25 ELSE 0 END +
+      CASE WHEN asset_type = "CRYPTO" THEN 0 WHEN ev_to_ebitda IS NULL THEN -0.25 ELSE 0 END +
+      CASE WHEN asset_type = "CRYPTO" THEN 0 WHEN roe IS NULL THEN -0.25 ELSE 0 END +
+      CASE WHEN asset_type = "CRYPTO" THEN 0 WHEN profit_margin IS NULL THEN -0.25 ELSE 0 END
     ) AS data_quality_score,
     (
-      CASE WHEN volatility_20d IS NULL THEN 0 WHEN volatility_20d <= 0.025 THEN 0.5 WHEN volatility_20d > 0.06 THEN -1.5 ELSE -0.5 END +
+      CASE
+        WHEN volatility_20d IS NULL THEN 0
+        WHEN asset_type = "CRYPTO" AND volatility_20d <= 0.045 THEN 0.25
+        WHEN asset_type = "CRYPTO" AND volatility_20d > 0.10 THEN -2
+        WHEN asset_type = "CRYPTO" THEN -0.75
+        WHEN volatility_20d <= 0.025 THEN 0.5
+        WHEN volatility_20d > 0.06 THEN -1.5
+        ELSE -0.5
+      END +
       CASE WHEN beta IS NULL THEN 0 WHEN beta <= 1.2 THEN 0.5 WHEN beta > 1.8 THEN -1 ELSE 0 END +
       CASE WHEN volume_vs_20d_avg IS NULL THEN 0 WHEN volume_vs_20d_avg >= 1.5 AND return_1d < 0 THEN -0.5 ELSE 0 END +
       CASE WHEN debt_to_equity IS NULL THEN 0 WHEN debt_to_equity > 250 THEN -1 WHEN debt_to_equity <= 75 THEN 0.5 ELSE 0 END
@@ -157,34 +218,37 @@ fair_value AS (
   SELECT
     *,
     ROUND(
-      last_close * COALESCE(
+      CASE WHEN asset_type = "CRYPTO" THEN COALESCE(sma_120, sma_60, last_close)
+      ELSE last_close * COALESCE(
         CASE WHEN forward_pe IS NOT NULL AND forward_pe > 0 THEN COALESCE(peer_median_forward_pe, 22) / forward_pe END,
         CASE WHEN pe_ratio IS NOT NULL AND pe_ratio > 0 THEN COALESCE(peer_median_pe, 24) / pe_ratio END,
         CASE WHEN price_to_sales IS NOT NULL AND price_to_sales > 0 THEN COALESCE(peer_median_price_to_sales, 4) / price_to_sales END,
         CASE WHEN ev_to_ebitda IS NOT NULL AND ev_to_ebitda > 0 THEN COALESCE(peer_median_ev_to_ebitda, 16) / ev_to_ebitda END,
         1
-      ),
+      ) END,
       2
     ) AS fair_value_estimate,
     ROUND(
-      last_close * COALESCE(
+      CASE WHEN asset_type = "CRYPTO" THEN COALESCE(sma_120 * 0.90, sma_60 * 0.92, last_close * 0.90)
+      ELSE last_close * COALESCE(
         CASE WHEN forward_pe IS NOT NULL AND forward_pe > 0 THEN LEAST(COALESCE(peer_median_forward_pe, 22), 22) / forward_pe END,
         CASE WHEN pe_ratio IS NOT NULL AND pe_ratio > 0 THEN LEAST(COALESCE(peer_median_pe, 24), 24) / pe_ratio END,
         CASE WHEN price_to_sales IS NOT NULL AND price_to_sales > 0 THEN LEAST(COALESCE(peer_median_price_to_sales, 4), 4) / price_to_sales END,
         CASE WHEN ev_to_ebitda IS NOT NULL AND ev_to_ebitda > 0 THEN LEAST(COALESCE(peer_median_ev_to_ebitda, 16), 16) / ev_to_ebitda END,
         0.95
-      ),
+      ) END,
       2
     ) AS conservative_fair_value,
     ROUND(
       SAFE_DIVIDE(
-        last_close * COALESCE(
+        CASE WHEN asset_type = "CRYPTO" THEN COALESCE(sma_120 * 0.90, sma_60 * 0.92, last_close * 0.90)
+        ELSE last_close * COALESCE(
           CASE WHEN forward_pe IS NOT NULL AND forward_pe > 0 THEN LEAST(COALESCE(peer_median_forward_pe, 22), 22) / forward_pe END,
           CASE WHEN pe_ratio IS NOT NULL AND pe_ratio > 0 THEN LEAST(COALESCE(peer_median_pe, 24), 24) / pe_ratio END,
           CASE WHEN price_to_sales IS NOT NULL AND price_to_sales > 0 THEN LEAST(COALESCE(peer_median_price_to_sales, 4), 4) / price_to_sales END,
           CASE WHEN ev_to_ebitda IS NOT NULL AND ev_to_ebitda > 0 THEN LEAST(COALESCE(peer_median_ev_to_ebitda, 16), 16) / ev_to_ebitda END,
           0.95
-        ) - last_close,
+        ) END - last_close,
         last_close
       ),
       4
@@ -200,6 +264,7 @@ adaptive_guardrails AS (
     ROUND(LEAST(ev_ebitda_expensive, GREATEST(ev_ebitda_fair, COALESCE(peer_median_ev_to_ebitda * 1.15, ev_ebitda_fair))), 2) AS adaptive_ev_to_ebitda_limit,
     ROUND(LEAST(pb_expensive, GREATEST(pb_fair, COALESCE(peer_median_price_to_book * 1.15, pb_fair))), 2) AS adaptive_price_to_book_limit,
     CASE
+      WHEN COALESCE(asset_type, "STOCK") = "CRYPTO" THEN FALSE
       WHEN COALESCE(asset_type, "STOCK") != "STOCK" THEN FALSE
       WHEN financial_data_status = "SIN_SNAPSHOT_FINANCIERO" THEN FALSE
       WHEN valuation_model = "BANK_ROE_BOOK_VALUE" THEN
@@ -269,7 +334,13 @@ sell_scored AS (
       ),
       2
     ) AS suggested_sell_price,
-    ROUND(LEAST(COALESCE(conservative_fair_value * 0.85, last_close * 0.90), last_close * 0.90), 2) AS suggested_buy_price
+    ROUND(
+      CASE
+        WHEN asset_type = "CRYPTO" THEN LEAST(COALESCE(sma_120 * 0.88, sma_60 * 0.90, last_close * 0.90), last_close * 0.92)
+        ELSE LEAST(COALESCE(conservative_fair_value * 0.85, last_close * 0.90), last_close * 0.90)
+      END,
+      2
+    ) AS suggested_buy_price
   FROM final_scored
 )
 
@@ -350,6 +421,15 @@ SELECT
   low_252d,
   volatility_20d,
   volume_vs_20d_avg,
+  btc_close,
+  eth_close,
+  btc_return_20d,
+  btc_return_60d,
+  eth_return_20d,
+  eth_return_60d,
+  eth_btc_ratio,
+  eth_vs_btc_60d,
+  crypto_regime,
   pe_ratio,
   forward_pe,
   price_to_book,
@@ -362,6 +442,21 @@ SELECT
   current_ratio,
   free_cash_flow,
   CASE
+    WHEN asset_type = "CRYPTO"
+      AND risk_score <= -2
+      THEN "CRYPTO_RIESGO_ALTO"
+    WHEN asset_type = "CRYPTO"
+      AND high_252d IS NOT NULL
+      AND SAFE_DIVIDE(last_close, high_252d) >= 0.95
+      AND return_60d > 0.25
+      THEN "CRYPTO_SOBREEXTENDIDO"
+    WHEN asset_type = "CRYPTO"
+      AND final_score >= 3
+      AND technical_score >= 1
+      AND risk_score > -2
+      THEN "CRYPTO_ACUMULAR_OBSERVAR"
+    WHEN asset_type = "CRYPTO"
+      THEN "CRYPTO_MANTENER"
     WHEN financial_data_status = "SIN_SNAPSHOT_FINANCIERO" THEN "DATOS_INSUFICIENTES"
     WHEN classification = "BARATA"
       AND COALESCE(asset_type, "STOCK") = "STOCK"
@@ -384,6 +479,9 @@ SELECT
     "valor=", CAST(ROUND(value_component, 2) AS STRING),
     "; modelo=", COALESCE(valuation_model, "NA"),
     "; ratio_principal=", COALESCE(primary_metric, "NA"),
+    "; regimen_crypto=", COALESCE(crypto_regime, "NA"),
+    "; eth_vs_btc_60d=", COALESCE(CAST(ROUND(eth_vs_btc_60d * 100, 1) AS STRING), "NA"), "%",
+    "; eth_btc_ratio=", COALESCE(CAST(ROUND(eth_btc_ratio, 6) AS STRING), "NA"),
     "; guardrail_compra=", CAST(buy_multiple_guardrail_pass AS STRING),
     "; ", buy_guardrail_reason,
     "; peers=", COALESCE(peer_valuation_label, "SIN_PEERS"),
@@ -400,6 +498,12 @@ SELECT
     "; precio_venta_sugerido=", CAST(suggested_sell_price AS STRING)
   ) AS signal_reason,
   CASE
+    WHEN asset_type = "CRYPTO"
+      AND high_252d IS NOT NULL
+      AND SAFE_DIVIDE(last_close, high_252d) >= 0.95
+      AND return_60d > 0.25
+      THEN "CRYPTO_TOMA_GANANCIA_OBSERVAR"
+    WHEN asset_type = "CRYPTO" THEN "SIN_SENAL_VENTA"
     WHEN financial_data_status = "SIN_SNAPSHOT_FINANCIERO" THEN "SIN_DATOS"
     WHEN classification = "CARA" AND sell_score >= 7 THEN "VENTA_CLARA"
     WHEN sell_score >= 5 THEN "VENTA_PARCIAL_OBSERVAR"

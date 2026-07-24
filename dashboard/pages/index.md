@@ -12,8 +12,10 @@ select
   count(*) as activos,
   sum(case when asset_type = 'STOCK' then 1 else 0 end) as acciones,
   sum(case when asset_type = 'ETF' then 1 else 0 end) as etfs,
+  sum(case when asset_type = 'CRYPTO' then 1 else 0 end) as cripto,
   round(avg(final_score), 2) as score_promedio,
   sum(case when signal = 'COMPRAR_OBSERVAR' then 1 else 0 end) as compras_observar,
+  sum(case when signal = 'CRYPTO_ACUMULAR_OBSERVAR' then 1 else 0 end) as cripto_acumular,
   sum(case when sell_signal = 'VENTA_CLARA' or signal = 'VENDER_OBSERVAR' then 1 else 0 end) as ventas,
   sum(case when risk_level = 'ALTO' then 1 else 0 end) as riesgo_alto,
   sum(case when missing_data_impact in ('ALTO', 'MEDIO') then 1 else 0 end) as datos_observar
@@ -43,6 +45,9 @@ select
   ticker,
   case
     when signal = 'COMPRAR_OBSERVAR' then 'Compra'
+    when signal = 'CRYPTO_ACUMULAR_OBSERVAR' then 'Cripto acumular'
+    when signal = 'CRYPTO_SOBREEXTENDIDO' then 'Cripto extendida'
+    when signal = 'CRYPTO_RIESGO_ALTO' then 'Cripto riesgo'
     when sell_signal = 'VENTA_CLARA' or signal = 'VENDER_OBSERVAR' then 'Venta'
     when signal = 'SOBREVALORADA' then 'Sobrevalorada'
     when risk_level = 'ALTO' then 'Riesgo'
@@ -64,12 +69,15 @@ select
   technical_trend
 from stocks.portfolio_latest
 where signal = 'COMPRAR_OBSERVAR'
+   or signal in ('CRYPTO_ACUMULAR_OBSERVAR', 'CRYPTO_SOBREEXTENDIDO', 'CRYPTO_RIESGO_ALTO')
    or sell_signal = 'VENTA_CLARA'
    or signal in ('VENDER_OBSERVAR', 'SOBREVALORADA', 'RIESGO_ALTO')
 order by
   case
     when signal = 'COMPRAR_OBSERVAR' then 1
-    when sell_signal = 'VENTA_CLARA' or signal = 'VENDER_OBSERVAR' then 2
+    when signal = 'CRYPTO_ACUMULAR_OBSERVAR' then 2
+    when sell_signal = 'VENTA_CLARA' or signal = 'VENDER_OBSERVAR' then 3
+    when signal in ('CRYPTO_SOBREEXTENDIDO', 'CRYPTO_RIESGO_ALTO') then 4
     else 3
   end,
   greatest(coalesce(final_score, 0), coalesce(sell_score, 0)) desc,
@@ -82,6 +90,9 @@ select
   ticker,
   case
     when signal = 'COMPRAR_OBSERVAR' then 'Compra'
+    when signal = 'CRYPTO_ACUMULAR_OBSERVAR' then 'Cripto'
+    when signal = 'CRYPTO_SOBREEXTENDIDO' then 'Extendida'
+    when signal = 'CRYPTO_RIESGO_ALTO' then 'Riesgo cripto'
     when sell_signal = 'VENTA_CLARA' or signal = 'VENDER_OBSERVAR' then 'Venta'
     when signal = 'SOBREVALORADA' then 'Cara'
     when risk_level = 'ALTO' then 'Riesgo'
@@ -93,12 +104,15 @@ select
   round(last_close, 2) as precio
 from stocks.portfolio_latest
 where signal = 'COMPRAR_OBSERVAR'
+   or signal in ('CRYPTO_ACUMULAR_OBSERVAR', 'CRYPTO_SOBREEXTENDIDO', 'CRYPTO_RIESGO_ALTO')
    or sell_signal = 'VENTA_CLARA'
    or signal in ('VENDER_OBSERVAR', 'SOBREVALORADA', 'RIESGO_ALTO')
 order by
   case
     when signal = 'COMPRAR_OBSERVAR' then 1
-    when sell_signal = 'VENTA_CLARA' or signal = 'VENDER_OBSERVAR' then 2
+    when signal = 'CRYPTO_ACUMULAR_OBSERVAR' then 2
+    when sell_signal = 'VENTA_CLARA' or signal = 'VENDER_OBSERVAR' then 3
+    when signal in ('CRYPTO_SOBREEXTENDIDO', 'CRYPTO_RIESGO_ALTO') then 4
     else 3
   end,
   greatest(coalesce(final_score, 0), coalesce(sell_score, 0)) desc,
@@ -203,8 +217,9 @@ Fecha procesada: <Value data={latest_date} column=analysis_date/>
 <Grid cols=2>
   <Value data={kpis} column=score_promedio title="Score promedio"/>
   <Value data={kpis} column=etfs title="ETFs"/>
+  <Value data={kpis} column=cripto title="Cripto"/>
   <Value data={kpis} column=riesgo_alto title="Riesgo alto"/>
-  <Value data={kpis} column=datos_observar title="Datos a revisar"/>
+  <Value data={kpis} column=cripto_acumular title="Cripto acumular"/>
 </Grid>
 
 ## Acciones prioritarias

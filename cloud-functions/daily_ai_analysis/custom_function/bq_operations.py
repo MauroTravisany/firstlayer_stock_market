@@ -161,8 +161,8 @@ def fetch_daily_signals(config, analysis_date, tickers=None, analysis_scope="can
     if analysis_scope == "candidates":
         scope_filter = """
         AND (
-          signal IN ("COMPRAR_OBSERVAR", "VENDER_OBSERVAR")
-          OR sell_signal = "VENTA_CLARA"
+          signal IN ("COMPRAR_OBSERVAR", "VENDER_OBSERVAR", "CRYPTO_ACUMULAR_OBSERVAR", "CRYPTO_SOBREEXTENDIDO", "CRYPTO_RIESGO_ALTO")
+          OR sell_signal IN ("VENTA_CLARA", "CRYPTO_TOMA_GANANCIA_OBSERVAR")
         )
         """
     elif analysis_scope == "remaining":
@@ -250,6 +250,15 @@ def fetch_daily_signals(config, analysis_date, tickers=None, analysis_scope="can
       {_select_expr("low_252d", available)},
       volatility_20d,
       volume_vs_20d_avg,
+      {_select_expr("btc_close", available)},
+      {_select_expr("eth_close", available)},
+      {_select_expr("btc_return_20d", available)},
+      {_select_expr("btc_return_60d", available)},
+      {_select_expr("eth_return_20d", available)},
+      {_select_expr("eth_return_60d", available)},
+      {_select_expr("eth_btc_ratio", available)},
+      {_select_expr("eth_vs_btc_60d", available)},
+      {_select_expr("crypto_regime", available, "STRING")},
       pe_ratio,
       forward_pe,
       {_select_expr("price_to_book", available)},
@@ -271,7 +280,9 @@ def fetch_daily_signals(config, analysis_date, tickers=None, analysis_scope="can
     ORDER BY
       CASE
         WHEN signal = "COMPRAR_OBSERVAR" THEN 1
-        WHEN sell_signal = "VENTA_CLARA" OR signal = "VENDER_OBSERVAR" THEN 2
+        WHEN signal = "CRYPTO_ACUMULAR_OBSERVAR" THEN 2
+        WHEN sell_signal = "VENTA_CLARA" OR signal = "VENDER_OBSERVAR" THEN 3
+        WHEN signal IN ("CRYPTO_SOBREEXTENDIDO", "CRYPTO_RIESGO_ALTO") THEN 4
         ELSE 3
       END,
       GREATEST(COALESCE(final_score, 0), COALESCE(sell_score, 0)) DESC,

@@ -29,5 +29,6 @@ FROM UNNEST([
   STRUCT("TSLA", "RIVN", "electric_vehicles"), STRUCT("TSLA", "GM", "electric_vehicles"), STRUCT("TSLA", "F", "electric_vehicles"), STRUCT("TSLA", "BYDDY", "electric_vehicles"),
   STRUCT("COIN", "HOOD", "crypto_financials"), STRUCT("COIN", "MSTR", "crypto_financials"), STRUCT("COIN", "IBKR", "crypto_financials"), STRUCT("COIN", "CME", "crypto_financials"),
   STRUCT("MSTR", "COIN", "crypto_financials"), STRUCT("MSTR", "HOOD", "crypto_financials"), STRUCT("MSTR", "IBKR", "crypto_financials"), STRUCT("MSTR", "CME", "crypto_financials"),
-  STRUCT("BCH", "BSAC", "latin_america_banks"), STRUCT("BCH", "ITUB", "latin_america_banks"), STRUCT("BCH", "BBD", "latin_america_banks"), STRUCT("BCH", "NU", "latin_america_banks")
+  STRUCT("BCH", "BSAC", "latin_america_banks"), STRUCT("BCH", "ITUB", "latin_america_banks"), STRUCT("BCH", "BBD", "latin_america_banks"), STRUCT("BCH", "NU", "latin_america_banks"),
+  STRUCT("BTC-USD", "ETH-USD", "crypto_major"), STRUCT("ETH-USD", "BTC-USD", "crypto_major")
 ])

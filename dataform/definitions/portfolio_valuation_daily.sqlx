@@ -170,7 +170,7 @@ metric_scores AS (
   SELECT
     *,
     CASE
-      WHEN asset_type = "ETF" THEN 0
+      WHEN asset_type IN ("ETF", "CRYPTO") THEN 0
       WHEN forward_pe IS NULL OR forward_pe_weight = 0 THEN 0
       WHEN forward_pe <= forward_pe_cheap THEN 2 * forward_pe_weight
       WHEN forward_pe <= forward_pe_fair THEN 0.5 * forward_pe_weight
@@ -179,7 +179,7 @@ metric_scores AS (
       ELSE -2 * forward_pe_weight
     END AS forward_pe_score,
     CASE
-      WHEN asset_type = "ETF" THEN 0
+      WHEN asset_type IN ("ETF", "CRYPTO") THEN 0
       WHEN pe_ratio IS NULL OR pe_weight = 0 THEN 0
       WHEN pe_ratio <= pe_cheap THEN 1.5 * pe_weight
       WHEN pe_ratio <= pe_fair THEN 0.25 * pe_weight
@@ -188,7 +188,7 @@ metric_scores AS (
       ELSE -2 * pe_weight
     END AS pe_score,
     CASE
-      WHEN asset_type = "ETF" THEN 0
+      WHEN asset_type IN ("ETF", "CRYPTO") THEN 0
       WHEN price_to_sales IS NULL OR ps_weight = 0 THEN 0
       WHEN price_to_sales <= ps_cheap THEN 1.5 * ps_weight
       WHEN price_to_sales <= ps_fair THEN 0.25 * ps_weight
@@ -197,7 +197,7 @@ metric_scores AS (
       ELSE -2.25 * ps_weight
     END AS price_to_sales_score,
     CASE
-      WHEN asset_type = "ETF" THEN 0
+      WHEN asset_type IN ("ETF", "CRYPTO") THEN 0
       WHEN ev_to_ebitda IS NULL OR ev_ebitda_weight = 0 THEN 0
       WHEN ev_to_ebitda <= ev_ebitda_cheap THEN 1.5 * ev_ebitda_weight
       WHEN ev_to_ebitda <= ev_ebitda_fair THEN 0.25 * ev_ebitda_weight
@@ -206,7 +206,7 @@ metric_scores AS (
       ELSE -2.25 * ev_ebitda_weight
     END AS ev_to_ebitda_score,
     CASE
-      WHEN asset_type = "ETF" THEN 0
+      WHEN asset_type IN ("ETF", "CRYPTO") THEN 0
       WHEN price_to_book IS NULL OR pb_weight = 0 THEN 0
       WHEN price_to_book <= pb_cheap THEN 1.5 * pb_weight
       WHEN price_to_book <= pb_fair THEN 0.25 * pb_weight
@@ -215,34 +215,34 @@ metric_scores AS (
       ELSE -2.25 * pb_weight
     END AS price_to_book_score,
     CASE
-      WHEN asset_type = "ETF" THEN 0
+      WHEN asset_type IN ("ETF", "CRYPTO") THEN 0
       WHEN profit_margin IS NULL OR profit_margin_weight = 0 THEN 0
       WHEN profit_margin >= profit_margin_good THEN 1 * profit_margin_weight
       WHEN profit_margin < profit_margin_bad THEN -1 * profit_margin_weight
       ELSE 0
     END AS profit_margin_score,
     CASE
-      WHEN asset_type = "ETF" THEN 0
+      WHEN asset_type IN ("ETF", "CRYPTO") THEN 0
       WHEN operating_margin IS NULL OR operating_margin_weight = 0 THEN 0
       WHEN operating_margin >= operating_margin_good THEN 1 * operating_margin_weight
       WHEN operating_margin < operating_margin_bad THEN -1 * operating_margin_weight
       ELSE 0
     END AS operating_margin_score,
     CASE
-      WHEN asset_type = "ETF" THEN 0
+      WHEN asset_type IN ("ETF", "CRYPTO") THEN 0
       WHEN roe IS NULL OR roe_weight = 0 THEN 0
       WHEN roe >= roe_good THEN 1 * roe_weight
       WHEN roe < roe_bad THEN -1 * roe_weight
       ELSE 0
     END AS roe_score,
     CASE
-      WHEN asset_type = "ETF" THEN 0
+      WHEN asset_type IN ("ETF", "CRYPTO") THEN 0
       WHEN current_ratio IS NULL OR liquidity_weight = 0 THEN 0
       WHEN current_ratio < current_ratio_min THEN -1 * liquidity_weight
       ELSE 0
     END AS liquidity_score,
     CASE
-      WHEN asset_type = "ETF" THEN 0
+      WHEN asset_type IN ("ETF", "CRYPTO") THEN 0
       WHEN day_change_pct > 3 THEN -0.5
       WHEN day_change_pct < -3 THEN 0.5
       ELSE 0
@@ -335,6 +335,7 @@ SELECT
   valuation_score,
   CASE
     WHEN asset_type = "ETF" THEN "ETF_TRACKING_ONLY"
+    WHEN asset_type = "CRYPTO" THEN "CRYPTO_TRACKING_ONLY"
     WHEN pe_ratio IS NULL
       AND forward_pe IS NULL
       AND price_to_sales IS NULL
@@ -346,6 +347,7 @@ SELECT
     ELSE "CARA"
   END AS classification,
   CASE
+    WHEN asset_type = "CRYPTO" THEN "NO_APLICA_CRYPTO"
     WHEN ratio_lag_days = 1 THEN "FINANCIERO_AYER"
     WHEN ratio_lag_days = 0 THEN "FINANCIERO_MISMO_DIA"
     WHEN ratio_lag_days IS NULL THEN "SIN_SNAPSHOT_FINANCIERO"

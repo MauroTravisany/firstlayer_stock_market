@@ -17,6 +17,7 @@ DISCORD_GREEN = 0x2ECC71
 DISCORD_RED = 0xE74C3C
 DISCORD_GOLD = 0xF1C40F
 DISCORD_BLUE = 0x3498DB
+DISCORD_PURPLE = 0x9B59B6
 
 
 def _detect_webhook_type(config):
@@ -88,6 +89,17 @@ def clear_sell_rows(analysis_rows, min_sell_score=DEFAULT_MIN_SELL_SCORE, min_co
             continue
         rows.append(row)
     return sorted(rows, key=lambda item: item.get("sell_score") or 0, reverse=True)
+
+
+def crypto_signal_rows(analysis_rows):
+    rows = []
+    for row in analysis_rows:
+        if row.get("asset_type") != "CRYPTO":
+            continue
+        if row.get("signal") not in {"CRYPTO_ACUMULAR_OBSERVAR", "CRYPTO_SOBREEXTENDIDO", "CRYPTO_RIESGO_ALTO"}:
+            continue
+        rows.append(row)
+    return sorted(rows, key=lambda item: item.get("final_score") or 0, reverse=True)
 
 
 def _normalized_confidence(value):
@@ -226,6 +238,61 @@ def _sell_price_explanation(row):
     if not parts:
         return "No hay precio suficiente para calcular zona de venta."
     return "Zona de venta: " + "; ".join(parts) + "."
+
+
+def _crypto_explanation(row):
+    ticker = row.get("ticker")
+    signal = row.get("signal")
+    regime = row.get("crypto_regime") or "CRYPTO_NEUTRAL"
+    last_close = _float_or_none(row.get("last_close"))
+    suggested_buy = _float_or_none(row.get("suggested_buy_price"))
+    return_20d = _float_or_none(row.get("return_20d"))
+    return_60d = _float_or_none(row.get("return_60d"))
+    volatility = _float_or_none(row.get("volatility_20d"))
+    eth_vs_btc = _float_or_none(row.get("eth_vs_btc_60d"))
+    eth_btc_ratio = _float_or_none(row.get("eth_btc_ratio"))
+    high_252d = _float_or_none(row.get("high_252d"))
+
+    parts = []
+    if last_close is not None:
+        parts.append(f"precio actual {_format_money(last_close)}")
+    if suggested_buy is not None:
+        parts.append(f"zona tentativa de acumulacion {_format_money(suggested_buy)}")
+        if last_close is not None and last_close > 0:
+            drop_pct = (last_close - suggested_buy) / last_close
+            if drop_pct > 0:
+                parts.append(f"faltaria una baja cercana a {round(drop_pct * 100, 1)}% para esa zona")
+            else:
+                parts.append("ya esta en o bajo la zona tentativa de acumulacion")
+    if high_252d is not None and last_close is not None and high_252d > 0:
+        parts.append(f"esta a {round((1 - last_close / high_252d) * 100, 1)}% bajo su maximo anual")
+    if return_20d is not None:
+        parts.append(f"retorno 20 dias {_format_percent(return_20d)}")
+    if return_60d is not None:
+        parts.append(f"retorno 60 dias {_format_percent(return_60d)}")
+    if volatility is not None:
+        parts.append(f"volatilidad 20 dias {_format_percent(volatility)}")
+    if eth_vs_btc is not None:
+        parts.append(f"ETH vs BTC a 60 dias {_format_percent(eth_vs_btc)}")
+    if eth_btc_ratio is not None:
+        parts.append(f"ratio ETH/BTC {_format_number(eth_btc_ratio, 6)}")
+
+    if regime == "BTC_DOMINANTE":
+        parts.append("lectura: Bitcoin lidera; las altcoins todavia no muestran fuerza relativa clara")
+    elif regime == "ALTCOIN_ROTATION":
+        parts.append("lectura: ETH supera a BTC; puede existir mayor apetito por altcoins")
+    elif regime == "CRYPTO_DEBIL":
+        parts.append("lectura: debilidad amplia; conviene exigir mas confirmacion antes de aumentar exposicion")
+    else:
+        parts.append("lectura: regimen neutral; no hay dominancia clara entre BTC y ETH")
+
+    if signal == "CRYPTO_ACUMULAR_OBSERVAR":
+        prefix = f"{ticker}: cripto a observar para acumulacion"
+    elif signal == "CRYPTO_SOBREEXTENDIDO":
+        prefix = f"{ticker}: cripto sobreextendida"
+    else:
+        prefix = f"{ticker}: cripto con riesgo alto"
+    return prefix + ". " + "; ".join(parts) + "."
 
 
 def _ratio_status(value, limit, lower_is_better=True):
@@ -405,8 +472,8 @@ def _plain_ratio_explanation(row, mode):
     return prefix + ": " + "; ".join(notes[:5]) + "."
 
 
-def build_alert_text(summary, opportunity_rows=None, sell_rows=None, observe_rows=None):
-    if opportunity_rows is not None or sell_rows is not None or observe_rows is not None:
+def build_alert_text(summary, opportunity_rows=None, sell_rows=None, observe_rows=None, crypto_rows=None):
+    if opportunity_rows is not None or sell_rows is not None or observe_rows is not None or crypto_rows is not None:
         lines = [f"*{summary['alert_title']}*", ""]
         if opportunity_rows:
             lines.append("Oportunidades claras de compra detectadas:")
@@ -448,6 +515,20 @@ def build_alert_text(summary, opportunity_rows=None, sell_rows=None, observe_row
                         sell_price=round(float(row.get("suggested_sell_price") or 0), 2),
                         confidence=round(confidence, 2),
                         summary=f"{_plain_ratio_explanation(row, 'sell')} {row.get('ai_sell_thesis') or row.get('ai_sell_reasons') or 'Ver detalle en Looker Studio.'}",
+                    )
+                )
+        if crypto_rows:
+            if opportunity_rows or observe_rows or sell_rows:
+                lines.append("")
+            lines.append("Lecturas cripto BTC/ETH:")
+            for row in crypto_rows:
+                confidence = _normalized_confidence(row.get("confidence_score"))
+                lines.append(
+                    "- {ticker}: score={score}, confianza={confidence}. {summary}".format(
+                        ticker=row.get("ticker"),
+                        score=round(float(row.get("final_score") or 0), 2),
+                        confidence=round(confidence, 2),
+                        summary=f"{_crypto_explanation(row)} {row.get('ai_decision_support') or row.get('ai_summary') or 'Ver detalle en Looker Studio.'}",
                     )
                 )
         lines.append("")
@@ -609,6 +690,34 @@ def _discord_sell_embed(row):
     }
 
 
+def _discord_crypto_embed(row):
+    ticker = row.get("ticker")
+    score = round(float(row.get("final_score") or 0), 2)
+    confidence = round(_normalized_confidence(row.get("confidence_score")), 2)
+    color = DISCORD_PURPLE
+    if row.get("signal") == "CRYPTO_RIESGO_ALTO":
+        color = DISCORD_RED
+    elif row.get("signal") == "CRYPTO_SOBREEXTENDIDO":
+        color = DISCORD_GOLD
+    return {
+        "title": f"{ticker} | lectura cripto",
+        "description": _short_text(row.get("ai_summary") or row.get("ai_opportunity") or _crypto_explanation(row), DISCORD_FIELD_LIMIT),
+        "color": color,
+        "fields": [
+            {"name": "Lectura simple", "value": _short_text(_crypto_explanation(row), DISCORD_FIELD_LIMIT), "inline": False},
+            {"name": "Score", "value": str(score), "inline": True},
+            {"name": "Confianza IA", "value": str(confidence), "inline": True},
+            {"name": "Regimen BTC/ETH", "value": str(row.get("crypto_regime") or "CRYPTO_NEUTRAL"), "inline": True},
+            {
+                "name": "Interpretacion IA",
+                "value": _short_text(row.get("ai_decision_support") or row.get("ai_technical_view") or row.get("ai_risks"), DISCORD_FIELD_LIMIT),
+                "inline": False,
+            },
+        ],
+        "footer": {"text": "Cripto no usa PE/P/S/EV/EBITDA: se evalua por precio, tendencia, volatilidad y relacion BTC/ETH."},
+    }
+
+
 def build_discord_payload(summary, opportunity_rows, sell_rows=None, observe_rows=None):
     sell_rows = sell_rows or []
     observe_rows = observe_rows or []
@@ -654,7 +763,7 @@ def build_discord_payload(summary, opportunity_rows, sell_rows=None, observe_row
     return {"embeds": embeds}
 
 
-def build_discord_messages(summary, opportunity_rows, sell_rows=None, observe_rows=None):
+def build_discord_messages(summary, opportunity_rows, sell_rows=None, observe_rows=None, crypto_rows=None):
     messages = []
     for row in (opportunity_rows or [])[:DISCORD_MAX_FIELDS_PER_SECTION]:
         messages.append({"embeds": [_discord_buy_embed(row)]})
@@ -662,6 +771,8 @@ def build_discord_messages(summary, opportunity_rows, sell_rows=None, observe_ro
         messages.append({"embeds": [_discord_observe_buy_embed(row)]})
     for row in (sell_rows or [])[:DISCORD_MAX_FIELDS_PER_SECTION]:
         messages.append({"embeds": [_discord_sell_embed(row)]})
+    for row in (crypto_rows or [])[:DISCORD_MAX_FIELDS_PER_SECTION]:
+        messages.append({"embeds": [_discord_crypto_embed(row)]})
     if not messages:
         messages.append(build_discord_payload(summary, [], []))
     return messages
@@ -675,14 +786,15 @@ def send_webhook_alert(config, summary, analysis_rows=None):
     opportunity_rows = clear_opportunity_rows(analysis_rows or [])
     observe_rows = observe_opportunity_rows(analysis_rows or [], opportunity_rows)
     sell_rows = clear_sell_rows(analysis_rows or [])
-    if not opportunity_rows and not observe_rows and not sell_rows:
+    crypto_rows = crypto_signal_rows(analysis_rows or [])
+    if not opportunity_rows and not observe_rows and not sell_rows and not crypto_rows:
         return False, "NO_CLEAR_OPPORTUNITIES"
 
-    text = build_alert_text(summary, opportunity_rows, sell_rows, observe_rows)
+    text = build_alert_text(summary, opportunity_rows, sell_rows, observe_rows, crypto_rows)
     webhook_type = _detect_webhook_type(config)
     if webhook_type == "discord":
         errors = []
-        for payload in build_discord_messages(summary, opportunity_rows, sell_rows, observe_rows):
+        for payload in build_discord_messages(summary, opportunity_rows, sell_rows, observe_rows, crypto_rows):
             response = requests.post(url, json=payload, timeout=30)
             if response.status_code >= 300:
                 errors.append(f"{response.status_code}: {response.text}")

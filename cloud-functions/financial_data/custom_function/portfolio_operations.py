@@ -19,6 +19,7 @@ def fetch_enabled_tickers_with_peers(project_id, portfolio_table, peer_universe_
       SELECT ticker
       FROM `{portfolio_table}`
       WHERE enabled = TRUE
+        AND LOWER(COALESCE(asset_type, "")) NOT IN ("crypto", "cryptocurrency")
     ),
     peers AS (
       SELECT peer_ticker AS ticker

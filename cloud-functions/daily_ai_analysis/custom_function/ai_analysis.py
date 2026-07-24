@@ -176,6 +176,10 @@ Reglas obligatorias:
 28. En sell_thesis, sell_reasons y sell_decision_support incluye una mini explicacion de precio: precio actual, suggested_sell_price, si ya esta en zona de revision o cuanto faltaria para llegar.
 29. No pongas solo "PE 20" o "P/S 5"; escribe "PE esta en 20: significa que el mercado paga 20 veces las ganancias actuales; es razonable/caro/barato frente a la referencia".
 30. Mantén el lenguaje simple pero completo: la persona debe entender que significa cada ratio sin estudiar finanzas.
+31. Si asset_type es CRYPTO, no uses PE, P/S, EV/EBITDA, ROE, deuda ni flujo de caja como criterios. Explica que no aplican porque BTC/ETH no son empresas.
+32. Para CRYPTO usa precio, retorno 20/60/120 dias, SMA 20/60/120, high_252d, low_252d, volatilidad, crypto_regime, eth_btc_ratio y eth_vs_btc_60d.
+33. Si crypto_regime es BTC_DOMINANTE, explica que Bitcoin lidera y que las altcoins aun no muestran fuerza relativa clara. Si es ALTCOIN_ROTATION, explica que ETH supera a BTC y podria haber mayor apetito por altcoins. Si es CRYPTO_DEBIL, enfatiza riesgo.
+34. Para BTC/ETH usa ai_valuation_opinion como lectura relativa: BARATA si esta castigado pero recuperando tendencia, PRECIO_JUSTO si no hay ventaja clara, CARA si esta sobreextendido, DATOS_INSUFICIENTES si faltan precios.
 """
 
 
@@ -282,6 +286,9 @@ def analyze_ticker(config, signal_row):
                     "Si la accion tiene calidad alta pero multiplos caros, explica que no es una compra clara y que requiere mejor precio o mayor margen de seguridad. "
                     "Usa peer_group, peer_valuation_label, peer_relative_score y percentiles relativos para comparar contra homologos. "
                     "Si asset_type es ETF, evalualo como instrumento de seguimiento/allocacion y no como empresa con fundamentales corporativos. "
+                    "Si asset_type es CRYPTO, evalualo como criptoactivo: no tiene ganancias, ventas, EBITDA ni balance corporativo comparable. "
+                    "Para CRYPTO enfocate en tendencia, drawdown contra maximo anual, recuperacion sobre medias moviles, volatilidad, regimen BTC/ETH, eth_btc_ratio y eth_vs_btc_60d. "
+                    "Explica la dominancia: BTC_DOMINANTE significa que BTC lidera; ALTCOIN_ROTATION significa que ETH gana fuerza relativa y puede anticipar mayor apetito por altcoins; CRYPTO_DEBIL significa debilidad amplia. "
                     "Si peer_count es menor a 3, baja la confianza y declara que la comparacion relativa es limitada. "
                     "Si missing_internal_ratios no esta vacio, busca esos ratios faltantes en fuentes externas confiables y usalos solo como contraste externo. "
                     "Cuando uses un ratio externo, indica fuente, fecha aproximada si esta disponible, y advierte que no reemplaza al dato interno de BigQuery. "
