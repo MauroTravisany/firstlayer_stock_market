@@ -16,11 +16,19 @@ config {
 
 WITH price_daily AS (
   SELECT
-    ticker,
-    fecha AS analysis_date,
-    ARRAY_AGG(close ORDER BY hora DESC LIMIT 1)[OFFSET(0)] AS close_price,
-    SUM(volumen) AS volume
-  FROM `stocks-437902.acciones_dataset.valores_acciones_recientes`
+    p.ticker,
+    p.fecha AS analysis_date,
+    ARRAY_AGG(p.close ORDER BY p.hora DESC LIMIT 1)[OFFSET(0)] AS close_price,
+    SUM(p.volumen) AS volume
+  FROM `stocks-437902.acciones_dataset.valores_acciones_recientes` p
+  LEFT JOIN ${ref("asset_profile")} ap
+    ON ap.ticker = p.ticker
+  WHERE COALESCE(ap.asset_type, "STOCK") != "CRYPTO"
+     OR (
+       MOD(EXTRACT(HOUR FROM p.hora), 4) = 0
+       AND EXTRACT(MINUTE FROM p.hora) = 0
+       AND EXTRACT(SECOND FROM p.hora) = 0
+     )
   GROUP BY ticker, analysis_date
 ),
 price_returns AS (
