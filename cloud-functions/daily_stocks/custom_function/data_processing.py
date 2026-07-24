@@ -7,23 +7,50 @@ from datetime import datetime, timedelta
 logging.basicConfig(level=logging.INFO)
 
 
+CRYPTO_INTERVAL = "1h"
+CRYPTO_OUTPUT_FREQUENCY = "4h"
+DEFAULT_INTERVAL = "15m"
+
+
 def generate_unique_id(ticker, fecha, hora):
     id_string = f"{ticker}_{fecha}_{hora}"
     digest = hashlib.md5(id_string.encode("utf-8")).digest()
     return base64.b64encode(digest).decode("ascii")
 
 
-def save_data_to_json(ticker, output_file, target_date):
+def _normalize_market_data(stock_data, asset_type):
+    if str(asset_type).upper() != "CRYPTO":
+        return stock_data
+
+    if stock_data.empty:
+        return stock_data
+
+    agg = {
+        "Open": "first",
+        "High": "max",
+        "Low": "min",
+        "Close": "last",
+        "Volume": "sum",
+    }
+    return stock_data.resample(CRYPTO_OUTPUT_FREQUENCY).agg(agg).dropna(subset=["Open", "High", "Low", "Close"])
+
+
+def save_data_to_json(ticker, output_file, target_date, asset_type="STOCK", end_date=None):
     import yfinance as yf
+
+    end_date = end_date or target_date + timedelta(days=1)
+    asset_type = str(asset_type or "STOCK").upper()
+    interval = CRYPTO_INTERVAL if asset_type == "CRYPTO" else DEFAULT_INTERVAL
 
     try:
         try:
             stock_data = yf.Ticker(ticker).history(
                 start=target_date,
-                end=target_date + timedelta(days=1),
-                interval="15m",
+                end=end_date,
+                interval=interval,
                 auto_adjust=False,
             )
+            stock_data = _normalize_market_data(stock_data, asset_type)
         except ValueError as exc:
             raise RuntimeError(
                 f"Yahoo Finance did not return valid price data for {ticker} on {target_date}. "
@@ -32,7 +59,7 @@ def save_data_to_json(ticker, output_file, target_date):
 
         if stock_data.empty:
             raise ValueError(
-                f"No data returned for ticker {ticker} on {target_date}. "
+                f"No data returned for ticker {ticker} between {target_date} and {end_date}. "
                 "Use a valid trading day within yfinance intraday history."
             )
 

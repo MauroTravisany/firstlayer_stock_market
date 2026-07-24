@@ -34,32 +34,52 @@ def parse_target_date(value):
     return datetime.strptime(value, "%Y-%m-%d").date()
 
 
+def parse_optional_date(value):
+    if not value:
+        return None
+
+    return datetime.strptime(value, "%Y-%m-%d").date()
+
+
 def default_tickers():
     return parse_tickers(os.environ.get("TICKERS", ""))
 
 
-def resolve_tickers(request_json, config):
+def infer_asset_type(ticker, asset_types):
+    if ticker in asset_types:
+        return asset_types[ticker]
+    if ticker.endswith("-USD"):
+        return "CRYPTO"
+    return "STOCK"
+
+
+def resolve_assets(request_json, config):
     if "tickers" in request_json:
-        return parse_tickers(request_json.get("tickers"))
+        tickers = parse_tickers(request_json.get("tickers"))
+        from custom_function.portfolio_operations import fetch_asset_types
 
-    from custom_function.portfolio_operations import fetch_enabled_tickers
+        asset_types = fetch_asset_types(config["project_id"], config["portfolio_table"], tickers)
+        return [{"ticker": ticker, "asset_type": infer_asset_type(ticker, asset_types)} for ticker in tickers]
 
-    tickers = fetch_enabled_tickers(config["project_id"], config["portfolio_table"])
-    if tickers:
-        return tickers
+    from custom_function.portfolio_operations import fetch_enabled_assets
 
-    return default_tickers()
+    assets = fetch_enabled_assets(config["project_id"], config["portfolio_table"])
+    if assets:
+        return assets
+
+    return [{"ticker": ticker, "asset_type": infer_asset_type(ticker, {})} for ticker in default_tickers()]
 
 
-def process_ticker(ticker, bucket_name, bq_table, target_date):
+def process_ticker(ticker, bucket_name, bq_table, target_date, asset_type="STOCK", end_date=None):
     from custom_function.bq_operations import load_data_to_bigquery
     from custom_function.data_processing import save_data_to_json
     from custom_function.gcs_operations import upload_to_gcs
 
-    output_file = f"{ticker}_{target_date}.json"
+    output_suffix = f"{target_date}_{end_date}" if end_date and end_date != target_date + date.resolution else str(target_date)
+    output_file = f"{ticker}_{output_suffix}.json"
     gcs_output_path = f"gs://{bucket_name}/{ticker}/{output_file}"
 
-    rows_loaded = save_data_to_json(ticker, output_file, target_date)
+    rows_loaded = save_data_to_json(ticker, output_file, target_date, asset_type=asset_type, end_date=end_date)
     upload_to_gcs(bucket_name, output_file, f"{ticker}/{output_file}")
     load_data_to_bigquery(bq_table, gcs_output_path)
 
@@ -67,6 +87,7 @@ def process_ticker(ticker, bucket_name, bq_table, target_date):
     return {
         "status": "success",
         "ticker": ticker,
+        "asset_type": asset_type,
         "message": "Proceso completado con exito",
         "data_status": "PRICE_OK",
         "severity": "OK",
@@ -80,23 +101,35 @@ def main(request):
     send_alert = parse_bool(request_json.get("send_alert", request.args.get("send_alert")), True)
 
     try:
-        target_date = parse_target_date(
+        start_date = parse_optional_date(request_json.get("start_date") or request.args.get("start_date"))
+        end_date = parse_optional_date(request_json.get("end_date") or request.args.get("end_date"))
+        target_date = start_date or parse_target_date(
             request_json.get("target_date") or request.args.get("target_date") or os.environ.get("TARGET_DATE")
         )
+        if end_date and end_date <= target_date:
+            return (
+                json.dumps({"status": "error", "message": "end_date must be greater than target_date/start_date"}),
+                400,
+                {"Content-Type": "application/json"},
+            )
     except ValueError as exc:
         return json.dumps({"status": "error", "message": str(exc)}), 400, {"Content-Type": "application/json"}
 
     try:
         config = load_config()
         if request.args.get("tickers") and "tickers" not in request_json:
-            tickers_input = parse_tickers(request.args.get("tickers"))
+            from custom_function.portfolio_operations import fetch_asset_types
+
+            tickers = parse_tickers(request.args.get("tickers"))
+            asset_types = fetch_asset_types(config["project_id"], config["portfolio_table"], tickers)
+            assets_input = [{"ticker": ticker, "asset_type": infer_asset_type(ticker, asset_types)} for ticker in tickers]
         else:
-            tickers_input = resolve_tickers(request_json, config)
+            assets_input = resolve_assets(request_json, config)
     except Exception as exc:
         logging.exception("Error al cargar configuracion o portafolio")
         return json.dumps({"status": "error", "message": str(exc)}), 500, {"Content-Type": "application/json"}
 
-    if not tickers_input:
+    if not assets_input:
         return json.dumps({"status": "error", "message": "No enabled tickers found in portfolio"}), 400, {"Content-Type": "application/json"}
 
     if dry_run:
@@ -105,9 +138,10 @@ def main(request):
                 {
                     "status": "dry_run",
                     "target_date": str(target_date),
+                    "end_date": str(end_date) if end_date else None,
                     "source": "portfolio_assets" if "tickers" not in request_json else "request",
-                    "tickers": tickers_input,
-                    "rows": len(tickers_input),
+                    "assets": assets_input,
+                    "rows": len(assets_input),
                 }
             ),
             200,
@@ -116,16 +150,28 @@ def main(request):
 
     results = []
 
-    for ticker in tickers_input:
+    for asset in assets_input:
+        ticker = asset["ticker"]
+        asset_type = asset.get("asset_type", "STOCK")
         try:
             logging.info("Iniciando proceso para el ticker %s en la fecha %s", ticker, target_date)
-            results.append(process_ticker(ticker, config["bucket_name"], config["bq_table"], target_date))
+            results.append(
+                process_ticker(
+                    ticker,
+                    config["bucket_name"],
+                    config["bq_table"],
+                    target_date,
+                    asset_type=asset_type,
+                    end_date=end_date,
+                )
+            )
         except Exception as exc:
             logging.exception("El proceso fallo para el ticker %s en la fecha %s", ticker, target_date)
             results.append(
                 {
                     "status": "error",
                     "ticker": ticker,
+                    "asset_type": asset_type,
                     "message": str(exc),
                     "data_status": "PRICE_MISSING",
                     "severity": "ERROR",

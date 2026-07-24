@@ -76,3 +76,16 @@ asset_type = crypto
 ```
 
 El sistema no les aplica PE, P/S, EV/EBITDA, ROE ni deuda, porque no son empresas. Se evalúan por precio, tendencia, volatilidad, distancia contra máximos, medias móviles y relación BTC/ETH para detectar dominancia de Bitcoin o posible rotación hacia Ethereum/altcoins.
+
+La carga diaria guarda cripto en velas de 4 horas. Internamente se consulta Yahoo Finance en 1 hora y se consolida a 4 horas para reducir ruido y volumen de datos.
+
+Para cargar historico de BTC/ETH:
+
+```bash
+curl -X POST "$STOCKDAILY_URL" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"tickers":["BTC-USD","ETH-USD"],"start_date":"2026-03-01","end_date":"2026-07-24","send_alert":false}'
+```
+
+`end_date` es exclusivo: si quieres incluir el 23 de julio, usa `2026-07-24`.
