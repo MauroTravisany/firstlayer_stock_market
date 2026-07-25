@@ -31,7 +31,7 @@ def _number(value, decimals=2):
 
 def _trade_line(row):
     return (
-        f"{row.get('ticker')} {row.get('paper_signal')} {row.get('setup_type')} | "
+        f"{row.get('strategy_version')} {row.get('ticker')} {row.get('paper_signal')} {row.get('setup_type')} | "
         f"entrada {_number(row.get('theoretical_entry_price'), 2)} | "
         f"stop {_number(row.get('stop_loss'), 2)} | "
         f"tp1 {_number(row.get('take_profit_1'), 2)} | "
@@ -41,14 +41,14 @@ def _trade_line(row):
 
 def _closed_line(row):
     return (
-        f"{row.get('ticker')} {row.get('result_label')} | "
+        f"{row.get('strategy_version')} {row.get('ticker')} {row.get('result_label')} | "
         f"entrada {_number(row.get('theoretical_entry_price'), 2)} | "
         f"salida {_number(row.get('exit_price'), 2)} | "
         f"PnL {_money_clp(row.get('net_pnl_clp'))}"
     )
 
 
-def build_discord_payload(summary, new_trades, closed_trades):
+def build_discord_payload(summary, new_trades, closed_trades, feedback=None):
     pnl = float(summary.get("realized_pnl_clp") or 0)
     status = summary.get("daily_result_status") or "SIN_CIERRES"
     color = DISCORD_BLUE
@@ -96,8 +96,18 @@ def build_discord_payload(summary, new_trades, closed_trades):
                         ),
                         "inline": False,
                     },
+                    {
+                        "name": "Comparativa v1-v4",
+                        "value": str(summary.get("strategy_performance_summary") or "Sin historico por estrategia")[:1024],
+                        "inline": False,
+                    },
                     {"name": "Entradas/Vigilancia", "value": new_lines[:1024], "inline": False},
                     {"name": "Cierres", "value": closed_lines[:1024], "inline": False},
+                    {
+                        "name": "Feedback IA",
+                        "value": str((feedback or {}).get("executive_summary") or "Feedback IA no generado.")[:1024],
+                        "inline": False,
+                    },
                 ],
                 "footer": {"text": "Paper trading: simulacion, no ejecuta dinero real. Incluye spread y slippage estimados."},
             }
@@ -105,14 +115,14 @@ def build_discord_payload(summary, new_trades, closed_trades):
     }
 
 
-def send_alert(config, summary, new_trades, closed_trades):
+def send_alert(config, summary, new_trades, closed_trades, feedback=None):
     url = config.get("alert_webhook_url")
     if not url:
         return False, "NO_WEBHOOK_URL"
 
     webhook_type = _detect_webhook_type(config)
     if webhook_type == "discord":
-        response = requests.post(url, json=build_discord_payload(summary, new_trades, closed_trades), timeout=30)
+        response = requests.post(url, json=build_discord_payload(summary, new_trades, closed_trades, feedback), timeout=30)
     else:
         response = requests.post(url, json={"text": summary.get("discord_summary") or "Paper trading diario"}, timeout=30)
 

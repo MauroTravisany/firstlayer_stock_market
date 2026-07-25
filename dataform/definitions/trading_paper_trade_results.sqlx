@@ -48,7 +48,7 @@ future_path AS (
   JOIN ${ref("trading_price_features")} p
     ON p.ticker = t.ticker
    AND p.analysis_date > t.analysis_date
-   AND p.analysis_date <= DATE_ADD(t.analysis_date, INTERVAL 10 DAY)
+   AND p.analysis_date <= DATE_ADD(t.analysis_date, INTERVAL t.max_holding_days DAY)
 ),
 first_event AS (
   SELECT
@@ -72,17 +72,17 @@ evaluated AS (
     fe.latest_seen,
     CASE
       WHEN fe.first_hit.event_type IS NOT NULL THEN fe.first_hit.path_date
-      WHEN fe.future_days_seen >= 10 THEN fe.latest_seen.path_date
+      WHEN fe.future_days_seen >= t.max_holding_days THEN fe.latest_seen.path_date
       ELSE NULL
     END AS outcome_date,
     CASE
       WHEN fe.first_hit.event_type IS NOT NULL THEN fe.first_hit.event_type
-      WHEN fe.future_days_seen >= 10 THEN "TIME_EXIT"
+      WHEN fe.future_days_seen >= t.max_holding_days THEN "TIME_EXIT"
       ELSE "OPEN"
     END AS trade_status,
     CASE
       WHEN fe.first_hit.event_price IS NOT NULL THEN fe.first_hit.event_price
-      WHEN fe.future_days_seen >= 10 THEN fe.latest_seen.day_close
+      WHEN fe.future_days_seen >= t.max_holding_days THEN fe.latest_seen.day_close
       ELSE NULL
     END AS exit_price
   FROM trades t
@@ -96,6 +96,8 @@ SELECT
   ticker,
   asset_type,
   trading_group,
+  strategy_version,
+  strategy_name,
   paper_trade_id,
   paper_signal,
   setup_type,
@@ -108,6 +110,7 @@ SELECT
   take_profit_2,
   risk_reward_1,
   risk_reward_2,
+  max_holding_days,
   spread_bps,
   slippage_bps,
   estimated_roundtrip_cost_pct,

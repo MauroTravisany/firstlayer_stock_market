@@ -10,28 +10,33 @@ config {
   },
   assertions: {
     nonNull: ["analysis_date", "ticker", "paper_signal"],
-    uniqueKey: ["analysis_date", "ticker"]
+    uniqueKey: ["analysis_date", "ticker", "strategy_version"]
   }
 }
 
-WITH config AS (
-  SELECT
-    10000000.0 AS paper_capital_clp,
-    0.01 AS risk_per_trade_pct,
-    0.20 AS max_position_pct,
-    950.0 AS usd_clp_assumption,
-    25000.0 AS daily_target_min_clp,
-    100000.0 AS daily_target_max_clp
-),
-scored AS (
+WITH scored AS (
   SELECT
     f.*,
-    cfg.paper_capital_clp,
-    cfg.risk_per_trade_pct,
-    cfg.max_position_pct,
-    cfg.usd_clp_assumption,
-    cfg.daily_target_min_clp,
-    cfg.daily_target_max_clp,
+    s.strategy_version,
+    s.strategy_name,
+    s.paper_capital_clp,
+    s.risk_per_trade_pct,
+    s.max_position_pct,
+    s.usd_clp_assumption,
+    s.daily_target_min_clp,
+    s.daily_target_max_clp,
+    s.min_trade_score,
+    s.min_watch_score,
+    s.min_risk_reward,
+    s.stop_atr_multiple,
+    s.min_stock_stop_pct,
+    s.min_crypto_stop_pct,
+    s.take_profit_1_r,
+    s.take_profit_2_r,
+    s.max_holding_days,
+    s.require_strong_trend,
+    s.require_volume_confirmation,
+    s.require_positive_regime,
     CASE WHEN f.asset_type = "CRYPTO" THEN COALESCE(f.crypto_regime, "CRYPTO_NEUTRAL") ELSE "NO_APLICA" END AS market_regime,
     (
       CASE WHEN f.day_close > f.sma_20 THEN 1 ELSE 0 END +
@@ -61,24 +66,33 @@ scored AS (
       ELSE 0
     END AS regime_score
   FROM ${ref("trading_price_features")} f
-  CROSS JOIN config cfg
+  CROSS JOIN ${ref("trading_strategy_versions")} s
 ),
 levels AS (
   SELECT
     *,
     ROUND(day_close * (1 + SAFE_DIVIDE(spread_bps + slippage_bps, 10000)), 4) AS theoretical_entry_price,
     GREATEST(
-      COALESCE(atr_pct * 1.5, 0),
+      COALESCE(atr_pct * stop_atr_multiple, 0),
       CASE
-        WHEN asset_type = "CRYPTO" THEN 0.04
-        WHEN ticker = "COIN" THEN 0.05
-        ELSE 0.03
+        WHEN asset_type = "CRYPTO" THEN min_crypto_stop_pct
+        WHEN ticker = "COIN" THEN GREATEST(min_stock_stop_pct, 0.05)
+        ELSE min_stock_stop_pct
       END
     ) AS stop_distance_pct,
     SAFE_DIVIDE((spread_bps + slippage_bps) * 2, 10000) AS estimated_roundtrip_cost_pct,
     (
       trend_score + momentum_score + volume_score + volatility_score + regime_score
     ) AS setup_score,
+    (
+      (NOT require_strong_trend OR (day_close > sma_50 AND sma_20 > sma_50)) AND
+      (NOT require_volume_confirmation OR volume_vs_20d_avg >= 1.10) AND
+      (
+        NOT require_positive_regime OR
+        asset_type != "CRYPTO" OR
+        COALESCE(crypto_regime, "CRYPTO_NEUTRAL") IN ("BTC_DOMINANTE", "ALTCOIN_ROTATION", "CRYPTO_NEUTRAL")
+      )
+    ) AS strategy_filters_pass,
     CASE
       WHEN previous_high_20d IS NOT NULL
         AND day_close >= previous_high_20d
@@ -102,8 +116,8 @@ positioning AS (
   SELECT
     *,
     ROUND(theoretical_entry_price * (1 - stop_distance_pct), 4) AS stop_loss,
-    ROUND(theoretical_entry_price * (1 + stop_distance_pct * 1.5 + estimated_roundtrip_cost_pct), 4) AS take_profit_1,
-    ROUND(theoretical_entry_price * (1 + stop_distance_pct * 2.5 + estimated_roundtrip_cost_pct), 4) AS take_profit_2,
+    ROUND(theoretical_entry_price * (1 + stop_distance_pct * take_profit_1_r + estimated_roundtrip_cost_pct), 4) AS take_profit_1,
+    ROUND(theoretical_entry_price * (1 + stop_distance_pct * take_profit_2_r + estimated_roundtrip_cost_pct), 4) AS take_profit_2,
     ROUND(
       LEAST(
         paper_capital_clp * max_position_pct,
@@ -119,14 +133,17 @@ SELECT
   ticker,
   asset_type,
   trading_group,
-  TO_HEX(SHA256(CONCAT(CAST(analysis_date AS STRING), "|", ticker, "|paper-v1"))) AS paper_trade_id,
+  strategy_version,
+  strategy_name,
+  TO_HEX(SHA256(CONCAT(CAST(analysis_date AS STRING), "|", ticker, "|", strategy_version))) AS paper_trade_id,
   setup_type,
   CASE
     WHEN setup_type != "SIN_SETUP"
-      AND setup_score >= 5
-      AND SAFE_DIVIDE(take_profit_1 - theoretical_entry_price, theoretical_entry_price - stop_loss) >= 1.4
+      AND setup_score >= min_trade_score
+      AND strategy_filters_pass
+      AND SAFE_DIVIDE(take_profit_1 - theoretical_entry_price, theoretical_entry_price - stop_loss) >= min_risk_reward
       THEN "TRADE_LONG"
-    WHEN setup_type != "SIN_SETUP" AND setup_score >= 3 THEN "VIGILAR"
+    WHEN setup_type != "SIN_SETUP" AND setup_score >= min_watch_score THEN "VIGILAR"
     ELSE "SIN_TRADE"
   END AS paper_signal,
   setup_score,
@@ -143,6 +160,11 @@ SELECT
   take_profit_2,
   ROUND(SAFE_DIVIDE(take_profit_1 - theoretical_entry_price, theoretical_entry_price - stop_loss), 2) AS risk_reward_1,
   ROUND(SAFE_DIVIDE(take_profit_2 - theoretical_entry_price, theoretical_entry_price - stop_loss), 2) AS risk_reward_2,
+  min_trade_score,
+  min_watch_score,
+  min_risk_reward,
+  max_holding_days,
+  strategy_filters_pass,
   spread_bps,
   slippage_bps,
   ROUND(estimated_roundtrip_cost_pct * 100, 3) AS estimated_roundtrip_cost_pct,
@@ -167,11 +189,13 @@ SELECT
   crypto_regime,
   CONCAT(
     "setup=", setup_type,
+    "; estrategia=", strategy_version,
     "; score=", CAST(setup_score AS STRING),
     "; entrada=", CAST(theoretical_entry_price AS STRING),
     "; stop=", CAST(ROUND(theoretical_entry_price * (1 - stop_distance_pct), 4) AS STRING),
-    "; tp1=", CAST(ROUND(theoretical_entry_price * (1 + stop_distance_pct * 1.5 + estimated_roundtrip_cost_pct), 4) AS STRING),
+    "; tp1=", CAST(ROUND(theoretical_entry_price * (1 + stop_distance_pct * take_profit_1_r + estimated_roundtrip_cost_pct), 4) AS STRING),
     "; costo_roundtrip_pct=", CAST(ROUND(estimated_roundtrip_cost_pct * 100, 3) AS STRING),
+    "; filtros=", CAST(strategy_filters_pass AS STRING),
     "; regimen=", CASE WHEN asset_type = "CRYPTO" THEN COALESCE(crypto_regime, "NA") ELSE "NO_APLICA" END
   ) AS signal_reason,
   CURRENT_TIMESTAMP() AS calculated_at

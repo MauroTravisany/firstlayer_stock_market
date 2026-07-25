@@ -34,6 +34,11 @@ def load_config():
         "signals_table": f"{project_id}.{dataset_id}.{os.environ.get('TRADING_SIGNALS_TABLE_ID', 'trading_paper_signals')}",
         "results_table": f"{project_id}.{dataset_id}.{os.environ.get('TRADING_RESULTS_TABLE_ID', 'trading_paper_trade_results')}",
         "alerts_table": f"{project_id}.{dataset_id}.{os.environ.get('TRADING_ALERTS_TABLE_ID', 'trading_alerts_sent')}",
+        "feedback_table": f"{project_id}.{dataset_id}.{os.environ.get('TRADING_FEEDBACK_TABLE_ID', 'trading_ai_feedback_daily')}",
+        "openai_api_key": access_secret_version(os.environ.get("OPENAI_API_KEY_SECRET", "OPENAI_API_KEY"), required=False),
+        "openai_model": os.environ.get("OPENAI_MODEL", "gpt-5-mini"),
+        "prompt_version": os.environ.get("TRADING_PROMPT_VERSION", "paper-trading-feedback-v1"),
+        "ai_feedback_enabled": os.environ.get("TRADING_AI_FEEDBACK", "true").strip().lower() in {"1", "true", "yes", "y", "si"},
         "alert_webhook_url": os.environ.get("ALERT_WEBHOOK_URL")
         or access_secret_version(os.environ.get("ALERT_WEBHOOK_URL_SECRET", "ALERT_WEBHOOK_URL"), required=False),
         "alert_webhook_type": os.environ.get("ALERT_WEBHOOK_TYPE", "auto").lower(),

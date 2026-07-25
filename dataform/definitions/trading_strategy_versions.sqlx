@@ -1,0 +1,58 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_strategy_versions",
+  description: "Versiones controladas de estrategias de paper trading. Permite comparar reglas sin operar dinero real.",
+  tags: ["trading", "paper", "strategy"]
+}
+
+SELECT *
+FROM UNNEST([
+  STRUCT(
+    "v1" AS strategy_version,
+    "Base corto controlado" AS strategy_name,
+    "Balanceada, 10 dias maximos, sirve como linea base." AS strategy_description,
+    10000000.0 AS paper_capital_clp,
+    0.010 AS risk_per_trade_pct,
+    0.20 AS max_position_pct,
+    950.0 AS usd_clp_assumption,
+    25000.0 AS daily_target_min_clp,
+    100000.0 AS daily_target_max_clp,
+    5 AS min_trade_score,
+    3 AS min_watch_score,
+    1.40 AS min_risk_reward,
+    1.50 AS stop_atr_multiple,
+    0.030 AS min_stock_stop_pct,
+    0.040 AS min_crypto_stop_pct,
+    1.50 AS take_profit_1_r,
+    2.50 AS take_profit_2_r,
+    10 AS max_holding_days,
+    FALSE AS require_strong_trend,
+    FALSE AS require_volume_confirmation,
+    FALSE AS require_positive_regime
+  ),
+  STRUCT(
+    "v2" AS strategy_version,
+    "Swing conservador" AS strategy_name,
+    "Menos agresiva, busca mejores entradas y deja respirar hasta 20 dias.",
+    10000000.0, 0.008, 0.18, 950.0, 25000.0, 100000.0,
+    6, 4, 1.60, 1.70, 0.040, 0.050, 2.00, 3.00, 20,
+    TRUE, FALSE, FALSE
+  ),
+  STRUCT(
+    "v3" AS strategy_version,
+    "Momentum swing" AS strategy_name,
+    "Prioriza tendencia y confirmacion de volumen, con ventana hasta 30 dias.",
+    10000000.0, 0.0075, 0.20, 950.0, 25000.0, 100000.0,
+    6, 4, 1.70, 2.00, 0.050, 0.060, 2.20, 3.50, 30,
+    TRUE, TRUE, FALSE
+  ),
+  STRUCT(
+    "v4" AS strategy_version,
+    "Selectiva largo plazo" AS strategy_name,
+    "La mas exigente. Opera menos, aguanta hasta 45 dias y busca mejor relacion riesgo/beneficio.",
+    10000000.0, 0.006, 0.15, 950.0, 25000.0, 100000.0,
+    7, 5, 1.90, 2.20, 0.050, 0.070, 2.50, 4.00, 45,
+    TRUE, TRUE, TRUE
+  )
+])

@@ -25,12 +25,12 @@ new_trades AS (
     STRING_AGG(
       IF(
         paper_signal = "TRADE_LONG",
-        CONCAT(ticker, " ", setup_type, " entrada ", CAST(theoretical_entry_price AS STRING), " stop ", CAST(stop_loss AS STRING), " tp1 ", CAST(take_profit_1 AS STRING)),
+        CONCAT(strategy_version, " ", ticker, " ", setup_type, " entrada ", CAST(theoretical_entry_price AS STRING), " stop ", CAST(stop_loss AS STRING), " tp1 ", CAST(take_profit_1 AS STRING)),
         NULL
       ),
       " | "
-      ORDER BY setup_score DESC
-      LIMIT 5
+      ORDER BY setup_score DESC, strategy_version
+      LIMIT 8
     ) AS new_trade_details
   FROM ${ref("trading_paper_signals")}
   GROUP BY summary_date
@@ -43,10 +43,10 @@ closed_trades AS (
     COUNTIF(NOT is_win) AS losing_trade_count,
     ROUND(SUM(net_pnl_clp), 0) AS realized_pnl_clp,
     STRING_AGG(
-      CONCAT(ticker, " ", result_label, " ", CAST(net_pnl_clp AS STRING), " CLP"),
+      CONCAT(strategy_version, " ", ticker, " ", result_label, " ", CAST(net_pnl_clp AS STRING), " CLP"),
       " | "
       ORDER BY ABS(net_pnl_clp) DESC
-      LIMIT 5
+      LIMIT 8
     ) AS closed_trade_details
   FROM ${ref("trading_paper_trade_results")}
   WHERE outcome_date IS NOT NULL
@@ -72,6 +72,29 @@ totals AS (
     ROUND(SAFE_DIVIDE(COUNTIF(is_win), COUNT(*)) * 100, 2) AS all_win_rate_pct
   FROM ${ref("trading_paper_trade_results")}
   WHERE outcome_date IS NOT NULL
+),
+strategy_totals AS (
+  SELECT
+    STRING_AGG(
+      CONCAT(
+        strategy_version,
+        ": ", CAST(closed_count AS STRING), " cerrados, ",
+        CAST(win_rate_pct AS STRING), "% win, ",
+        CAST(realized_pnl_clp AS STRING), " CLP"
+      ),
+      " | "
+      ORDER BY realized_pnl_clp DESC
+    ) AS strategy_performance_summary
+  FROM (
+    SELECT
+      strategy_version,
+      COUNT(*) AS closed_count,
+      ROUND(SAFE_DIVIDE(COUNTIF(is_win), COUNT(*)) * 100, 2) AS win_rate_pct,
+      ROUND(SUM(net_pnl_clp), 0) AS realized_pnl_clp
+    FROM ${ref("trading_paper_trade_results")}
+    WHERE outcome_date IS NOT NULL
+    GROUP BY strategy_version
+  )
 )
 
 SELECT
@@ -89,6 +112,7 @@ SELECT
   t.all_losses,
   t.all_realized_pnl_clp,
   t.all_win_rate_pct,
+  COALESCE(st.strategy_performance_summary, "Sin historico por estrategia") AS strategy_performance_summary,
   25000.0 AS daily_target_min_clp,
   100000.0 AS daily_target_max_clp,
   CASE
@@ -107,7 +131,8 @@ SELECT
     ", ganadores=", CAST(COALESCE(c.winning_trade_count, 0) AS STRING),
     ", perdedores=", CAST(COALESCE(c.losing_trade_count, 0) AS STRING),
     ", PnL=", CAST(COALESCE(c.realized_pnl_clp, 0) AS STRING), " CLP",
-    ", winrate_hist=", CAST(COALESCE(t.all_win_rate_pct, 0) AS STRING), "%"
+    ", winrate_hist=", CAST(COALESCE(t.all_win_rate_pct, 0) AS STRING), "%",
+    ", estrategias=", COALESCE(st.strategy_performance_summary, "NA")
   ) AS discord_summary,
   CURRENT_TIMESTAMP() AS calculated_at
 FROM dates d
@@ -118,3 +143,4 @@ LEFT JOIN closed_trades c
 LEFT JOIN open_trades o
   ON o.summary_date = d.summary_date
 CROSS JOIN totals t
+CROSS JOIN strategy_totals st

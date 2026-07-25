@@ -78,7 +78,7 @@ jobs:
               --timeout 300 \
               --concurrency 1 \
               --max-instances 1 \
-              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},ALERT_WEBHOOK_TYPE=auto,TRADING_SUMMARY_TABLE_ID=trading_daily_summary,TRADING_SIGNALS_TABLE_ID=trading_paper_signals,TRADING_RESULTS_TABLE_ID=trading_paper_trade_results,TRADING_ALERTS_TABLE_ID=trading_alerts_sent"
+              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},OPENAI_MODEL=gpt-5-mini,ALERT_WEBHOOK_TYPE=auto,TRADING_SUMMARY_TABLE_ID=trading_daily_summary,TRADING_SIGNALS_TABLE_ID=trading_paper_signals,TRADING_RESULTS_TABLE_ID=trading_paper_trade_results,TRADING_ALERTS_TABLE_ID=trading_alerts_sent,TRADING_FEEDBACK_TABLE_ID=trading_ai_feedback_daily,TRADING_AI_FEEDBACK=true,TRADING_PROMPT_VERSION=paper-trading-feedback-v1"
 
       - name: Configure daily AI candidate scheduler
         run: |
