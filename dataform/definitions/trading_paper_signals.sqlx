@@ -1,0 +1,178 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_paper_signals",
+  description: "Senales de paper trading con entrada, stop, objetivos, costos estimados y tamano ficticio. No ejecuta dinero real.",
+  tags: ["trading", "paper", "daily", "signal"],
+  bigquery: {
+    partitionBy: "analysis_date",
+    clusterBy: ["paper_signal", "ticker"]
+  },
+  assertions: {
+    nonNull: ["analysis_date", "ticker", "paper_signal"],
+    uniqueKey: ["analysis_date", "ticker"]
+  }
+}
+
+WITH config AS (
+  SELECT
+    10000000.0 AS paper_capital_clp,
+    0.01 AS risk_per_trade_pct,
+    0.20 AS max_position_pct,
+    950.0 AS usd_clp_assumption,
+    25000.0 AS daily_target_min_clp,
+    100000.0 AS daily_target_max_clp
+),
+scored AS (
+  SELECT
+    f.*,
+    cfg.paper_capital_clp,
+    cfg.risk_per_trade_pct,
+    cfg.max_position_pct,
+    cfg.usd_clp_assumption,
+    cfg.daily_target_min_clp,
+    cfg.daily_target_max_clp,
+    CASE WHEN f.asset_type = "CRYPTO" THEN COALESCE(f.crypto_regime, "CRYPTO_NEUTRAL") ELSE "NO_APLICA" END AS market_regime,
+    (
+      CASE WHEN f.day_close > f.sma_20 THEN 1 ELSE 0 END +
+      CASE WHEN f.day_close > f.sma_50 THEN 1 ELSE 0 END +
+      CASE WHEN f.sma_20 > f.sma_50 THEN 1 ELSE 0 END +
+      CASE WHEN f.sma_200 IS NULL OR f.day_close > f.sma_200 THEN 1 ELSE 0 END
+    ) AS trend_score,
+    (
+      CASE WHEN f.return_5d > 0 THEN 1 ELSE 0 END +
+      CASE WHEN f.return_20d > 0.02 THEN 1 ELSE 0 END +
+      CASE WHEN f.return_60d > 0.04 THEN 1 ELSE 0 END
+    ) AS momentum_score,
+    (
+      CASE WHEN f.volume_vs_20d_avg >= 1.15 THEN 1 ELSE 0 END +
+      CASE WHEN f.day_volume > 0 THEN 1 ELSE 0 END
+    ) AS volume_score,
+    CASE
+      WHEN f.atr_pct IS NULL THEN 0
+      WHEN f.asset_type = "CRYPTO" AND f.atr_pct BETWEEN 0.015 AND 0.08 THEN 1
+      WHEN f.asset_type != "CRYPTO" AND f.atr_pct BETWEEN 0.008 AND 0.05 THEN 1
+      ELSE -1
+    END AS volatility_score,
+    CASE
+      WHEN f.asset_type = "CRYPTO" AND f.crypto_regime = "CRYPTO_DEBIL" THEN -2
+      WHEN f.ticker = "ETH-USD" AND f.eth_vs_btc_60d < -0.05 THEN -1
+      WHEN f.ticker = "COIN" AND COALESCE(f.btc_return_20d, 0) < -0.08 THEN -1
+      ELSE 0
+    END AS regime_score
+  FROM ${ref("trading_price_features")} f
+  CROSS JOIN config cfg
+),
+levels AS (
+  SELECT
+    *,
+    ROUND(day_close * (1 + SAFE_DIVIDE(spread_bps + slippage_bps, 10000)), 4) AS theoretical_entry_price,
+    GREATEST(
+      COALESCE(atr_pct * 1.5, 0),
+      CASE
+        WHEN asset_type = "CRYPTO" THEN 0.04
+        WHEN ticker = "COIN" THEN 0.05
+        ELSE 0.03
+      END
+    ) AS stop_distance_pct,
+    SAFE_DIVIDE((spread_bps + slippage_bps) * 2, 10000) AS estimated_roundtrip_cost_pct,
+    (
+      trend_score + momentum_score + volume_score + volatility_score + regime_score
+    ) AS setup_score,
+    CASE
+      WHEN previous_high_20d IS NOT NULL
+        AND day_close >= previous_high_20d
+        AND volume_vs_20d_avg >= 1.10
+        AND return_20d > 0
+        THEN "BREAKOUT"
+      WHEN day_close > sma_50
+        AND ABS(SAFE_DIVIDE(day_close - sma_20, sma_20)) <= 0.025
+        AND return_60d > 0
+        THEN "PULLBACK_TENDENCIA"
+      WHEN previous_low_20d IS NOT NULL
+        AND day_close > sma_20
+        AND return_5d > 0
+        AND SAFE_DIVIDE(day_close - previous_low_20d, previous_low_20d) <= 0.08
+        THEN "REBOTE_SOPORTE"
+      ELSE "SIN_SETUP"
+    END AS setup_type
+  FROM scored
+),
+positioning AS (
+  SELECT
+    *,
+    ROUND(theoretical_entry_price * (1 - stop_distance_pct), 4) AS stop_loss,
+    ROUND(theoretical_entry_price * (1 + stop_distance_pct * 1.5 + estimated_roundtrip_cost_pct), 4) AS take_profit_1,
+    ROUND(theoretical_entry_price * (1 + stop_distance_pct * 2.5 + estimated_roundtrip_cost_pct), 4) AS take_profit_2,
+    ROUND(
+      LEAST(
+        paper_capital_clp * max_position_pct,
+        SAFE_DIVIDE(paper_capital_clp * risk_per_trade_pct, stop_distance_pct)
+      ),
+      0
+    ) AS position_notional_clp
+  FROM levels
+)
+
+SELECT
+  analysis_date,
+  ticker,
+  asset_type,
+  trading_group,
+  TO_HEX(SHA256(CONCAT(CAST(analysis_date AS STRING), "|", ticker, "|paper-v1"))) AS paper_trade_id,
+  setup_type,
+  CASE
+    WHEN setup_type != "SIN_SETUP"
+      AND setup_score >= 5
+      AND SAFE_DIVIDE(take_profit_1 - theoretical_entry_price, theoretical_entry_price - stop_loss) >= 1.4
+      THEN "TRADE_LONG"
+    WHEN setup_type != "SIN_SETUP" AND setup_score >= 3 THEN "VIGILAR"
+    ELSE "SIN_TRADE"
+  END AS paper_signal,
+  setup_score,
+  trend_score,
+  momentum_score,
+  volume_score,
+  volatility_score,
+  regime_score,
+  market_regime,
+  ROUND(day_close, 4) AS close_price,
+  theoretical_entry_price,
+  stop_loss,
+  take_profit_1,
+  take_profit_2,
+  ROUND(SAFE_DIVIDE(take_profit_1 - theoretical_entry_price, theoretical_entry_price - stop_loss), 2) AS risk_reward_1,
+  ROUND(SAFE_DIVIDE(take_profit_2 - theoretical_entry_price, theoretical_entry_price - stop_loss), 2) AS risk_reward_2,
+  spread_bps,
+  slippage_bps,
+  ROUND(estimated_roundtrip_cost_pct * 100, 3) AS estimated_roundtrip_cost_pct,
+  ROUND(stop_distance_pct * 100, 2) AS stop_distance_pct,
+  position_notional_clp,
+  ROUND(SAFE_DIVIDE(position_notional_clp, theoretical_entry_price * usd_clp_assumption), 6) AS theoretical_quantity,
+  paper_capital_clp,
+  usd_clp_assumption,
+  daily_target_min_clp,
+  daily_target_max_clp,
+  return_5d,
+  return_20d,
+  return_60d,
+  volume_vs_20d_avg,
+  atr_pct,
+  btc_return_20d,
+  btc_return_60d,
+  eth_return_20d,
+  eth_return_60d,
+  eth_btc_ratio,
+  eth_vs_btc_60d,
+  crypto_regime,
+  CONCAT(
+    "setup=", setup_type,
+    "; score=", CAST(setup_score AS STRING),
+    "; entrada=", CAST(theoretical_entry_price AS STRING),
+    "; stop=", CAST(ROUND(theoretical_entry_price * (1 - stop_distance_pct), 4) AS STRING),
+    "; tp1=", CAST(ROUND(theoretical_entry_price * (1 + stop_distance_pct * 1.5 + estimated_roundtrip_cost_pct), 4) AS STRING),
+    "; costo_roundtrip_pct=", CAST(ROUND(estimated_roundtrip_cost_pct * 100, 3) AS STRING),
+    "; regimen=", CASE WHEN asset_type = "CRYPTO" THEN COALESCE(crypto_regime, "NA") ELSE "NO_APLICA" END
+  ) AS signal_reason,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM positioning

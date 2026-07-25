@@ -1,0 +1,145 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_paper_trade_results",
+  description: "Resultado historico de trades simulados, incluyendo costos estimados, stop, take profit y P&L ficticio en CLP.",
+  tags: ["trading", "paper", "daily", "results"],
+  bigquery: {
+    partitionBy: "analysis_date",
+    clusterBy: ["trade_status", "ticker"]
+  },
+  assertions: {
+    nonNull: ["analysis_date", "ticker", "paper_trade_id"],
+    uniqueKey: ["paper_trade_id"]
+  }
+}
+
+WITH trades AS (
+  SELECT *
+  FROM ${ref("trading_paper_signals")}
+  WHERE paper_signal = "TRADE_LONG"
+),
+future_path AS (
+  SELECT
+    t.paper_trade_id,
+    p.analysis_date AS path_date,
+    p.day_low,
+    p.day_high,
+    p.day_close,
+    CASE
+      WHEN p.day_low <= t.stop_loss THEN "STOP_LOSS"
+      WHEN p.day_high >= t.take_profit_2 THEN "TAKE_PROFIT_2"
+      WHEN p.day_high >= t.take_profit_1 THEN "TAKE_PROFIT_1"
+      ELSE NULL
+    END AS event_type,
+    CASE
+      WHEN p.day_low <= t.stop_loss THEN t.stop_loss
+      WHEN p.day_high >= t.take_profit_2 THEN t.take_profit_2
+      WHEN p.day_high >= t.take_profit_1 THEN t.take_profit_1
+      ELSE NULL
+    END AS event_price,
+    CASE
+      WHEN p.day_low <= t.stop_loss THEN 1
+      WHEN p.day_high >= t.take_profit_2 THEN 2
+      WHEN p.day_high >= t.take_profit_1 THEN 3
+      ELSE 9
+    END AS event_priority
+  FROM trades t
+  JOIN ${ref("trading_price_features")} p
+    ON p.ticker = t.ticker
+   AND p.analysis_date > t.analysis_date
+   AND p.analysis_date <= DATE_ADD(t.analysis_date, INTERVAL 10 DAY)
+),
+first_event AS (
+  SELECT
+    paper_trade_id,
+    ARRAY_AGG(
+      IF(event_type IS NOT NULL, STRUCT(path_date, event_type, event_price, event_priority), NULL)
+      IGNORE NULLS
+      ORDER BY path_date, event_priority
+      LIMIT 1
+    )[SAFE_OFFSET(0)] AS first_hit,
+    ARRAY_AGG(STRUCT(path_date, day_close) ORDER BY path_date DESC LIMIT 1)[SAFE_OFFSET(0)] AS latest_seen,
+    COUNT(*) AS future_days_seen
+  FROM future_path
+  GROUP BY paper_trade_id
+),
+evaluated AS (
+  SELECT
+    t.*,
+    fe.future_days_seen,
+    fe.first_hit,
+    fe.latest_seen,
+    CASE
+      WHEN fe.first_hit.event_type IS NOT NULL THEN fe.first_hit.path_date
+      WHEN fe.future_days_seen >= 10 THEN fe.latest_seen.path_date
+      ELSE NULL
+    END AS outcome_date,
+    CASE
+      WHEN fe.first_hit.event_type IS NOT NULL THEN fe.first_hit.event_type
+      WHEN fe.future_days_seen >= 10 THEN "TIME_EXIT"
+      ELSE "OPEN"
+    END AS trade_status,
+    CASE
+      WHEN fe.first_hit.event_price IS NOT NULL THEN fe.first_hit.event_price
+      WHEN fe.future_days_seen >= 10 THEN fe.latest_seen.day_close
+      ELSE NULL
+    END AS exit_price
+  FROM trades t
+  LEFT JOIN first_event fe
+    ON fe.paper_trade_id = t.paper_trade_id
+)
+
+SELECT
+  analysis_date,
+  outcome_date,
+  ticker,
+  asset_type,
+  trading_group,
+  paper_trade_id,
+  paper_signal,
+  setup_type,
+  setup_score,
+  market_regime,
+  close_price,
+  theoretical_entry_price,
+  stop_loss,
+  take_profit_1,
+  take_profit_2,
+  risk_reward_1,
+  risk_reward_2,
+  spread_bps,
+  slippage_bps,
+  estimated_roundtrip_cost_pct,
+  stop_distance_pct,
+  position_notional_clp,
+  theoretical_quantity,
+  paper_capital_clp,
+  usd_clp_assumption,
+  trade_status,
+  exit_price,
+  ROUND(SAFE_DIVIDE(exit_price - theoretical_entry_price, theoretical_entry_price), 4) AS gross_return_pct,
+  ROUND(SAFE_DIVIDE(exit_price - theoretical_entry_price, theoretical_entry_price) - SAFE_DIVIDE(estimated_roundtrip_cost_pct, 100), 4) AS net_return_pct,
+  ROUND(
+    position_notional_clp * (
+      SAFE_DIVIDE(exit_price - theoretical_entry_price, theoretical_entry_price) - SAFE_DIVIDE(estimated_roundtrip_cost_pct, 100)
+    ),
+    0
+  ) AS net_pnl_clp,
+  CASE
+    WHEN trade_status IN ("TAKE_PROFIT_1", "TAKE_PROFIT_2") THEN TRUE
+    WHEN trade_status = "TIME_EXIT" AND exit_price > theoretical_entry_price THEN TRUE
+    ELSE FALSE
+  END AS is_win,
+  CASE
+    WHEN trade_status = "OPEN" THEN "ABIERTO"
+    WHEN trade_status = "STOP_LOSS" THEN "PERDIDA"
+    WHEN trade_status IN ("TAKE_PROFIT_1", "TAKE_PROFIT_2") THEN "GANANCIA"
+    WHEN trade_status = "TIME_EXIT" AND exit_price > theoretical_entry_price THEN "GANANCIA_TIEMPO"
+    WHEN trade_status = "TIME_EXIT" THEN "PERDIDA_TIEMPO"
+    ELSE "NO_EVALUADO"
+  END AS result_label,
+  future_days_seen,
+  signal_reason,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM evaluated
