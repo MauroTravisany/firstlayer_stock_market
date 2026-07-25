@@ -3,7 +3,7 @@ config {
   schema: "acciones_dataset",
   name: "trading_strategy_versions",
   description: "Versiones controladas de estrategias de paper trading. Permite comparar reglas sin operar dinero real.",
-  tags: ["trading", "paper", "strategy"]
+  tags: ["trading", "paper", "strategy", "daily"]
 }
 
 SELECT *
