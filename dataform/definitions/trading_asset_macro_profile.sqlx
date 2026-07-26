@@ -1,0 +1,37 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_asset_macro_profile",
+  description: "Sensibilidad macro y sectorial por activo para paper trading. Define que factores pesan mas segun tipo de accion o cripto.",
+  tags: ["trading", "paper", "daily", "macro", "profile"]
+}
+
+SELECT *
+FROM UNNEST([
+  STRUCT(
+    "AAPL" AS ticker,
+    "Consumer tech global" AS trading_style,
+    "Ventas globales, hardware, servicios y alta sensibilidad a consumo premium/dolar." AS macro_rationale,
+    "Global con peso alto en EE.UU., China y Europa" AS demand_geography,
+    "Institucional global y retail EE.UU." AS holder_base,
+    1.00 AS trend_weight,
+    1.00 AS momentum_weight,
+    0.80 AS volume_weight,
+    0.80 AS volatility_weight,
+    0.80 AS regime_weight,
+    0.60 AS growth_sensitivity,
+    0.20 AS defensive_sensitivity,
+    0.00 AS energy_sensitivity,
+    0.00 AS crypto_sensitivity,
+    -0.35 AS usd_sensitivity,
+    -0.45 AS rates_sensitivity,
+    -0.25 AS geopolitical_sensitivity,
+    0.45 AS risk_appetite_sensitivity
+  ),
+  STRUCT("MSFT", "Software mega cap", "Flujos recurrentes, cloud e IA; sensible a tasas por duracion de crecimiento.", "Global, fuerte EE.UU./Europa", "Institucional global", 1.05, 1.00, 0.75, 0.80, 0.80, 0.70, 0.10, 0.00, 0.00, -0.25, -0.50, -0.15, 0.45),
+  STRUCT("NVDA", "Semiconductores/IA ciclo alto", "Muy sensible a ciclo de chips, gasto en IA, restricciones geopoliticas y apetito por riesgo.", "Global con cadena critica Taiwan/Asia/EE.UU.", "Institucional global, momentum y retail", 1.15, 1.20, 1.10, 0.90, 1.00, 0.95, 0.00, 0.00, 0.10, -0.25, -0.60, -0.70, 0.85),
+  STRUCT("META", "Publicidad digital growth", "Depende de publicidad, consumo digital y apetito por growth.", "Global con monetizacion alta EE.UU./Europa", "Institucional global", 1.05, 1.05, 0.90, 0.85, 0.85, 0.75, 0.00, 0.00, 0.00, -0.20, -0.45, -0.20, 0.70),
+  STRUCT("COIN", "Equity cripto sensible", "Accion con comportamiento ligado a volumen cripto, BTC/ETH, regulacion y apetito especulativo.", "Ingresos cripto globales con foco EE.UU.", "Retail e institucional de alto beta", 1.10, 1.20, 1.10, 0.80, 1.20, 0.45, 0.00, 0.00, 1.15, -0.45, -0.35, -0.25, 1.00),
+  STRUCT("BTC-USD", "Cripto reserva digital", "No tiene fundamentales corporativos; pesa liquidez global, dolar, tasas, riesgo y ciclo cripto.", "Mercado global 24/7", "Global: institucional, retail y tesorerias", 1.00, 1.20, 0.80, 0.80, 1.30, 0.20, 0.00, 0.00, 1.25, -0.60, -0.55, 0.15, 0.90),
+  STRUCT("ETH-USD", "Cripto plataforma", "Mas beta que BTC; sensible a ciclo altcoin, actividad on-chain y liquidez global.", "Mercado global 24/7", "Global: institucional, retail y ecosistema crypto", 1.00, 1.25, 0.85, 0.80, 1.35, 0.20, 0.00, 0.00, 1.35, -0.60, -0.55, 0.10, 1.00)
+])

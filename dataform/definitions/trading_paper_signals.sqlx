@@ -11,12 +11,41 @@ config {
   assertions: {
     nonNull: ["analysis_date", "ticker", "paper_signal"],
     uniqueKey: ["analysis_date", "ticker", "strategy_version"]
-  }
+  },
+  dependencies: ["trading_strategy_versions", "trading_asset_macro_profile", "trading_macro_context"]
 }
 
-WITH scored AS (
+WITH base AS (
   SELECT
     f.*,
+    COALESCE(mp.trading_style, f.trading_group) AS trading_style,
+    COALESCE(mp.macro_rationale, "Perfil macro no definido; usa sensibilidad neutral.") AS macro_rationale,
+    COALESCE(mp.demand_geography, "No especificado") AS demand_geography,
+    COALESCE(mp.holder_base, "No especificado") AS holder_base,
+    COALESCE(mp.trend_weight, 1.0) AS trend_weight,
+    COALESCE(mp.momentum_weight, 1.0) AS momentum_weight,
+    COALESCE(mp.volume_weight, 1.0) AS volume_weight,
+    COALESCE(mp.volatility_weight, 1.0) AS volatility_weight,
+    COALESCE(mp.regime_weight, 1.0) AS regime_weight,
+    COALESCE(mp.growth_sensitivity, 0.0) AS growth_sensitivity,
+    COALESCE(mp.defensive_sensitivity, 0.0) AS defensive_sensitivity,
+    COALESCE(mp.energy_sensitivity, 0.0) AS energy_sensitivity,
+    COALESCE(mp.crypto_sensitivity, 0.0) AS crypto_sensitivity,
+    COALESCE(mp.usd_sensitivity, 0.0) AS usd_sensitivity,
+    COALESCE(mp.rates_sensitivity, 0.0) AS rates_sensitivity,
+    COALESCE(mp.geopolitical_sensitivity, 0.0) AS geopolitical_sensitivity,
+    COALESCE(mp.risk_appetite_sensitivity, 0.0) AS risk_appetite_sensitivity,
+    COALESCE(mc.macro_regime, "SIN_CONTEXTO_MACRO") AS macro_regime,
+    COALESCE(mc.external_macro_data_status, "SIN_CONTEXTO_MACRO") AS external_macro_data_status,
+    COALESCE(mc.growth_cycle_score, 0.0) AS growth_cycle_score,
+    COALESCE(mc.defensive_cycle_score, 0.0) AS defensive_cycle_score,
+    COALESCE(mc.commodity_cycle_score, 0.0) AS commodity_cycle_score,
+    COALESCE(mc.crypto_cycle_score, 0.0) AS crypto_cycle_score,
+    COALESCE(mc.rates_pressure_score, 0.0) AS rates_pressure_score,
+    COALESCE(mc.usd_pressure_score, 0.0) AS usd_pressure_score,
+    COALESCE(mc.eur_pressure_score, 0.0) AS eur_pressure_score,
+    COALESCE(mc.geopolitical_risk_score, 0.0) AS geopolitical_risk_score,
+    COALESCE(mc.risk_appetite_score, 0.0) AS risk_appetite_score,
     s.strategy_version,
     s.strategy_name,
     s.paper_capital_clp,
@@ -66,7 +95,35 @@ WITH scored AS (
       ELSE 0
     END AS regime_score
   FROM ${ref("trading_price_features")} f
+  LEFT JOIN ${ref("trading_asset_macro_profile")} mp
+    ON mp.ticker = f.ticker
+  LEFT JOIN ${ref("trading_macro_context")} mc
+    ON mc.analysis_date = f.analysis_date
   CROSS JOIN ${ref("trading_strategy_versions")} s
+),
+scored AS (
+  SELECT
+    *,
+    ROUND(
+      COALESCE(growth_cycle_score, 0) * growth_sensitivity +
+      COALESCE(defensive_cycle_score, 0) * defensive_sensitivity +
+      COALESCE(commodity_cycle_score, 0) * energy_sensitivity +
+      COALESCE(crypto_cycle_score, 0) * crypto_sensitivity +
+      COALESCE(usd_pressure_score, 0) * usd_sensitivity +
+      COALESCE(rates_pressure_score, 0) * rates_sensitivity +
+      COALESCE(geopolitical_risk_score, 0) * geopolitical_sensitivity +
+      COALESCE(risk_appetite_score, 0) * risk_appetite_sensitivity,
+      2
+    ) AS macro_alignment_score,
+    ROUND(
+      trend_score * trend_weight +
+      momentum_score * momentum_weight +
+      volume_score * volume_weight +
+      volatility_score * volatility_weight +
+      regime_score * regime_weight,
+      2
+    ) AS weighted_technical_score
+  FROM base
 ),
 levels AS (
   SELECT
@@ -81,12 +138,11 @@ levels AS (
       END
     ) AS stop_distance_pct,
     SAFE_DIVIDE((spread_bps + slippage_bps) * 2, 10000) AS estimated_roundtrip_cost_pct,
-    (
-      trend_score + momentum_score + volume_score + volatility_score + regime_score
-    ) AS setup_score,
+    ROUND(weighted_technical_score + macro_alignment_score, 2) AS setup_score,
     (
       (NOT require_strong_trend OR (day_close > sma_50 AND sma_20 > sma_50)) AND
       (NOT require_volume_confirmation OR volume_vs_20d_avg >= 1.10) AND
+      (macro_alignment_score >= -1.50) AND
       (
         NOT require_positive_regime OR
         asset_type != "CRYPTO" OR
@@ -133,6 +189,10 @@ SELECT
   ticker,
   asset_type,
   trading_group,
+  trading_style,
+  macro_rationale,
+  demand_geography,
+  holder_base,
   strategy_version,
   strategy_name,
   TO_HEX(SHA256(CONCAT(CAST(analysis_date AS STRING), "|", ticker, "|", strategy_version))) AS paper_trade_id,
@@ -153,6 +213,19 @@ SELECT
   volatility_score,
   regime_score,
   market_regime,
+  macro_regime,
+  external_macro_data_status,
+  weighted_technical_score,
+  macro_alignment_score,
+  growth_cycle_score,
+  defensive_cycle_score,
+  commodity_cycle_score,
+  crypto_cycle_score,
+  rates_pressure_score,
+  usd_pressure_score,
+  eur_pressure_score,
+  geopolitical_risk_score,
+  risk_appetite_score,
   ROUND(day_close, 4) AS close_price,
   theoretical_entry_price,
   stop_loss,
@@ -191,6 +264,10 @@ SELECT
     "setup=", setup_type,
     "; estrategia=", strategy_version,
     "; score=", CAST(setup_score AS STRING),
+    "; tecnico=", CAST(weighted_technical_score AS STRING),
+    "; macro=", CAST(macro_alignment_score AS STRING),
+    "; macro_regimen=", macro_regime,
+    "; perfil=", trading_style,
     "; entrada=", CAST(theoretical_entry_price AS STRING),
     "; stop=", CAST(ROUND(theoretical_entry_price * (1 - stop_distance_pct), 4) AS STRING),
     "; tp1=", CAST(ROUND(theoretical_entry_price * (1 + stop_distance_pct * take_profit_1_r + estimated_roundtrip_cost_pct), 4) AS STRING),

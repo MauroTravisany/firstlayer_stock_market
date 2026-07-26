@@ -38,6 +38,36 @@ Las reglas estan versionadas en `trading_strategy_versions`:
 
 Cada version tiene su propio riesgo por trade, posicion maxima, stop por ATR, stop minimo, take profit y filtros. Esto permite comparar resultados sin mezclar reglas.
 
+## Perfil macro por activo
+
+El paper trading ahora usa una capa de sensibilidad por activo en `trading_asset_macro_profile`.
+
+Ejemplos:
+
+- Semiconductores como `NVDA`: pesan mas ciclo growth, apetito por riesgo, tasas y riesgo geopolitico/cadena de suministro.
+- Software mega cap como `MSFT`: pesa growth, tasas y fortaleza defensiva del negocio.
+- Publicidad digital como `META`: pesa consumo/riesgo y ciclo de crecimiento.
+- `COIN`: pesa mucho ciclo cripto, BTC/ETH y apetito especulativo.
+- `BTC-USD` y `ETH-USD`: no usan fundamentales corporativos; pesan liquidez, dolar, tasas, ciclo cripto y apetito por riesgo.
+
+El contexto diario vive en `trading_macro_context`. Hoy se calcula con proxies internos usando precios ya cargados:
+
+- ciclo growth,
+- ciclo defensivo,
+- energia/commodities,
+- ciclo cripto,
+- presion de tasas aproximada,
+- riesgo geopolitico aproximado,
+- apetito por riesgo.
+
+Los campos dolar, euro, guerras y tasas reales quedan preparados, pero se marcan como `DOLAR_EURO_TASAS_GUERRAS_SIN_FUENTE_EXTERNA_AUN` hasta conectar fuentes externas confiables.
+
+La senal final combina:
+
+- score tecnico ponderado por tipo de activo,
+- ajuste macro segun sensibilidad del activo,
+- reglas v1-v4 de riesgo, stop y horizonte.
+
 ## Feedback IA
 
 Al cierre del dia el servicio puede enviar el resumen de trades a un agente IA. El feedback queda guardado en `trading_ai_feedback_daily` e incluye:

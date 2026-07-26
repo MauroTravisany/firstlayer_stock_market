@@ -45,6 +45,8 @@ Reglas:
 - No recomiendes operar dinero real.
 - Separa observaciones basadas en datos de hipotesis.
 - Evalua costos, spread/slippage, sobreoperacion, stops, horizontes y diferencias por estrategia.
+- Evalua si el contexto macro usado por activo tiene sentido: growth, defensivo, energia/commodities, cripto, dolar, tasas, euro, geopolitica y apetito por riesgo.
+- Si un activo es semiconductor, cripto, software, publicidad digital o consumo global, revisa si el macro_alignment_score deberia pesar mas o menos.
 - Si faltan noticias externas, indicalo como informacion a revisar, no lo inventes.
 - Sugiere cambios de parametros solo como hipotesis para revisar, nunca como cambio automatico.
 

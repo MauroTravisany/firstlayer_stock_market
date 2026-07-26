@@ -35,6 +35,7 @@ def _trade_line(row):
         f"entrada {_number(row.get('theoretical_entry_price'), 2)} | "
         f"stop {_number(row.get('stop_loss'), 2)} | "
         f"tp1 {_number(row.get('take_profit_1'), 2)} | "
+        f"macro {_number(row.get('macro_alignment_score'), 2)} {row.get('macro_regime')} | "
         f"monto {_money_clp(row.get('position_notional_clp'))}"
     )
 
@@ -44,6 +45,7 @@ def _closed_line(row):
         f"{row.get('strategy_version')} {row.get('ticker')} {row.get('result_label')} | "
         f"entrada {_number(row.get('theoretical_entry_price'), 2)} | "
         f"salida {_number(row.get('exit_price'), 2)} | "
+        f"macro {_number(row.get('macro_alignment_score'), 2)} | "
         f"PnL {_money_clp(row.get('net_pnl_clp'))}"
     )
 

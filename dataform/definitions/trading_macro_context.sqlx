@@ -1,0 +1,167 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_macro_context",
+  description: "Contexto macro proxy diario para paper trading. Usa activos existentes como aproximacion y deja campos externos listos para fuentes macro/noticias.",
+  tags: ["trading", "paper", "daily", "macro"],
+  bigquery: {
+    partitionBy: "analysis_date"
+  },
+  assertions: {
+    nonNull: ["analysis_date", "macro_regime"],
+    uniqueKey: ["analysis_date"]
+  },
+  dependencies: ["asset_profile"]
+}
+
+WITH raw_prices AS (
+  SELECT
+    p.ticker,
+    p.fecha AS analysis_date,
+    p.hora,
+    p.close,
+    p.high,
+    p.low,
+    p.volumen,
+    ap.asset_type,
+    ap.peer_group,
+    ap.sector
+  FROM `stocks-437902.acciones_dataset.valores_acciones_recientes` p
+  JOIN ${ref("asset_profile")} ap
+    ON ap.ticker = p.ticker
+  WHERE ap.ticker IN (
+    "AAPL", "MSFT", "NVDA", "META", "GOOG", "GOOGL", "AMZN", "TSLA", "MELI", "COIN",
+    "KO", "PFE", "DGRO", "XLE", "URA", "GRID", "BTC-USD", "ETH-USD"
+  )
+    AND (
+      ap.asset_type != "CRYPTO"
+      OR (
+        MOD(EXTRACT(HOUR FROM p.hora), 4) = 0
+        AND EXTRACT(MINUTE FROM p.hora) = 0
+        AND EXTRACT(SECOND FROM p.hora) = 0
+      )
+    )
+),
+daily_prices AS (
+  SELECT
+    ticker,
+    analysis_date,
+    ANY_VALUE(asset_type) AS asset_type,
+    ANY_VALUE(peer_group) AS peer_group,
+    ANY_VALUE(sector) AS sector,
+    ARRAY_AGG(close ORDER BY hora DESC LIMIT 1)[OFFSET(0)] AS day_close,
+    MIN(low) AS day_low,
+    MAX(high) AS day_high,
+    SUM(volumen) AS day_volume
+  FROM raw_prices
+  GROUP BY ticker, analysis_date
+),
+daily_returns AS (
+  SELECT
+    *,
+    SAFE_DIVIDE(day_close, LAG(day_close) OVER ticker_window) - 1 AS return_1d,
+    SAFE_DIVIDE(day_close, LAG(day_close, 20) OVER ticker_window) - 1 AS return_20d,
+    SAFE_DIVIDE(day_close, LAG(day_close, 60) OVER ticker_window) - 1 AS return_60d
+  FROM daily_prices
+  WINDOW
+    ticker_window AS (PARTITION BY ticker ORDER BY analysis_date)
+),
+returns AS (
+  SELECT
+    *,
+    STDDEV_POP(return_1d) OVER ticker_20d AS volatility_20d
+  FROM daily_returns
+  WINDOW
+    ticker_20d AS (PARTITION BY ticker ORDER BY analysis_date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW)
+),
+grouped AS (
+  SELECT
+    analysis_date,
+    AVG(IF(ticker IN ("AAPL", "MSFT", "NVDA", "META", "GOOG", "GOOGL", "AMZN", "TSLA", "MELI", "COIN"), return_20d, NULL)) AS growth_return_20d,
+    AVG(IF(ticker IN ("KO", "PFE", "DGRO"), return_20d, NULL)) AS defensive_return_20d,
+    AVG(IF(ticker IN ("XLE", "URA", "GRID"), return_20d, NULL)) AS commodity_return_20d,
+    AVG(IF(ticker IN ("BTC-USD", "ETH-USD"), return_20d, NULL)) AS crypto_return_20d,
+    AVG(IF(ticker IN ("AAPL", "MSFT", "NVDA", "META", "GOOG", "GOOGL", "AMZN", "TSLA", "MELI", "COIN"), volatility_20d, NULL)) AS growth_volatility_20d,
+    MAX(IF(ticker = "BTC-USD", return_60d, NULL)) AS btc_return_60d,
+    MAX(IF(ticker = "ETH-USD", return_60d, NULL)) AS eth_return_60d
+  FROM returns
+  GROUP BY analysis_date
+),
+scores AS (
+  SELECT
+    *,
+    CASE
+      WHEN growth_return_20d >= 0.06 THEN 1.5
+      WHEN growth_return_20d >= 0.02 THEN 0.75
+      WHEN growth_return_20d <= -0.06 THEN -1.5
+      WHEN growth_return_20d <= -0.02 THEN -0.75
+      ELSE 0
+    END AS growth_cycle_score,
+    CASE
+      WHEN defensive_return_20d >= 0.04 AND growth_return_20d < defensive_return_20d THEN 1.0
+      WHEN defensive_return_20d <= -0.04 THEN -0.75
+      ELSE 0
+    END AS defensive_cycle_score,
+    CASE
+      WHEN commodity_return_20d >= 0.06 THEN 1.0
+      WHEN commodity_return_20d <= -0.06 THEN -1.0
+      ELSE 0
+    END AS commodity_cycle_score,
+    CASE
+      WHEN crypto_return_20d >= 0.08 THEN 1.5
+      WHEN crypto_return_20d >= 0.03 THEN 0.75
+      WHEN crypto_return_20d <= -0.10 THEN -1.5
+      WHEN crypto_return_20d <= -0.04 THEN -0.75
+      ELSE 0
+    END AS crypto_cycle_score,
+    CASE
+      WHEN growth_return_20d - defensive_return_20d >= 0.04 THEN 1.0
+      WHEN growth_return_20d - defensive_return_20d <= -0.04 THEN -1.0
+      ELSE 0
+    END AS rates_proxy_score,
+    CASE
+      WHEN commodity_return_20d >= 0.08 AND growth_return_20d <= 0 THEN -1.0
+      WHEN commodity_return_20d <= -0.08 AND growth_return_20d > 0 THEN 0.5
+      ELSE 0
+    END AS geopolitical_proxy_score,
+    CASE
+      WHEN growth_volatility_20d >= 0.045 THEN -1.0
+      WHEN growth_volatility_20d <= 0.020 AND growth_return_20d > 0 THEN 0.75
+      ELSE 0
+    END AS volatility_regime_score
+  FROM grouped
+)
+
+SELECT
+  analysis_date,
+  growth_return_20d,
+  defensive_return_20d,
+  commodity_return_20d,
+  crypto_return_20d,
+  growth_volatility_20d,
+  btc_return_60d,
+  eth_return_60d,
+  growth_cycle_score,
+  defensive_cycle_score,
+  commodity_cycle_score,
+  crypto_cycle_score,
+  rates_proxy_score AS rates_pressure_score,
+  0.0 AS usd_pressure_score,
+  0.0 AS eur_pressure_score,
+  geopolitical_proxy_score AS geopolitical_risk_score,
+  ROUND(
+    COALESCE(growth_cycle_score, 0) +
+    COALESCE(crypto_cycle_score, 0) * 0.5 +
+    COALESCE(volatility_regime_score, 0),
+    2
+  ) AS risk_appetite_score,
+  CASE
+    WHEN geopolitical_proxy_score <= -1 THEN "ENERGY_OR_GEOPOLITICAL_STRESS_PROXY"
+    WHEN crypto_cycle_score >= 1.5 AND growth_cycle_score >= 0 THEN "CRYPTO_RISK_ON"
+    WHEN growth_cycle_score >= 1 AND volatility_regime_score >= 0 THEN "RISK_ON"
+    WHEN growth_cycle_score <= -1 OR volatility_regime_score <= -1 THEN "RISK_OFF"
+    ELSE "MIXED"
+  END AS macro_regime,
+  "DOLAR_EURO_TASAS_GUERRAS_SIN_FUENTE_EXTERNA_AUN" AS external_macro_data_status,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM scores
