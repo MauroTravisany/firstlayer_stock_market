@@ -6,7 +6,7 @@ config {
   tags: ["trading", "paper", "daily"],
   bigquery: {
     partitionBy: "analysis_date",
-    clusterBy: ["ticker", "signal_hour"]
+    clusterBy: ["ticker"]
   },
   assertions: {
     nonNull: ["analysis_date", "ticker", "signal_hour"],
