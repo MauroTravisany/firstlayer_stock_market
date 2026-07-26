@@ -25,7 +25,9 @@ Supuestos iniciales:
 
 El sistema genera senales `TRADE_LONG`, `VIGILAR` o `SIN_TRADE`. Para cada trade simulado guarda entrada teorica, stop loss, take profit, monto ficticio y resultado posterior.
 
-El proceso de trading opera todos los dias. Los precios se refrescan cada 4 horas, Dataform recalcula las tablas cada 4 horas y la alerta de paper trading se ejecuta cada 4 horas. Cada intento queda identificado por fecha, hora de slot, ticker y estrategia.
+El proceso de trading opera todos los dias. Los precios se refrescan cada 4 horas y Dataform recalcula las tablas cada 4 horas. Cada intento queda identificado por fecha, hora de slot, ticker y estrategia.
+
+Discord se envia una vez al dia, a las 21:40 America/Santiago, con el resumen de todo lo ocurrido durante el dia. Esto evita ruido, pero mantiene el motor evaluando trades durante dia y noche.
 
 La consistencia se mide por P&L ficticio, win rate, cantidad de trades cerrados y cantidad de trades abiertos. El objetivo no fuerza operaciones: si no hay setup, no se abre trade.
 

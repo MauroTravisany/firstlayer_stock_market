@@ -199,9 +199,9 @@ jobs:
           if gcloud scheduler jobs describe paper-trading-daily-summary --location us-east1 >/dev/null 2>&1; then
             gcloud scheduler jobs update http paper-trading-daily-summary \
               --location us-east1 \
-              --schedule "40 */4 * * *" \
+              --schedule "40 21 * * *" \
               --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}?alert_frequency=intraday" \
+              --uri "${SERVICE_URL}" \
               --http-method POST \
               --oidc-service-account-email "${SERVICE_ACCOUNT}" \
               --oidc-token-audience "${SERVICE_URL}/" \
@@ -210,9 +210,9 @@ jobs:
           else
             gcloud scheduler jobs create http paper-trading-daily-summary \
               --location us-east1 \
-              --schedule "40 */4 * * *" \
+              --schedule "40 21 * * *" \
               --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}?alert_frequency=intraday" \
+              --uri "${SERVICE_URL}" \
               --http-method POST \
               --oidc-service-account-email "${SERVICE_ACCOUNT}" \
               --oidc-token-audience "${SERVICE_URL}/" \
