@@ -111,12 +111,13 @@ def fetch_summary(config, summary_date=None):
     return dict(rows[0]) if rows else None
 
 
-def fetch_new_trades(config, summary_date, limit=5):
+def fetch_new_trades(config, summary_date, limit=20):
     client = bigquery.Client(project=config["project_id"])
     query = f"""
     SELECT
       ticker,
       asset_type,
+      signal_hour,
       strategy_version,
       strategy_name,
       trading_style,
@@ -133,7 +134,7 @@ def fetch_new_trades(config, summary_date, limit=5):
     FROM {_table_ref(config["signals_table"])}
     WHERE analysis_date = @summary_date
       AND paper_signal IN ("TRADE_LONG", "VIGILAR")
-    ORDER BY paper_signal, setup_score DESC, strategy_version
+    ORDER BY paper_signal, setup_score DESC, signal_hour DESC, strategy_version
     LIMIT @limit
     """
     job_config = bigquery.QueryJobConfig(
@@ -145,12 +146,13 @@ def fetch_new_trades(config, summary_date, limit=5):
     return [dict(row) for row in client.query(query, job_config=job_config).result()]
 
 
-def fetch_closed_trades(config, summary_date, limit=5):
+def fetch_closed_trades(config, summary_date, limit=20):
     client = bigquery.Client(project=config["project_id"])
     query = f"""
     SELECT
       ticker,
       asset_type,
+      signal_hour,
       strategy_version,
       strategy_name,
       trading_style,

@@ -38,6 +38,34 @@ jobs:
               --max-instances 1 \
               --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PORTFOLIO_TABLE_ID=portfolio_assets,DATA_QUALITY_TABLE_ID=pipeline_data_quality_daily,ALERT_WEBHOOK_TYPE=auto,TIME_ZONE=America/Santiago"
 
+      - name: Configure stock prices intraday scheduler
+        run: |
+          SERVICE_URL="$(gcloud run services describe stockdaily --platform managed --region us-east1 --format='value(status.url)')"
+          SERVICE_ACCOUNT="stock-alert-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
+          if gcloud scheduler jobs describe stockdaily-daily --location us-east1 >/dev/null 2>&1; then
+            gcloud scheduler jobs update http stockdaily-daily \
+              --location us-east1 \
+              --schedule "0 */4 * * *" \
+              --time-zone "America/Santiago" \
+              --uri "${SERVICE_URL}?send_alert=false" \
+              --http-method POST \
+              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
+              --oidc-token-audience "${SERVICE_URL}/" \
+              --message-body "{}" \
+              --attempt-deadline 900s
+          else
+            gcloud scheduler jobs create http stockdaily-daily \
+              --location us-east1 \
+              --schedule "0 */4 * * *" \
+              --time-zone "America/Santiago" \
+              --uri "${SERVICE_URL}?send_alert=false" \
+              --http-method POST \
+              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
+              --oidc-token-audience "${SERVICE_URL}/" \
+              --message-body "{}" \
+              --attempt-deadline 900s
+          fi
+
       - name: Deploy financial data to Cloud Run
         run: |
           gcloud run deploy stockfinancial \
@@ -171,9 +199,9 @@ jobs:
           if gcloud scheduler jobs describe paper-trading-daily-summary --location us-east1 >/dev/null 2>&1; then
             gcloud scheduler jobs update http paper-trading-daily-summary \
               --location us-east1 \
-              --schedule "40 21 * * 1-5" \
+              --schedule "40 */4 * * *" \
               --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}" \
+              --uri "${SERVICE_URL}?alert_frequency=intraday" \
               --http-method POST \
               --oidc-service-account-email "${SERVICE_ACCOUNT}" \
               --oidc-token-audience "${SERVICE_URL}/" \
@@ -182,9 +210,9 @@ jobs:
           else
             gcloud scheduler jobs create http paper-trading-daily-summary \
               --location us-east1 \
-              --schedule "40 21 * * 1-5" \
+              --schedule "40 */4 * * *" \
               --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}" \
+              --uri "${SERVICE_URL}?alert_frequency=intraday" \
               --http-method POST \
               --oidc-service-account-email "${SERVICE_ACCOUNT}" \
               --oidc-token-audience "${SERVICE_URL}/" \

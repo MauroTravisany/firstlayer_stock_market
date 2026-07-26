@@ -32,6 +32,7 @@ def main(request):
     force = parse_bool(request_json.get("force", request.args.get("force")), False)
     send_alert_enabled = parse_bool(request_json.get("send_alert", request.args.get("send_alert")), True)
     run_ai_feedback = parse_bool(request_json.get("run_ai_feedback", request.args.get("run_ai_feedback")), True)
+    alert_frequency = request_json.get("alert_frequency") or request.args.get("alert_frequency") or "daily"
     alert_type = request_json.get("alert_type") or request.args.get("alert_type") or "paper_trading_daily"
     summary_date = parse_date(request_json.get("summary_date") or request.args.get("summary_date"))
 
@@ -58,6 +59,10 @@ def main(request):
             return json.dumps({"status": "error", "message": "No trading summary found"}), 404, {"Content-Type": "application/json"}
 
         summary_date = summary["summary_date"]
+        if alert_frequency == "intraday" and alert_type == "paper_trading_daily":
+            now = datetime.now(ZoneInfo(os.environ.get("TIME_ZONE", "America/Santiago")))
+            slot_hour = (now.hour // 4) * 4
+            alert_type = f"paper_trading_intraday_{slot_hour:02d}00"
         new_trades = fetch_new_trades(config, summary_date)
         closed_trades = fetch_closed_trades(config, summary_date)
         strategy_performance = fetch_strategy_performance(config)

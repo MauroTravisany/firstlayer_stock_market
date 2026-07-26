@@ -47,8 +47,8 @@ future_path AS (
   FROM trades t
   JOIN ${ref("trading_price_features")} p
     ON p.ticker = t.ticker
-   AND p.analysis_date > t.analysis_date
-   AND p.analysis_date <= DATE_ADD(t.analysis_date, INTERVAL t.max_holding_days DAY)
+   AND p.signal_timestamp > t.signal_timestamp
+   AND p.signal_timestamp <= DATETIME_ADD(t.signal_timestamp, INTERVAL t.max_holding_days DAY)
 ),
 first_event AS (
   SELECT
@@ -92,6 +92,8 @@ evaluated AS (
 
 SELECT
   analysis_date,
+  signal_hour,
+  signal_timestamp,
   outcome_date,
   ticker,
   asset_type,

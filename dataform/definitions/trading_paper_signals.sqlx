@@ -10,7 +10,7 @@ config {
   },
   assertions: {
     nonNull: ["analysis_date", "ticker", "paper_signal"],
-    uniqueKey: ["analysis_date", "ticker", "strategy_version"]
+    uniqueKey: ["analysis_date", "signal_hour", "ticker", "strategy_version"]
   },
   dependencies: ["trading_strategy_versions", "trading_asset_macro_profile", "trading_macro_context"]
 }
@@ -186,6 +186,8 @@ positioning AS (
 
 SELECT
   analysis_date,
+  signal_hour,
+  signal_timestamp,
   ticker,
   asset_type,
   trading_group,
@@ -195,7 +197,7 @@ SELECT
   holder_base,
   strategy_version,
   strategy_name,
-  TO_HEX(SHA256(CONCAT(CAST(analysis_date AS STRING), "|", ticker, "|", strategy_version))) AS paper_trade_id,
+  TO_HEX(SHA256(CONCAT(CAST(signal_timestamp AS STRING), "|", ticker, "|", strategy_version))) AS paper_trade_id,
   setup_type,
   CASE
     WHEN setup_type != "SIN_SETUP"

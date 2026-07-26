@@ -25,12 +25,12 @@ new_trades AS (
     STRING_AGG(
       IF(
         paper_signal = "TRADE_LONG",
-        CONCAT(strategy_version, " ", ticker, " ", setup_type, " entrada ", CAST(theoretical_entry_price AS STRING), " stop ", CAST(stop_loss AS STRING), " tp1 ", CAST(take_profit_1 AS STRING)),
+        CONCAT(strategy_version, " ", CAST(signal_hour AS STRING), " ", ticker, " ", setup_type, " entrada ", CAST(theoretical_entry_price AS STRING), " stop ", CAST(stop_loss AS STRING), " tp1 ", CAST(take_profit_1 AS STRING)),
         NULL
       ),
       " | "
-      ORDER BY setup_score DESC, strategy_version
-      LIMIT 8
+      ORDER BY setup_score DESC, signal_hour DESC, strategy_version
+      LIMIT 12
     ) AS new_trade_details
   FROM ${ref("trading_paper_signals")}
   GROUP BY summary_date
@@ -43,10 +43,10 @@ closed_trades AS (
     COUNTIF(NOT is_win) AS losing_trade_count,
     ROUND(SUM(net_pnl_clp), 0) AS realized_pnl_clp,
     STRING_AGG(
-      CONCAT(strategy_version, " ", ticker, " ", result_label, " ", CAST(net_pnl_clp AS STRING), " CLP"),
+      CONCAT(strategy_version, " ", CAST(signal_hour AS STRING), " ", ticker, " ", result_label, " ", CAST(net_pnl_clp AS STRING), " CLP"),
       " | "
       ORDER BY ABS(net_pnl_clp) DESC
-      LIMIT 8
+      LIMIT 12
     ) AS closed_trade_details
   FROM ${ref("trading_paper_trade_results")}
   WHERE outcome_date IS NOT NULL

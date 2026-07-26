@@ -23,7 +23,9 @@ Supuestos iniciales:
 - Cripto: usa velas de 4 horas consolidadas, agregadas a lectura diaria.
 - Costos: spread + slippage estimados por activo.
 
-El sistema genera senales `TRADE_LONG`, `VIGILAR` o `SIN_TRADE`. Para cada trade simulado guarda entrada teorica, stop loss, take profit, monto ficticio y resultado posterior. El resumen diario se envia por Discord una vez al dia de lunes a viernes.
+El sistema genera senales `TRADE_LONG`, `VIGILAR` o `SIN_TRADE`. Para cada trade simulado guarda entrada teorica, stop loss, take profit, monto ficticio y resultado posterior.
+
+El proceso de trading opera todos los dias. Los precios se refrescan cada 4 horas, Dataform recalcula las tablas cada 4 horas y la alerta de paper trading se ejecuta cada 4 horas. Cada intento queda identificado por fecha, hora de slot, ticker y estrategia.
 
 La consistencia se mide por P&L ficticio, win rate, cantidad de trades cerrados y cantidad de trades abiertos. El objetivo no fuerza operaciones: si no hay setup, no se abre trade.
 
@@ -37,6 +39,8 @@ Las reglas estan versionadas en `trading_strategy_versions`:
 - `v4`: selectiva de mayor plazo, hasta 45 dias.
 
 Cada version tiene su propio riesgo por trade, posicion maxima, stop por ATR, stop minimo, take profit y filtros. Esto permite comparar resultados sin mezclar reglas.
+
+Desde la version intradia, una misma accion o cripto puede tener varios intentos en el mismo dia si aparecen setups en diferentes slots de 4 horas. El objetivo es comparar que estrategia funciona mejor por activo, horario y contexto macro.
 
 ## Perfil macro por activo
 

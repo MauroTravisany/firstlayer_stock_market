@@ -31,7 +31,7 @@ def _number(value, decimals=2):
 
 def _trade_line(row):
     return (
-        f"{row.get('strategy_version')} {row.get('ticker')} {row.get('paper_signal')} {row.get('setup_type')} | "
+        f"{row.get('strategy_version')} {row.get('signal_hour')} {row.get('ticker')} {row.get('paper_signal')} {row.get('setup_type')} | "
         f"entrada {_number(row.get('theoretical_entry_price'), 2)} | "
         f"stop {_number(row.get('stop_loss'), 2)} | "
         f"tp1 {_number(row.get('take_profit_1'), 2)} | "
@@ -42,7 +42,7 @@ def _trade_line(row):
 
 def _closed_line(row):
     return (
-        f"{row.get('strategy_version')} {row.get('ticker')} {row.get('result_label')} | "
+        f"{row.get('strategy_version')} {row.get('signal_hour')} {row.get('ticker')} {row.get('result_label')} | "
         f"entrada {_number(row.get('theoretical_entry_price'), 2)} | "
         f"salida {_number(row.get('exit_price'), 2)} | "
         f"macro {_number(row.get('macro_alignment_score'), 2)} | "

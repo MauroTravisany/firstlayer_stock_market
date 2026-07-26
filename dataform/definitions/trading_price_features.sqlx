@@ -2,15 +2,15 @@ config {
   type: "table",
   schema: "acciones_dataset",
   name: "trading_price_features",
-  description: "Features tecnicos diarios para paper trading: tendencia, momentum, volatilidad, volumen y contexto BTC/ETH.",
+  description: "Features tecnicos intradia para paper trading: ventanas de 4 horas por activo, tendencia, momentum, volatilidad, volumen y contexto BTC/ETH.",
   tags: ["trading", "paper", "daily"],
   bigquery: {
     partitionBy: "analysis_date",
-    clusterBy: ["ticker"]
+    clusterBy: ["ticker", "signal_hour"]
   },
   assertions: {
-    nonNull: ["analysis_date", "ticker"],
-    uniqueKey: ["analysis_date", "ticker"]
+    nonNull: ["analysis_date", "ticker", "signal_hour"],
+    uniqueKey: ["analysis_date", "ticker", "signal_hour"]
   }
 }
 
@@ -18,6 +18,8 @@ WITH raw_prices AS (
   SELECT
     p.ticker,
     p.fecha AS analysis_date,
+    TIME(DIV(EXTRACT(HOUR FROM p.hora), 4) * 4, 0, 0) AS signal_hour,
+    DATETIME(p.fecha, TIME(DIV(EXTRACT(HOUR FROM p.hora), 4) * 4, 0, 0)) AS signal_timestamp,
     p.hora,
     p.open,
     p.close,
@@ -32,17 +34,13 @@ WITH raw_prices AS (
   JOIN ${ref("trading_watchlist")} w
     ON w.ticker = p.ticker
    AND w.enabled
-  WHERE w.asset_type != "CRYPTO"
-     OR (
-       MOD(EXTRACT(HOUR FROM p.hora), 4) = 0
-       AND EXTRACT(MINUTE FROM p.hora) = 0
-       AND EXTRACT(SECOND FROM p.hora) = 0
-     )
 ),
-daily_prices AS (
+slot_prices AS (
   SELECT
     ticker,
     analysis_date,
+    signal_hour,
+    signal_timestamp,
     ANY_VALUE(asset_type) AS asset_type,
     ANY_VALUE(trading_group) AS trading_group,
     ANY_VALUE(spread_bps) AS spread_bps,
@@ -53,7 +51,7 @@ daily_prices AS (
     MAX(high) AS day_high,
     SUM(volumen) AS day_volume
   FROM raw_prices
-  GROUP BY ticker, analysis_date
+  GROUP BY ticker, analysis_date, signal_hour, signal_timestamp
 ),
 returns AS (
   SELECT
@@ -63,8 +61,8 @@ returns AS (
     SAFE_DIVIDE(day_close, LAG(day_close, 5) OVER ticker_window) - 1 AS return_5d,
     SAFE_DIVIDE(day_close, LAG(day_close, 20) OVER ticker_window) - 1 AS return_20d,
     SAFE_DIVIDE(day_close, LAG(day_close, 60) OVER ticker_window) - 1 AS return_60d
-  FROM daily_prices
-  WINDOW ticker_window AS (PARTITION BY ticker ORDER BY analysis_date)
+  FROM slot_prices
+  WINDOW ticker_window AS (PARTITION BY ticker ORDER BY signal_timestamp)
 ),
 features AS (
   SELECT
@@ -74,31 +72,32 @@ features AS (
       ABS(day_high - previous_close),
       ABS(day_low - previous_close)
     ) AS true_range,
-    AVG(day_close) OVER ticker_10d AS sma_10,
-    AVG(day_close) OVER ticker_20d AS sma_20,
-    AVG(day_close) OVER ticker_50d AS sma_50,
-    AVG(day_close) OVER ticker_200d AS sma_200,
-    MAX(day_high) OVER ticker_20d_prev AS previous_high_20d,
-    MIN(day_low) OVER ticker_20d_prev AS previous_low_20d,
-    AVG(day_volume) OVER ticker_20d AS avg_volume_20d,
-    STDDEV_POP(return_1d) OVER ticker_20d AS volatility_20d,
+    AVG(day_close) OVER ticker_10 AS sma_10,
+    AVG(day_close) OVER ticker_20 AS sma_20,
+    AVG(day_close) OVER ticker_50 AS sma_50,
+    AVG(day_close) OVER ticker_200 AS sma_200,
+    MAX(day_high) OVER ticker_20_prev AS previous_high_20d,
+    MIN(day_low) OVER ticker_20_prev AS previous_low_20d,
+    AVG(day_volume) OVER ticker_20 AS avg_volume_20d,
+    STDDEV_POP(return_1d) OVER ticker_20 AS volatility_20d,
     AVG(GREATEST(
       day_high - day_low,
       ABS(day_high - previous_close),
       ABS(day_low - previous_close)
-    )) OVER ticker_14d AS atr_14
+    )) OVER ticker_14 AS atr_14
   FROM returns
   WINDOW
-    ticker_10d AS (PARTITION BY ticker ORDER BY analysis_date ROWS BETWEEN 9 PRECEDING AND CURRENT ROW),
-    ticker_14d AS (PARTITION BY ticker ORDER BY analysis_date ROWS BETWEEN 13 PRECEDING AND CURRENT ROW),
-    ticker_20d AS (PARTITION BY ticker ORDER BY analysis_date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW),
-    ticker_50d AS (PARTITION BY ticker ORDER BY analysis_date ROWS BETWEEN 49 PRECEDING AND CURRENT ROW),
-    ticker_200d AS (PARTITION BY ticker ORDER BY analysis_date ROWS BETWEEN 199 PRECEDING AND CURRENT ROW),
-    ticker_20d_prev AS (PARTITION BY ticker ORDER BY analysis_date ROWS BETWEEN 20 PRECEDING AND 1 PRECEDING)
+    ticker_10 AS (PARTITION BY ticker ORDER BY signal_timestamp ROWS BETWEEN 9 PRECEDING AND CURRENT ROW),
+    ticker_14 AS (PARTITION BY ticker ORDER BY signal_timestamp ROWS BETWEEN 13 PRECEDING AND CURRENT ROW),
+    ticker_20 AS (PARTITION BY ticker ORDER BY signal_timestamp ROWS BETWEEN 19 PRECEDING AND CURRENT ROW),
+    ticker_50 AS (PARTITION BY ticker ORDER BY signal_timestamp ROWS BETWEEN 49 PRECEDING AND CURRENT ROW),
+    ticker_200 AS (PARTITION BY ticker ORDER BY signal_timestamp ROWS BETWEEN 199 PRECEDING AND CURRENT ROW),
+    ticker_20_prev AS (PARTITION BY ticker ORDER BY signal_timestamp ROWS BETWEEN 20 PRECEDING AND 1 PRECEDING)
 ),
 crypto_context AS (
   SELECT
     analysis_date,
+    signal_hour,
     MAX(IF(ticker = "BTC-USD", day_close, NULL)) AS btc_close,
     MAX(IF(ticker = "ETH-USD", day_close, NULL)) AS eth_close,
     MAX(IF(ticker = "BTC-USD", return_20d, NULL)) AS btc_return_20d,
@@ -119,7 +118,7 @@ crypto_context AS (
     END AS crypto_regime
   FROM features
   WHERE ticker IN ("BTC-USD", "ETH-USD")
-  GROUP BY analysis_date
+  GROUP BY analysis_date, signal_hour
 )
 
 SELECT
@@ -136,3 +135,4 @@ SELECT
 FROM features f
 LEFT JOIN crypto_context c
   ON c.analysis_date = f.analysis_date
+ AND c.signal_hour = f.signal_hour
