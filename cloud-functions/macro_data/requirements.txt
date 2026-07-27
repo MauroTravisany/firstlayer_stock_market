@@ -1,0 +1,6 @@
+functions-framework>=3.5,<4
+google-cloud-bigquery==3.4.2
+google-cloud-secret-manager==2.16.1
+pandas>=2.2,<3
+requests>=2.31,<3
+yfinance>=0.2.65,<0.3

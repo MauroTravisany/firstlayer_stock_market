@@ -56,17 +56,15 @@ Ejemplos:
 - `COIN`: pesa mucho ciclo cripto, BTC/ETH y apetito especulativo.
 - `BTC-USD` y `ETH-USD`: no usan fundamentales corporativos; pesan liquidez, dolar, tasas, ciclo cripto y apetito por riesgo.
 
-El contexto diario vive en `trading_macro_context`. Hoy se calcula con proxies internos usando precios ya cargados:
+El contexto de mercado vive en `trading_macro_context` y se calcula por bloques de 4 horas. Primero usa fuentes externas reales y, si faltan datos, cae a proxies internos usando precios ya cargados:
 
-- ciclo growth,
-- ciclo defensivo,
-- energia/commodities,
-- ciclo cripto,
-- presion de tasas aproximada,
-- riesgo geopolitico aproximado,
-- apetito por riesgo.
+- mercado general, tecnologia/growth, defensivos, energia, tasas, dolar, euro, volatilidad, oro, petroleo, BTC y ETH,
+- noticias por temas: conflictos geopoliticos, tasas/inflacion, dolar/divisas, regulacion crypto, semiconductores/IA y energia,
+- fallback interno para no detener el proceso si una fuente externa falla.
 
-Los campos dolar, euro, guerras y tasas reales quedan preparados, pero se marcan como `DOLAR_EURO_TASAS_GUERRAS_SIN_FUENTE_EXTERNA_AUN` hasta conectar fuentes externas confiables.
+`external_macro_data_status` indica si la senal uso datos externos completos, solo mercado, solo noticias o solo proxy.
+
+El servicio `stockmacrodata` carga las tablas `macro_market_snapshot` y `macro_news_signal` cada 4 horas, 10 minutos despues de la carga de precios y antes del recalculo de Dataform.
 
 La senal final combina:
 

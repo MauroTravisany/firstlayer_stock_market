@@ -2,138 +2,143 @@ config {
   type: "table",
   schema: "acciones_dataset",
   name: "trading_macro_context",
-  description: "Contexto macro proxy diario para paper trading. Usa activos existentes como aproximacion y deja campos externos listos para fuentes macro/noticias.",
+  description: "Contexto macro por bloque de 4 horas para paper trading. Usa fuentes externas cuando existen y cae a proxies internos si faltan datos.",
   tags: ["trading", "paper", "daily", "macro"],
   bigquery: {
     partitionBy: "analysis_date"
   },
   assertions: {
-    nonNull: ["analysis_date", "macro_regime"],
-    uniqueKey: ["analysis_date"]
+    nonNull: ["analysis_date", "signal_hour", "macro_regime"],
+    uniqueKey: ["analysis_date", "signal_hour"]
   },
-  dependencies: ["asset_profile"]
+  dependencies: ["trading_price_features"]
 }
 
-WITH raw_prices AS (
-  SELECT
-    p.ticker,
-    p.fecha AS analysis_date,
-    p.hora,
-    p.close,
-    p.high,
-    p.low,
-    p.volumen,
-    ap.asset_type,
-    ap.peer_group,
-    ap.sector
-  FROM `stocks-437902.acciones_dataset.valores_acciones_recientes` p
-  JOIN ${ref("asset_profile")} ap
-    ON ap.ticker = p.ticker
-  WHERE ap.ticker IN (
-    "AAPL", "MSFT", "NVDA", "META", "GOOG", "GOOGL", "AMZN", "TSLA", "MELI", "COIN",
-    "KO", "PFE", "DGRO", "XLE", "URA", "GRID", "BTC-USD", "ETH-USD"
-  )
-    AND (
-      ap.asset_type != "CRYPTO"
-      OR (
-        MOD(EXTRACT(HOUR FROM p.hora), 4) = 0
-        AND EXTRACT(MINUTE FROM p.hora) = 0
-        AND EXTRACT(SECOND FROM p.hora) = 0
-      )
-    )
-),
-daily_prices AS (
-  SELECT
-    ticker,
-    analysis_date,
-    ANY_VALUE(asset_type) AS asset_type,
-    ANY_VALUE(peer_group) AS peer_group,
-    ANY_VALUE(sector) AS sector,
-    ARRAY_AGG(close ORDER BY hora DESC LIMIT 1)[OFFSET(0)] AS day_close,
-    MIN(low) AS day_low,
-    MAX(high) AS day_high,
-    SUM(volumen) AS day_volume
-  FROM raw_prices
-  GROUP BY ticker, analysis_date
-),
-daily_returns AS (
-  SELECT
-    *,
-    SAFE_DIVIDE(day_close, LAG(day_close) OVER ticker_window) - 1 AS return_1d,
-    SAFE_DIVIDE(day_close, LAG(day_close, 20) OVER ticker_window) - 1 AS return_20d,
-    SAFE_DIVIDE(day_close, LAG(day_close, 60) OVER ticker_window) - 1 AS return_60d
-  FROM daily_prices
-  WINDOW
-    ticker_window AS (PARTITION BY ticker ORDER BY analysis_date)
-),
-returns AS (
-  SELECT
-    *,
-    STDDEV_POP(return_1d) OVER ticker_20d AS volatility_20d
-  FROM daily_returns
-  WINDOW
-    ticker_20d AS (PARTITION BY ticker ORDER BY analysis_date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW)
-),
-grouped AS (
+WITH price_context AS (
   SELECT
     analysis_date,
+    signal_hour,
     AVG(IF(ticker IN ("AAPL", "MSFT", "NVDA", "META", "GOOG", "GOOGL", "AMZN", "TSLA", "MELI", "COIN"), return_20d, NULL)) AS growth_return_20d,
     AVG(IF(ticker IN ("KO", "PFE", "DGRO"), return_20d, NULL)) AS defensive_return_20d,
     AVG(IF(ticker IN ("XLE", "URA", "GRID"), return_20d, NULL)) AS commodity_return_20d,
     AVG(IF(ticker IN ("BTC-USD", "ETH-USD"), return_20d, NULL)) AS crypto_return_20d,
-    AVG(IF(ticker IN ("AAPL", "MSFT", "NVDA", "META", "GOOG", "GOOGL", "AMZN", "TSLA", "MELI", "COIN"), volatility_20d, NULL)) AS growth_volatility_20d,
+    AVG(IF(ticker IN ("AAPL", "MSFT", "NVDA", "META", "GOOG", "GOOGL", "AMZN", "TSLA", "MELI", "COIN"), atr_pct, NULL)) AS growth_volatility_20d,
     MAX(IF(ticker = "BTC-USD", return_60d, NULL)) AS btc_return_60d,
     MAX(IF(ticker = "ETH-USD", return_60d, NULL)) AS eth_return_60d
-  FROM returns
-  GROUP BY analysis_date
+  FROM ${ref("trading_price_features")}
+  GROUP BY analysis_date, signal_hour
+),
+external_market AS (
+  SELECT
+    snapshot_date AS analysis_date,
+    SAFE_CAST(signal_hour AS TIME) AS signal_hour,
+    MAX(IF(factor_name = "us_equity_spy", return_5d, NULL)) AS spy_return_5d,
+    MAX(IF(factor_name = "growth_tech_qqq", return_5d, NULL)) AS qqq_return_5d,
+    MAX(IF(factor_name = "small_caps_iwm", return_5d, NULL)) AS iwm_return_5d,
+    MAX(IF(factor_name = "volatility_vix", return_5d, NULL)) AS vix_return_5d,
+    MAX(IF(factor_name = "usd_dollar_uup", return_5d, NULL)) AS uup_return_5d,
+    MAX(IF(factor_name = "eur_usd", return_5d, NULL)) AS eurusd_return_5d,
+    MAX(IF(factor_name = "us_10y_yield", return_5d, NULL)) AS tnx_return_5d,
+    MAX(IF(factor_name = "wti_oil", return_5d, NULL)) AS oil_return_5d,
+    MAX(IF(factor_name = "gold", return_5d, NULL)) AS gold_return_5d,
+    MAX(IF(factor_name = "energy_equity_xle", return_5d, NULL)) AS xle_return_5d,
+    MAX(IF(factor_name = "bitcoin", return_5d, NULL)) AS btc_return_5d,
+    MAX(IF(factor_name = "ethereum", return_5d, NULL)) AS eth_return_5d,
+    COUNT(*) AS external_market_rows
+  FROM `stocks-437902.acciones_dataset.macro_market_snapshot`
+  GROUP BY analysis_date, signal_hour
+),
+external_news AS (
+  SELECT
+    snapshot_date AS analysis_date,
+    SAFE_CAST(signal_hour AS TIME) AS signal_hour,
+    MAX(IF(topic = "geopolitical_conflict", article_count, NULL)) AS geopolitical_articles,
+    MAX(IF(topic = "rates_inflation", article_count, NULL)) AS rates_articles,
+    MAX(IF(topic = "usd_fx", article_count, NULL)) AS usd_fx_articles,
+    MAX(IF(topic = "crypto_regulation", article_count, NULL)) AS crypto_articles,
+    MAX(IF(topic = "ai_semiconductors", article_count, NULL)) AS semiconductor_articles,
+    MAX(IF(topic = "energy_oil", article_count, NULL)) AS energy_articles,
+    COUNTIF(article_count IS NOT NULL) AS external_news_topics
+  FROM `stocks-437902.acciones_dataset.macro_news_signal`
+  GROUP BY analysis_date, signal_hour
+),
+joined AS (
+  SELECT
+    pc.*,
+    em.* EXCEPT (analysis_date, signal_hour),
+    en.* EXCEPT (analysis_date, signal_hour)
+  FROM price_context pc
+  LEFT JOIN external_market em
+    ON em.analysis_date = pc.analysis_date
+   AND em.signal_hour = pc.signal_hour
+  LEFT JOIN external_news en
+    ON en.analysis_date = pc.analysis_date
+   AND en.signal_hour = pc.signal_hour
 ),
 scores AS (
   SELECT
     *,
     CASE
-      WHEN growth_return_20d >= 0.06 THEN 1.5
-      WHEN growth_return_20d >= 0.02 THEN 0.75
-      WHEN growth_return_20d <= -0.06 THEN -1.5
-      WHEN growth_return_20d <= -0.02 THEN -0.75
+      WHEN COALESCE(qqq_return_5d, growth_return_20d) >= 0.03 THEN 1.5
+      WHEN COALESCE(qqq_return_5d, growth_return_20d) >= 0.01 THEN 0.75
+      WHEN COALESCE(qqq_return_5d, growth_return_20d) <= -0.03 THEN -1.5
+      WHEN COALESCE(qqq_return_5d, growth_return_20d) <= -0.01 THEN -0.75
       ELSE 0
     END AS growth_cycle_score,
     CASE
-      WHEN defensive_return_20d >= 0.04 AND growth_return_20d < defensive_return_20d THEN 1.0
+      WHEN defensive_return_20d >= 0.04 AND COALESCE(qqq_return_5d, growth_return_20d) < defensive_return_20d THEN 1.0
       WHEN defensive_return_20d <= -0.04 THEN -0.75
       ELSE 0
     END AS defensive_cycle_score,
     CASE
-      WHEN commodity_return_20d >= 0.06 THEN 1.0
-      WHEN commodity_return_20d <= -0.06 THEN -1.0
+      WHEN COALESCE(xle_return_5d, oil_return_5d, commodity_return_20d) >= 0.04 THEN 1.0
+      WHEN COALESCE(xle_return_5d, oil_return_5d, commodity_return_20d) <= -0.04 THEN -1.0
       ELSE 0
     END AS commodity_cycle_score,
     CASE
-      WHEN crypto_return_20d >= 0.08 THEN 1.5
-      WHEN crypto_return_20d >= 0.03 THEN 0.75
-      WHEN crypto_return_20d <= -0.10 THEN -1.5
-      WHEN crypto_return_20d <= -0.04 THEN -0.75
+      WHEN COALESCE(btc_return_5d, eth_return_5d, crypto_return_20d) >= 0.05 THEN 1.5
+      WHEN COALESCE(btc_return_5d, eth_return_5d, crypto_return_20d) >= 0.02 THEN 0.75
+      WHEN COALESCE(btc_return_5d, eth_return_5d, crypto_return_20d) <= -0.07 THEN -1.5
+      WHEN COALESCE(btc_return_5d, eth_return_5d, crypto_return_20d) <= -0.03 THEN -0.75
       ELSE 0
     END AS crypto_cycle_score,
     CASE
-      WHEN growth_return_20d - defensive_return_20d >= 0.04 THEN 1.0
-      WHEN growth_return_20d - defensive_return_20d <= -0.04 THEN -1.0
+      WHEN tnx_return_5d >= 0.05 OR COALESCE(rates_articles, 0) >= 60 THEN -1.0
+      WHEN tnx_return_5d >= 0.02 OR COALESCE(rates_articles, 0) >= 30 THEN -0.5
+      WHEN tnx_return_5d <= -0.05 THEN 0.75
+      WHEN growth_return_20d - defensive_return_20d <= -0.04 THEN -0.5
       ELSE 0
-    END AS rates_proxy_score,
+    END AS rates_pressure_score,
     CASE
-      WHEN commodity_return_20d >= 0.08 AND growth_return_20d <= 0 THEN -1.0
-      WHEN commodity_return_20d <= -0.08 AND growth_return_20d > 0 THEN 0.5
+      WHEN uup_return_5d >= 0.01 OR COALESCE(usd_fx_articles, 0) >= 50 THEN -0.75
+      WHEN uup_return_5d <= -0.01 THEN 0.5
       ELSE 0
-    END AS geopolitical_proxy_score,
+    END AS usd_pressure_score,
     CASE
-      WHEN growth_volatility_20d >= 0.045 THEN -1.0
+      WHEN eurusd_return_5d >= 0.01 THEN 0.25
+      WHEN eurusd_return_5d <= -0.01 THEN -0.25
+      ELSE 0
+    END AS eur_pressure_score,
+    CASE
+      WHEN COALESCE(geopolitical_articles, 0) >= 50 THEN -1.5
+      WHEN COALESCE(geopolitical_articles, 0) >= 25 THEN -0.75
+      WHEN COALESCE(oil_return_5d, 0) >= 0.05 AND COALESCE(gold_return_5d, 0) >= 0.02 THEN -0.75
+      WHEN commodity_return_20d >= 0.08 AND growth_return_20d <= 0 THEN -0.5
+      ELSE 0
+    END AS geopolitical_risk_score,
+    CASE
+      WHEN COALESCE(vix_return_5d, 0) >= 0.15 THEN -1.5
+      WHEN COALESCE(spy_return_5d, growth_return_20d) >= 0.02 AND COALESCE(vix_return_5d, 0) <= 0 THEN 1.0
+      WHEN COALESCE(spy_return_5d, growth_return_20d) <= -0.02 THEN -1.0
       WHEN growth_volatility_20d <= 0.020 AND growth_return_20d > 0 THEN 0.75
       ELSE 0
-    END AS volatility_regime_score
-  FROM grouped
+    END AS risk_appetite_raw_score
+  FROM joined
 )
 
 SELECT
   analysis_date,
+  signal_hour,
   growth_return_20d,
   defensive_return_20d,
   commodity_return_20d,
@@ -141,27 +146,51 @@ SELECT
   growth_volatility_20d,
   btc_return_60d,
   eth_return_60d,
+  spy_return_5d,
+  qqq_return_5d,
+  iwm_return_5d,
+  vix_return_5d,
+  uup_return_5d,
+  eurusd_return_5d,
+  tnx_return_5d,
+  oil_return_5d,
+  gold_return_5d,
+  xle_return_5d,
+  btc_return_5d,
+  eth_return_5d,
+  geopolitical_articles,
+  rates_articles,
+  usd_fx_articles,
+  crypto_articles,
+  semiconductor_articles,
+  energy_articles,
   growth_cycle_score,
   defensive_cycle_score,
   commodity_cycle_score,
   crypto_cycle_score,
-  rates_proxy_score AS rates_pressure_score,
-  0.0 AS usd_pressure_score,
-  0.0 AS eur_pressure_score,
-  geopolitical_proxy_score AS geopolitical_risk_score,
+  rates_pressure_score,
+  usd_pressure_score,
+  eur_pressure_score,
+  geopolitical_risk_score,
   ROUND(
     COALESCE(growth_cycle_score, 0) +
     COALESCE(crypto_cycle_score, 0) * 0.5 +
-    COALESCE(volatility_regime_score, 0),
+    COALESCE(risk_appetite_raw_score, 0),
     2
   ) AS risk_appetite_score,
   CASE
-    WHEN geopolitical_proxy_score <= -1 THEN "ENERGY_OR_GEOPOLITICAL_STRESS_PROXY"
+    WHEN geopolitical_risk_score <= -1 THEN "GEOPOLITICAL_STRESS"
+    WHEN rates_pressure_score <= -1 THEN "RATES_PRESSURE"
     WHEN crypto_cycle_score >= 1.5 AND growth_cycle_score >= 0 THEN "CRYPTO_RISK_ON"
-    WHEN growth_cycle_score >= 1 AND volatility_regime_score >= 0 THEN "RISK_ON"
-    WHEN growth_cycle_score <= -1 OR volatility_regime_score <= -1 THEN "RISK_OFF"
+    WHEN growth_cycle_score >= 1 AND risk_appetite_raw_score >= 0 THEN "RISK_ON"
+    WHEN growth_cycle_score <= -1 OR risk_appetite_raw_score <= -1 THEN "RISK_OFF"
     ELSE "MIXED"
   END AS macro_regime,
-  "DOLAR_EURO_TASAS_GUERRAS_SIN_FUENTE_EXTERNA_AUN" AS external_macro_data_status,
+  CASE
+    WHEN COALESCE(external_market_rows, 0) > 0 AND COALESCE(external_news_topics, 0) > 0 THEN "EXTERNAL_MARKET_AND_NEWS_OK"
+    WHEN COALESCE(external_market_rows, 0) > 0 THEN "EXTERNAL_MARKET_OK_NEWS_MISSING"
+    WHEN COALESCE(external_news_topics, 0) > 0 THEN "EXTERNAL_NEWS_OK_MARKET_MISSING"
+    ELSE "PROXY_ONLY_EXTERNAL_MACRO_MISSING"
+  END AS external_macro_data_status,
   CURRENT_TIMESTAMP() AS calculated_at
 FROM scores

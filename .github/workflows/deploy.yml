@@ -66,6 +66,54 @@ jobs:
               --attempt-deadline 900s
           fi
 
+      - name: Deploy macro and news data to Cloud Run
+        run: |
+          gcloud run deploy stockmacrodata \
+              --source ./cloud-functions/macro_data \
+              --platform managed \
+              --region us-east1 \
+              --no-allow-unauthenticated \
+              --clear-base-image \
+              --command python \
+              --args main.py \
+              --timeout 300 \
+              --concurrency 1 \
+              --max-instances 1 \
+              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},MACRO_MARKET_TABLE_ID=macro_market_snapshot,MACRO_NEWS_TABLE_ID=macro_news_signal,TIME_ZONE=America/Santiago,GDELT_TIMESPAN=4H,GDELT_MAX_RECORDS=75"
+
+      - name: Configure macro and news intraday scheduler
+        run: |
+          SERVICE_URL="$(gcloud run services describe stockmacrodata --platform managed --region us-east1 --format='value(status.url)')"
+          SERVICE_ACCOUNT="stock-alert-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
+          gcloud run services add-iam-policy-binding stockmacrodata \
+            --region us-east1 \
+            --member "serviceAccount:${SERVICE_ACCOUNT}" \
+            --role "roles/run.invoker" \
+            --quiet
+          if gcloud scheduler jobs describe stockmacrodata-intraday --location us-east1 >/dev/null 2>&1; then
+            gcloud scheduler jobs update http stockmacrodata-intraday \
+              --location us-east1 \
+              --schedule "10 */4 * * *" \
+              --time-zone "America/Santiago" \
+              --uri "${SERVICE_URL}" \
+              --http-method POST \
+              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
+              --oidc-token-audience "${SERVICE_URL}" \
+              --message-body "{}" \
+              --attempt-deadline 300s
+          else
+            gcloud scheduler jobs create http stockmacrodata-intraday \
+              --location us-east1 \
+              --schedule "10 */4 * * *" \
+              --time-zone "America/Santiago" \
+              --uri "${SERVICE_URL}" \
+              --http-method POST \
+              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
+              --oidc-token-audience "${SERVICE_URL}" \
+              --message-body "{}" \
+              --attempt-deadline 300s
+          fi
+
       - name: Deploy financial data to Cloud Run
         run: |
           gcloud run deploy stockfinancial \

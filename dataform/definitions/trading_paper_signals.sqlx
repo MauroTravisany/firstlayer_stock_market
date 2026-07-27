@@ -99,6 +99,7 @@ WITH base AS (
     ON mp.ticker = f.ticker
   LEFT JOIN ${ref("trading_macro_context")} mc
     ON mc.analysis_date = f.analysis_date
+   AND mc.signal_hour = f.signal_hour
   CROSS JOIN ${ref("trading_strategy_versions")} s
 ),
 scored AS (
