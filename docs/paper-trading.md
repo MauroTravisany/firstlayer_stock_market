@@ -85,3 +85,11 @@ Al cierre del dia el servicio puede enviar el resumen de trades a un agente IA. 
 - siguientes acciones.
 
 La IA no modifica reglas automaticamente. Sus sugerencias se almacenan para revision y ajustes posteriores.
+
+## Ajustes semanales
+
+Cada viernes se genera `trading_weekly_ai_strategy_review`, que resume las sugerencias diarias y los resultados de varias semanas.
+
+Las recomendaciones con estado `APLICAR_EN_BACKTEST`, confianza suficiente y evidencia repetida se convierten en ajustes semanales en `trading_weekly_strategy_adjustments`.
+
+Estos ajustes se aplican solo al paper trading durante la semana siguiente. No operan dinero real. La regla queda trazable en cada senal con `weekly_adjustment_status`, `weekly_adjustment_type` y `weekly_adjustment_summary`, para comparar despues si la mejora funciono.

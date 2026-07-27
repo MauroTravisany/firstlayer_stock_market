@@ -12,7 +12,7 @@ config {
     nonNull: ["analysis_date", "ticker", "paper_signal"],
     uniqueKey: ["analysis_date", "signal_hour", "ticker", "strategy_version"]
   },
-  dependencies: ["trading_strategy_versions", "trading_asset_macro_profile", "trading_macro_context"]
+  dependencies: ["trading_strategy_versions", "trading_asset_macro_profile", "trading_macro_context", "trading_weekly_strategy_adjustments"]
 }
 
 WITH base AS (
@@ -49,15 +49,15 @@ WITH base AS (
     s.strategy_version,
     s.strategy_name,
     s.paper_capital_clp,
-    s.risk_per_trade_pct,
-    s.max_position_pct,
+    s.risk_per_trade_pct AS base_risk_per_trade_pct,
+    s.max_position_pct AS base_max_position_pct,
     s.usd_clp_assumption,
     s.daily_target_min_clp,
     s.daily_target_max_clp,
     s.min_trade_score,
     s.min_watch_score,
-    s.min_risk_reward,
-    s.stop_atr_multiple,
+    s.min_risk_reward AS base_min_risk_reward,
+    s.stop_atr_multiple AS base_stop_atr_multiple,
     s.min_stock_stop_pct,
     s.min_crypto_stop_pct,
     s.take_profit_1_r,
@@ -66,6 +66,14 @@ WITH base AS (
     s.require_strong_trend,
     s.require_volume_confirmation,
     s.require_positive_regime,
+    COALESCE(wa.adjustment_status, "NO_WEEKLY_ADJUSTMENT") AS weekly_adjustment_status,
+    wa.recommendation_type AS weekly_adjustment_type,
+    wa.suggested_change AS weekly_adjustment_summary,
+    wa.week_end AS weekly_adjustment_week_end,
+    ROUND(s.risk_per_trade_pct * COALESCE(wa.risk_per_trade_multiplier, 1.0), 5) AS risk_per_trade_pct,
+    ROUND(s.max_position_pct * COALESCE(wa.max_position_multiplier, 1.0), 5) AS max_position_pct,
+    ROUND(s.min_risk_reward + COALESCE(wa.min_risk_reward_add, 0.0), 2) AS min_risk_reward,
+    ROUND(s.stop_atr_multiple * COALESCE(wa.stop_atr_multiplier, 1.0), 2) AS stop_atr_multiple,
     CASE WHEN f.asset_type = "CRYPTO" THEN COALESCE(f.crypto_regime, "CRYPTO_NEUTRAL") ELSE "NO_APLICA" END AS market_regime,
     (
       CASE WHEN f.day_close > f.sma_20 THEN 1 ELSE 0 END +
@@ -101,6 +109,14 @@ WITH base AS (
     ON mc.analysis_date = f.analysis_date
    AND mc.signal_hour = f.signal_hour
   CROSS JOIN ${ref("trading_strategy_versions")} s
+  LEFT JOIN ${ref("trading_weekly_strategy_adjustments")} wa
+    ON wa.adjustment_status = "ACTIVE_BACKTEST"
+   AND f.analysis_date BETWEEN wa.effective_from AND wa.effective_to
+   AND REGEXP_CONTAINS(wa.affected_strategy, s.strategy_version)
+   AND (
+     REGEXP_CONTAINS(UPPER(wa.affected_ticker), "ALL")
+     OR REGEXP_CONTAINS(wa.affected_ticker, f.ticker)
+   )
 ),
 scored AS (
   SELECT
@@ -218,6 +234,10 @@ SELECT
   market_regime,
   macro_regime,
   external_macro_data_status,
+  weekly_adjustment_status,
+  weekly_adjustment_type,
+  weekly_adjustment_summary,
+  weekly_adjustment_week_end,
   weighted_technical_score,
   macro_alignment_score,
   growth_cycle_score,
@@ -239,6 +259,7 @@ SELECT
   min_trade_score,
   min_watch_score,
   min_risk_reward,
+  base_min_risk_reward,
   max_holding_days,
   strategy_filters_pass,
   spread_bps,
@@ -246,6 +267,12 @@ SELECT
   ROUND(estimated_roundtrip_cost_pct * 100, 3) AS estimated_roundtrip_cost_pct,
   ROUND(stop_distance_pct * 100, 2) AS stop_distance_pct,
   position_notional_clp,
+  base_risk_per_trade_pct,
+  risk_per_trade_pct,
+  base_max_position_pct,
+  max_position_pct,
+  base_stop_atr_multiple,
+  stop_atr_multiple,
   ROUND(SAFE_DIVIDE(position_notional_clp, theoretical_entry_price * usd_clp_assumption), 6) AS theoretical_quantity,
   paper_capital_clp,
   usd_clp_assumption,
@@ -270,6 +297,7 @@ SELECT
     "; tecnico=", CAST(weighted_technical_score AS STRING),
     "; macro=", CAST(macro_alignment_score AS STRING),
     "; macro_regimen=", macro_regime,
+    "; ajuste_semanal=", weekly_adjustment_status,
     "; perfil=", trading_style,
     "; entrada=", CAST(theoretical_entry_price AS STRING),
     "; stop=", CAST(ROUND(theoretical_entry_price * (1 - stop_distance_pct), 4) AS STRING),
