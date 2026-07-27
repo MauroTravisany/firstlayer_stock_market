@@ -79,3 +79,77 @@ Datos:
         }
     feedback["raw_response"] = raw_text
     return feedback
+
+
+def generate_weekly_strategy_review(config, week_start, week_end, daily_feedback, multiweek_results):
+    if not config.get("openai_api_key"):
+        return {
+            "repeated_patterns": "Revision semanal omitida: no existe OPENAI_API_KEY configurada.",
+            "recommendations": [],
+            "evidence_summary": "",
+            "multiweek_results_summary": "",
+            "application_policy": "No aplicar cambios sin API key.",
+            "approval_status": "SIN_IA",
+            "confidence_score": 0,
+            "raw_response": "{}",
+        }
+
+    payload = {
+        "week_start": str(week_start),
+        "week_end": str(week_end),
+        "daily_feedback": daily_feedback,
+        "multiweek_results": multiweek_results,
+    }
+    prompt = f"""
+Eres un comite semanal de revision de un sistema de paper trading. El sistema NO opera dinero real.
+
+Objetivo:
+- Revisar todas las sugerencias diarias de IA de la semana.
+- Detectar patrones repetidos y separar ruido de evidencia.
+- Contrastar sugerencias con resultados de las ultimas semanas.
+- Proponer cambios candidatos, pero NO aplicarlos automaticamente.
+
+Reglas:
+- Responde siempre en espanol.
+- No prometas rentabilidad.
+- No propongas aplicar una regla si aparece solo una vez y no hay evidencia en resultados.
+- Una recomendacion debe quedar como APLICAR_EN_BACKTEST solo si se repite durante la semana y tiene soporte en resultados acumulados.
+- Si falta historial suficiente, usa PENDIENTE_OBSERVACION.
+- Incluye resultados acumulados de varias semanas cuando existan: win rate, P&L ficticio, estrategias/tickers que mejor o peor funcionaron.
+- Evalua por activo, estrategia, macro_regime, stop, take profit, horarios y sobreoperacion.
+- El sistema debe aprender de forma controlada: guardar hipotesis, comparar resultados y pedir aprobacion antes de tocar reglas productivas.
+- approval_status general debe ser uno de: PENDIENTE_APROBACION, APLICAR_EN_BACKTEST, PENDIENTE_OBSERVACION, SIN_CAMBIOS, SIN_IA.
+
+Devuelve SOLO JSON valido con estas claves:
+repeated_patterns: string,
+recommendations: array de objetos con claves recommendation_type, affected_ticker, affected_strategy, suggested_change, evidence, times_repeated, expected_impact, risk_level, confidence_score, approval_status,
+evidence_summary: string,
+multiweek_results_summary: string,
+application_policy: string,
+approval_status: string,
+confidence_score: number entre 0 y 1.
+
+Datos:
+{json.dumps(payload, ensure_ascii=True, default=_json_default)}
+""".strip()
+
+    client = OpenAI(api_key=config["openai_api_key"], timeout=90)
+    response = client.responses.create(
+        model=config["openai_model"],
+        input=prompt,
+    )
+    raw_text = response.output_text.strip()
+    try:
+        review = json.loads(raw_text)
+    except json.JSONDecodeError:
+        review = {
+            "repeated_patterns": raw_text[:3000],
+            "recommendations": [],
+            "evidence_summary": "",
+            "multiweek_results_summary": "",
+            "application_policy": "Respuesta IA no parseable; guardar solo como observacion.",
+            "approval_status": "PENDIENTE_OBSERVACION",
+            "confidence_score": 0.3,
+        }
+    review["raw_response"] = raw_text
+    return review

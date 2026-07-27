@@ -35,6 +35,7 @@ def load_config():
         "results_table": f"{project_id}.{dataset_id}.{os.environ.get('TRADING_RESULTS_TABLE_ID', 'trading_paper_trade_results')}",
         "alerts_table": f"{project_id}.{dataset_id}.{os.environ.get('TRADING_ALERTS_TABLE_ID', 'trading_alerts_sent')}",
         "feedback_table": f"{project_id}.{dataset_id}.{os.environ.get('TRADING_FEEDBACK_TABLE_ID', 'trading_ai_feedback_daily')}",
+        "weekly_review_table": f"{project_id}.{dataset_id}.{os.environ.get('TRADING_WEEKLY_REVIEW_TABLE_ID', 'trading_weekly_ai_strategy_review')}",
         "openai_api_key": access_secret_version(os.environ.get("OPENAI_API_KEY_SECRET", "OPENAI_API_KEY"), required=False),
         "openai_model": os.environ.get("OPENAI_MODEL", "gpt-5-mini"),
         "prompt_version": os.environ.get("TRADING_PROMPT_VERSION", "paper-trading-feedback-v1"),

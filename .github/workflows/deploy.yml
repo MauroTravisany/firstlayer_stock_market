@@ -154,7 +154,7 @@ jobs:
               --timeout 300 \
               --concurrency 1 \
               --max-instances 1 \
-              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},OPENAI_MODEL=gpt-5-mini,ALERT_WEBHOOK_TYPE=auto,TRADING_SUMMARY_TABLE_ID=trading_daily_summary,TRADING_SIGNALS_TABLE_ID=trading_paper_signals,TRADING_RESULTS_TABLE_ID=trading_paper_trade_results,TRADING_ALERTS_TABLE_ID=trading_alerts_sent,TRADING_FEEDBACK_TABLE_ID=trading_ai_feedback_daily,TRADING_AI_FEEDBACK=true,TRADING_PROMPT_VERSION=paper-trading-feedback-v1"
+              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},OPENAI_MODEL=gpt-5-mini,ALERT_WEBHOOK_TYPE=auto,TRADING_SUMMARY_TABLE_ID=trading_daily_summary,TRADING_SIGNALS_TABLE_ID=trading_paper_signals,TRADING_RESULTS_TABLE_ID=trading_paper_trade_results,TRADING_ALERTS_TABLE_ID=trading_alerts_sent,TRADING_FEEDBACK_TABLE_ID=trading_ai_feedback_daily,TRADING_WEEKLY_REVIEW_TABLE_ID=trading_weekly_ai_strategy_review,TRADING_AI_FEEDBACK=true,TRADING_PROMPT_VERSION=paper-trading-feedback-v1"
 
       - name: Configure daily AI candidate scheduler
         run: |
@@ -261,6 +261,34 @@ jobs:
               --schedule "40 21 * * *" \
               --time-zone "America/Santiago" \
               --uri "${SERVICE_URL}" \
+              --http-method POST \
+              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
+              --oidc-token-audience "${SERVICE_URL}/" \
+              --message-body "{}" \
+              --attempt-deadline 300s
+          fi
+
+      - name: Configure paper trading weekly strategy review scheduler
+        run: |
+          SERVICE_URL="$(gcloud run services describe papertradingalerts --platform managed --region us-east1 --format='value(status.url)')"
+          SERVICE_ACCOUNT="stock-alert-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
+          if gcloud scheduler jobs describe paper-trading-weekly-strategy-review --location us-east1 >/dev/null 2>&1; then
+            gcloud scheduler jobs update http paper-trading-weekly-strategy-review \
+              --location us-east1 \
+              --schedule "5 22 * * 5" \
+              --time-zone "America/Santiago" \
+              --uri "${SERVICE_URL}?review_type=weekly_strategy" \
+              --http-method POST \
+              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
+              --oidc-token-audience "${SERVICE_URL}/" \
+              --message-body "{}" \
+              --attempt-deadline 300s
+          else
+            gcloud scheduler jobs create http paper-trading-weekly-strategy-review \
+              --location us-east1 \
+              --schedule "5 22 * * 5" \
+              --time-zone "America/Santiago" \
+              --uri "${SERVICE_URL}?review_type=weekly_strategy" \
               --http-method POST \
               --oidc-service-account-email "${SERVICE_ACCOUNT}" \
               --oidc-token-audience "${SERVICE_URL}/" \

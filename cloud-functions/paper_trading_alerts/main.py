@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -32,6 +32,8 @@ def main(request):
     force = parse_bool(request_json.get("force", request.args.get("force")), False)
     send_alert_enabled = parse_bool(request_json.get("send_alert", request.args.get("send_alert")), True)
     run_ai_feedback = parse_bool(request_json.get("run_ai_feedback", request.args.get("run_ai_feedback")), True)
+    review_type = request_json.get("review_type") or request.args.get("review_type") or "daily_alert"
+    lookback_weeks = int(request_json.get("lookback_weeks") or request.args.get("lookback_weeks") or 4)
     alert_frequency = request_json.get("alert_frequency") or request.args.get("alert_frequency") or "daily"
     alert_type = request_json.get("alert_type") or request.args.get("alert_type") or "paper_trading_daily"
     summary_date = parse_date(request_json.get("summary_date") or request.args.get("summary_date"))
@@ -42,18 +44,60 @@ def main(request):
             already_sent,
             ensure_alerts_table,
             ensure_feedback_table,
+            ensure_weekly_review_table,
             fetch_closed_trades,
             fetch_new_trades,
             fetch_strategy_performance,
+            fetch_multiweek_strategy_results,
             fetch_summary,
+            fetch_weekly_feedback,
             mark_sent,
             save_feedback,
+            save_weekly_strategy_review,
         )
-        from custom_function.ai_feedback import generate_trading_feedback
+        from custom_function.ai_feedback import generate_trading_feedback, generate_weekly_strategy_review
         from custom_function.notifier import send_alert
 
         ensure_alerts_table(config)
         ensure_feedback_table(config)
+        ensure_weekly_review_table(config)
+
+        if review_type == "weekly_strategy":
+            if not summary_date:
+                now = datetime.now(ZoneInfo(os.environ.get("TIME_ZONE", "America/Santiago"))).date()
+                summary_date = now
+            week_start = summary_date - timedelta(days=summary_date.weekday())
+            week_end = week_start + timedelta(days=6)
+            daily_feedback = fetch_weekly_feedback(config, week_end, lookback_days=7)
+            multiweek_results = fetch_multiweek_strategy_results(config, week_end, lookback_weeks=lookback_weeks)
+            review = generate_weekly_strategy_review(config, week_start, week_end, daily_feedback, multiweek_results)
+
+            if not dry_run:
+                save_weekly_strategy_review(
+                    config,
+                    week_start,
+                    week_end,
+                    review,
+                    daily_feedback_count=len(daily_feedback),
+                    lookback_weeks=lookback_weeks,
+                )
+
+            return (
+                json.dumps(
+                    {
+                        "status": "dry_run" if dry_run else "weekly_strategy_review_saved",
+                        "week_start": str(week_start),
+                        "week_end": str(week_end),
+                        "daily_feedback_count": len(daily_feedback),
+                        "multiweek_result_rows": len(multiweek_results),
+                        "review": review,
+                    },
+                    default=str,
+                ),
+                200,
+                {"Content-Type": "application/json"},
+            )
+
         summary = fetch_summary(config, summary_date)
         if not summary:
             return json.dumps({"status": "error", "message": "No trading summary found"}), 404, {"Content-Type": "application/json"}
