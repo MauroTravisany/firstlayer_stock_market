@@ -50,13 +50,16 @@ def main(request):
             fetch_strategy_performance,
             fetch_multiweek_strategy_results,
             fetch_summary,
+            fetch_weekly_global_summary,
             fetch_weekly_feedback,
+            fetch_weekly_strategy_performance,
+            fetch_weekly_ticker_performance,
             mark_sent,
             save_feedback,
             save_weekly_strategy_review,
         )
         from custom_function.ai_feedback import generate_trading_feedback, generate_weekly_strategy_review
-        from custom_function.notifier import send_alert
+        from custom_function.notifier import send_alert, send_weekly_alert
 
         ensure_alerts_table(config)
         ensure_feedback_table(config)
@@ -95,6 +98,58 @@ def main(request):
                     default=str,
                 ),
                 200,
+                {"Content-Type": "application/json"},
+            )
+
+        if review_type == "weekly_global_summary":
+            if not summary_date:
+                now = datetime.now(ZoneInfo(os.environ.get("TIME_ZONE", "America/Santiago"))).date()
+                summary_date = now
+            week_start = summary_date - timedelta(days=summary_date.weekday())
+            week_end = week_start + timedelta(days=6)
+            weekly_summary = fetch_weekly_global_summary(config, week_end)
+            if not weekly_summary:
+                return json.dumps({"status": "error", "message": "No weekly trading summary found"}), 404, {"Content-Type": "application/json"}
+            strategy_week = fetch_weekly_strategy_performance(config, week_end)
+            ticker_week = fetch_weekly_ticker_performance(config, week_end)
+            weekly_alert_type = "paper_trading_weekly_global"
+
+            if dry_run:
+                return (
+                    json.dumps(
+                        {
+                            "status": "dry_run",
+                            "week_start": str(week_start),
+                            "week_end": str(week_end),
+                            "weekly_summary": weekly_summary,
+                            "strategy_performance": strategy_week,
+                            "ticker_performance": ticker_week,
+                        },
+                        default=str,
+                    ),
+                    200,
+                    {"Content-Type": "application/json"},
+                )
+
+            if not send_alert_enabled:
+                return (
+                    json.dumps({"status": "processed_no_alert", "week_start": str(week_start), "week_end": str(week_end)}),
+                    200,
+                    {"Content-Type": "application/json"},
+                )
+
+            if already_sent(config, week_end, weekly_alert_type) and not force:
+                return (
+                    json.dumps({"status": "skipped", "message": "Weekly alert already sent", "week_end": str(week_end)}),
+                    200,
+                    {"Content-Type": "application/json"},
+                )
+
+            sent, error = send_weekly_alert(config, weekly_summary, strategy_week, ticker_week)
+            mark_sent(config, week_end, weekly_alert_type, "SENT" if sent else "ERROR", error or "OK")
+            return (
+                json.dumps({"status": "sent" if sent else "error", "week_end": str(week_end), "error": error}),
+                200 if sent else 500,
                 {"Content-Type": "application/json"},
             )
 

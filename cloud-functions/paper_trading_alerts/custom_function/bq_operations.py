@@ -308,6 +308,126 @@ def fetch_multiweek_strategy_results(config, week_end, lookback_weeks=4, limit=6
     return [dict(row) for row in client.query(query, job_config=job_config).result()]
 
 
+def fetch_weekly_global_summary(config, week_end):
+    client = bigquery.Client(project=config["project_id"])
+    query = f"""
+    WITH daily AS (
+      SELECT *
+      FROM {_table_ref(config["summary_table"])}
+      WHERE summary_date BETWEEN DATE_SUB(@week_end, INTERVAL 6 DAY) AND @week_end
+    ),
+    closed AS (
+      SELECT
+        COUNT(*) AS closed_trade_count,
+        COUNTIF(is_win) AS winning_trade_count,
+        COUNTIF(NOT is_win) AS losing_trade_count,
+        ROUND(SAFE_DIVIDE(COUNTIF(is_win), COUNT(*)) * 100, 2) AS win_rate_pct,
+        ROUND(SUM(net_pnl_clp), 0) AS realized_pnl_clp,
+        COUNTIF(trade_status = "STOP_LOSS") AS stop_loss_count,
+        COUNTIF(trade_status IN ("TAKE_PROFIT_1", "TAKE_PROFIT_2")) AS take_profit_count
+      FROM {_table_ref(config["results_table"])}
+      WHERE outcome_date BETWEEN DATE_SUB(@week_end, INTERVAL 6 DAY) AND @week_end
+    )
+    SELECT
+      DATE_SUB(@week_end, INTERVAL 6 DAY) AS week_start,
+      @week_end AS week_end,
+      COUNT(daily.summary_date) AS days_with_summary,
+      COALESCE(SUM(daily.new_trade_count), 0) AS new_trade_count,
+      COALESCE(SUM(daily.watch_count), 0) AS watch_count,
+      COALESCE(MAX(daily.open_trade_count), 0) AS open_trade_count,
+      COALESCE(MAX(daily.daily_target_min_clp), 25000.0) AS daily_target_min_clp,
+      COALESCE(MAX(daily.daily_target_max_clp), 100000.0) AS daily_target_max_clp,
+      COALESCE(SUM(daily.daily_target_min_clp), COUNT(daily.summary_date) * 25000.0) AS weekly_target_min_clp,
+      COALESCE(SUM(daily.daily_target_max_clp), COUNT(daily.summary_date) * 100000.0) AS weekly_target_max_clp,
+      COALESCE(ANY_VALUE(closed.closed_trade_count), 0) AS closed_trade_count,
+      COALESCE(ANY_VALUE(closed.winning_trade_count), 0) AS winning_trade_count,
+      COALESCE(ANY_VALUE(closed.losing_trade_count), 0) AS losing_trade_count,
+      COALESCE(ANY_VALUE(closed.win_rate_pct), 0) AS win_rate_pct,
+      COALESCE(ANY_VALUE(closed.realized_pnl_clp), 0) AS realized_pnl_clp,
+      COALESCE(ANY_VALUE(closed.stop_loss_count), 0) AS stop_loss_count,
+      COALESCE(ANY_VALUE(closed.take_profit_count), 0) AS take_profit_count,
+      CASE
+        WHEN COALESCE(ANY_VALUE(closed.realized_pnl_clp), 0) >= COALESCE(SUM(daily.daily_target_min_clp), COUNT(daily.summary_date) * 25000.0) THEN "SOBRE_OBJETIVO_SEMANAL"
+        WHEN COALESCE(ANY_VALUE(closed.realized_pnl_clp), 0) > 0 THEN "POSITIVO_BAJO_OBJETIVO"
+        WHEN COALESCE(ANY_VALUE(closed.closed_trade_count), 0) = 0 THEN "SIN_CIERRES"
+        ELSE "NEGATIVO"
+      END AS weekly_result_status,
+      ARRAY_AGG(
+        STRUCT(
+          daily.summary_date AS summary_date,
+          daily.new_trade_count AS new_trade_count,
+          daily.watch_count AS watch_count,
+          daily.closed_trade_count AS closed_trade_count,
+          daily.realized_pnl_clp AS realized_pnl_clp,
+          daily.daily_result_status AS daily_result_status
+        )
+        ORDER BY daily.summary_date
+      ) AS daily_breakdown
+    FROM daily
+    CROSS JOIN closed
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[bigquery.ScalarQueryParameter("week_end", "DATE", week_end)]
+    )
+    rows = list(client.query(query, job_config=job_config).result())
+    return dict(rows[0]) if rows else None
+
+
+def fetch_weekly_strategy_performance(config, week_end, limit=12):
+    client = bigquery.Client(project=config["project_id"])
+    query = f"""
+    SELECT
+      strategy_version,
+      ANY_VALUE(strategy_name) AS strategy_name,
+      COUNT(*) AS closed_count,
+      COUNTIF(is_win) AS wins,
+      COUNTIF(NOT is_win) AS losses,
+      ROUND(SAFE_DIVIDE(COUNTIF(is_win), COUNT(*)) * 100, 2) AS win_rate_pct,
+      ROUND(SUM(net_pnl_clp), 0) AS realized_pnl_clp,
+      ROUND(AVG(net_return_pct) * 100, 2) AS avg_net_return_pct,
+      COUNTIF(trade_status = "STOP_LOSS") AS stop_loss_count,
+      COUNTIF(trade_status IN ("TAKE_PROFIT_1", "TAKE_PROFIT_2")) AS take_profit_count
+    FROM {_table_ref(config["results_table"])}
+    WHERE outcome_date BETWEEN DATE_SUB(@week_end, INTERVAL 6 DAY) AND @week_end
+    GROUP BY strategy_version
+    ORDER BY realized_pnl_clp DESC
+    LIMIT @limit
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("week_end", "DATE", week_end),
+            bigquery.ScalarQueryParameter("limit", "INT64", limit),
+        ]
+    )
+    return [dict(row) for row in client.query(query, job_config=job_config).result()]
+
+
+def fetch_weekly_ticker_performance(config, week_end, limit=10):
+    client = bigquery.Client(project=config["project_id"])
+    query = f"""
+    SELECT
+      ticker,
+      ANY_VALUE(asset_type) AS asset_type,
+      COUNT(*) AS closed_count,
+      COUNTIF(is_win) AS wins,
+      COUNTIF(NOT is_win) AS losses,
+      ROUND(SAFE_DIVIDE(COUNTIF(is_win), COUNT(*)) * 100, 2) AS win_rate_pct,
+      ROUND(SUM(net_pnl_clp), 0) AS realized_pnl_clp
+    FROM {_table_ref(config["results_table"])}
+    WHERE outcome_date BETWEEN DATE_SUB(@week_end, INTERVAL 6 DAY) AND @week_end
+    GROUP BY ticker
+    ORDER BY ABS(realized_pnl_clp) DESC
+    LIMIT @limit
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("week_end", "DATE", week_end),
+            bigquery.ScalarQueryParameter("limit", "INT64", limit),
+        ]
+    )
+    return [dict(row) for row in client.query(query, job_config=job_config).result()]
+
+
 def save_weekly_strategy_review(config, week_start, week_end, review, daily_feedback_count, lookback_weeks):
     client = bigquery.Client(project=config["project_id"])
     recommendations = review.get("recommendations") or []

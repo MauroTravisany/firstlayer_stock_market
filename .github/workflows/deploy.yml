@@ -305,3 +305,36 @@ jobs:
               --message-body "{}" \
               --attempt-deadline 300s
           fi
+
+      - name: Configure paper trading weekly global summary scheduler
+        run: |
+          SERVICE_URL="$(gcloud run services describe papertradingalerts --platform managed --region us-east1 --format='value(status.url)')"
+          SERVICE_ACCOUNT="stock-alert-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
+          gcloud run services add-iam-policy-binding papertradingalerts \
+            --region us-east1 \
+            --member "serviceAccount:${SERVICE_ACCOUNT}" \
+            --role "roles/run.invoker" \
+            --quiet
+          if gcloud scheduler jobs describe paper-trading-weekly-global-summary --location us-east1 >/dev/null 2>&1; then
+            gcloud scheduler jobs update http paper-trading-weekly-global-summary \
+              --location us-east1 \
+              --schedule "20 22 * * 5" \
+              --time-zone "America/Santiago" \
+              --uri "${SERVICE_URL}?review_type=weekly_global_summary" \
+              --http-method POST \
+              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
+              --oidc-token-audience "${SERVICE_URL}" \
+              --message-body "{}" \
+              --attempt-deadline 300s
+          else
+            gcloud scheduler jobs create http paper-trading-weekly-global-summary \
+              --location us-east1 \
+              --schedule "20 22 * * 5" \
+              --time-zone "America/Santiago" \
+              --uri "${SERVICE_URL}?review_type=weekly_global_summary" \
+              --http-method POST \
+              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
+              --oidc-token-audience "${SERVICE_URL}" \
+              --message-body "{}" \
+              --attempt-deadline 300s
+          fi
