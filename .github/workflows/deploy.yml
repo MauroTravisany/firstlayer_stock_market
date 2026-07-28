@@ -244,6 +244,11 @@ jobs:
         run: |
           SERVICE_URL="$(gcloud run services describe papertradingalerts --platform managed --region us-east1 --format='value(status.url)')"
           SERVICE_ACCOUNT="stock-alert-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
+          gcloud run services add-iam-policy-binding papertradingalerts \
+            --region us-east1 \
+            --member "serviceAccount:${SERVICE_ACCOUNT}" \
+            --role "roles/run.invoker" \
+            --quiet
           if gcloud scheduler jobs describe paper-trading-daily-summary --location us-east1 >/dev/null 2>&1; then
             gcloud scheduler jobs update http paper-trading-daily-summary \
               --location us-east1 \
@@ -252,7 +257,7 @@ jobs:
               --uri "${SERVICE_URL}" \
               --http-method POST \
               --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}/" \
+              --oidc-token-audience "${SERVICE_URL}" \
               --message-body "{}" \
               --attempt-deadline 300s
           else
@@ -263,7 +268,7 @@ jobs:
               --uri "${SERVICE_URL}" \
               --http-method POST \
               --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}/" \
+              --oidc-token-audience "${SERVICE_URL}" \
               --message-body "{}" \
               --attempt-deadline 300s
           fi
@@ -272,6 +277,11 @@ jobs:
         run: |
           SERVICE_URL="$(gcloud run services describe papertradingalerts --platform managed --region us-east1 --format='value(status.url)')"
           SERVICE_ACCOUNT="stock-alert-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
+          gcloud run services add-iam-policy-binding papertradingalerts \
+            --region us-east1 \
+            --member "serviceAccount:${SERVICE_ACCOUNT}" \
+            --role "roles/run.invoker" \
+            --quiet
           if gcloud scheduler jobs describe paper-trading-weekly-strategy-review --location us-east1 >/dev/null 2>&1; then
             gcloud scheduler jobs update http paper-trading-weekly-strategy-review \
               --location us-east1 \
@@ -280,7 +290,7 @@ jobs:
               --uri "${SERVICE_URL}?review_type=weekly_strategy" \
               --http-method POST \
               --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}/" \
+              --oidc-token-audience "${SERVICE_URL}" \
               --message-body "{}" \
               --attempt-deadline 300s
           else
@@ -291,7 +301,7 @@ jobs:
               --uri "${SERVICE_URL}?review_type=weekly_strategy" \
               --http-method POST \
               --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}/" \
+              --oidc-token-audience "${SERVICE_URL}" \
               --message-body "{}" \
               --attempt-deadline 300s
           fi
