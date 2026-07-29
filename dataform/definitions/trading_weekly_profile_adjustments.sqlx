@@ -1,0 +1,90 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_weekly_profile_adjustments",
+  description: "Ajustes semanales de sensibilidades por activo derivados de revision IA. Solo aplica recomendaciones con evidencia suficiente en paper trading.",
+  tags: ["trading", "paper", "strategy", "weekly", "daily", "ai", "profile"],
+  bigquery: {
+    partitionBy: "week_end"
+  },
+  dependencies: ["trading_weekly_strategy_adjustments"]
+}
+
+WITH eligible AS (
+  SELECT
+    week_start,
+    week_end,
+    effective_from,
+    effective_to,
+    COALESCE(NULLIF(affected_ticker, ""), "ALL") AS affected_ticker,
+    LOWER(affected_profile_field) AS affected_profile_field,
+    current_value,
+    suggested_value,
+    suggested_change,
+    evidence,
+    times_repeated,
+    risk_level,
+    confidence_score,
+    adjustment_status
+  FROM ${ref("trading_weekly_strategy_adjustments")}
+  WHERE adjustment_status = "ACTIVE_BACKTEST"
+    AND affected_profile_field IS NOT NULL
+    AND suggested_value IS NOT NULL
+    AND LOWER(recommendation_type) IN ("sensibilidad", "profile_sensitivity", "factor_sensitivity", "perfil", "factor")
+),
+bounded AS (
+  SELECT
+    *,
+    CASE
+      WHEN affected_profile_field IN (
+        "usd_sensitivity", "rates_sensitivity", "geopolitical_sensitivity", "btc_dominance_sensitivity"
+      ) THEN GREATEST(-2.0, LEAST(2.0, suggested_value))
+      ELSE GREATEST(0.0, LEAST(2.0, suggested_value))
+    END AS bounded_suggested_value
+  FROM eligible
+)
+
+SELECT
+  week_start,
+  week_end,
+  effective_from,
+  effective_to,
+  affected_ticker,
+  MAX(IF(affected_profile_field = "trend_weight", bounded_suggested_value, NULL)) AS trend_weight,
+  MAX(IF(affected_profile_field = "momentum_weight", bounded_suggested_value, NULL)) AS momentum_weight,
+  MAX(IF(affected_profile_field = "volume_weight", bounded_suggested_value, NULL)) AS volume_weight,
+  MAX(IF(affected_profile_field = "volatility_weight", bounded_suggested_value, NULL)) AS volatility_weight,
+  MAX(IF(affected_profile_field = "regime_weight", bounded_suggested_value, NULL)) AS regime_weight,
+  MAX(IF(affected_profile_field = "growth_sensitivity", bounded_suggested_value, NULL)) AS growth_sensitivity,
+  MAX(IF(affected_profile_field = "defensive_sensitivity", bounded_suggested_value, NULL)) AS defensive_sensitivity,
+  MAX(IF(affected_profile_field = "energy_sensitivity", bounded_suggested_value, NULL)) AS energy_sensitivity,
+  MAX(IF(affected_profile_field = "crypto_sensitivity", bounded_suggested_value, NULL)) AS crypto_sensitivity,
+  MAX(IF(affected_profile_field = "usd_sensitivity", bounded_suggested_value, NULL)) AS usd_sensitivity,
+  MAX(IF(affected_profile_field = "rates_sensitivity", bounded_suggested_value, NULL)) AS rates_sensitivity,
+  MAX(IF(affected_profile_field = "geopolitical_sensitivity", bounded_suggested_value, NULL)) AS geopolitical_sensitivity,
+  MAX(IF(affected_profile_field = "risk_appetite_sensitivity", bounded_suggested_value, NULL)) AS risk_appetite_sensitivity,
+  MAX(IF(affected_profile_field = "semiconductor_cycle_sensitivity", bounded_suggested_value, NULL)) AS semiconductor_cycle_sensitivity,
+  MAX(IF(affected_profile_field = "ai_capex_sensitivity", bounded_suggested_value, NULL)) AS ai_capex_sensitivity,
+  MAX(IF(affected_profile_field = "consumer_cycle_sensitivity", bounded_suggested_value, NULL)) AS consumer_cycle_sensitivity,
+  MAX(IF(affected_profile_field = "advertising_cycle_sensitivity", bounded_suggested_value, NULL)) AS advertising_cycle_sensitivity,
+  MAX(IF(affected_profile_field = "energy_input_sensitivity", bounded_suggested_value, NULL)) AS energy_input_sensitivity,
+  MAX(IF(affected_profile_field = "electricity_cost_sensitivity", bounded_suggested_value, NULL)) AS electricity_cost_sensitivity,
+  MAX(IF(affected_profile_field = "rates_duration_sensitivity", bounded_suggested_value, NULL)) AS rates_duration_sensitivity,
+  MAX(IF(affected_profile_field = "usd_revenue_sensitivity", bounded_suggested_value, NULL)) AS usd_revenue_sensitivity,
+  MAX(IF(affected_profile_field = "geopolitical_supply_sensitivity", bounded_suggested_value, NULL)) AS geopolitical_supply_sensitivity,
+  MAX(IF(affected_profile_field = "liquidity_risk_sensitivity", bounded_suggested_value, NULL)) AS liquidity_risk_sensitivity,
+  MAX(IF(affected_profile_field = "crypto_flow_sensitivity", bounded_suggested_value, NULL)) AS crypto_flow_sensitivity,
+  MAX(IF(affected_profile_field = "btc_dominance_sensitivity", bounded_suggested_value, NULL)) AS btc_dominance_sensitivity,
+  MAX(IF(affected_profile_field = "regulatory_sensitivity", bounded_suggested_value, NULL)) AS regulatory_sensitivity,
+  MAX(IF(affected_profile_field = "breakout_preference", bounded_suggested_value, NULL)) AS breakout_preference,
+  MAX(IF(affected_profile_field = "pullback_preference", bounded_suggested_value, NULL)) AS pullback_preference,
+  MAX(IF(affected_profile_field = "support_rebound_preference", bounded_suggested_value, NULL)) AS support_rebound_preference,
+  MAX(IF(affected_profile_field = "volume_confirmation_importance", bounded_suggested_value, NULL)) AS volume_confirmation_importance,
+  STRING_AGG(
+    CONCAT(affected_profile_field, ": ", CAST(current_value AS STRING), " -> ", CAST(bounded_suggested_value AS STRING), " (", suggested_change, ")"),
+    " | "
+    ORDER BY confidence_score DESC
+  ) AS profile_adjustment_summary,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM bounded
+GROUP BY week_start, week_end, effective_from, effective_to, affected_ticker

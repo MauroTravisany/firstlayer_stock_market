@@ -30,6 +30,8 @@ def _number(value, decimals=2):
 
 
 def _trade_line(row):
+    profile_adjustment = row.get("profile_adjustment_summary")
+    adjustment_text = "" if not profile_adjustment or profile_adjustment == "NO_PROFILE_ADJUSTMENT" else " | ajuste perfil activo"
     return (
         f"{row.get('strategy_version')} {row.get('signal_hour')} {row.get('ticker')} {row.get('paper_signal')} {row.get('setup_type')} | "
         f"{row.get('cycle_profile') or row.get('trading_style')} | "
@@ -38,7 +40,7 @@ def _trade_line(row):
         f"tp1 {_number(row.get('take_profit_1'), 2)} | "
         f"macro {_number(row.get('macro_alignment_score'), 2)} {row.get('macro_regime')} | "
         f"factor {_number(row.get('factor_alignment_score'), 2)} | "
-        f"monto {_money_clp(row.get('position_notional_clp'))}"
+        f"monto {_money_clp(row.get('position_notional_clp'))}{adjustment_text}"
     )
 
 

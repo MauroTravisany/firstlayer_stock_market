@@ -160,6 +160,7 @@ def fetch_new_trades(config, summary_date, limit=20):
       macro_alignment_score,
       factor_alignment_score,
       factor_risk_notes,
+      profile_adjustment_summary,
       setup_type,
       paper_signal,
       setup_score,
@@ -193,8 +194,11 @@ def fetch_closed_trades(config, summary_date, limit=20):
       strategy_version,
       strategy_name,
       trading_style,
+      cycle_profile,
       macro_regime,
       macro_alignment_score,
+      factor_alignment_score,
+      profile_adjustment_summary,
       setup_type,
       trade_status,
       result_label,
@@ -238,6 +242,96 @@ def fetch_strategy_performance(config, limit=20):
     """
     job_config = bigquery.QueryJobConfig(
         query_parameters=[bigquery.ScalarQueryParameter("limit", "INT64", limit)]
+    )
+    return [dict(row) for row in client.query(query, job_config=job_config).result()]
+
+
+def fetch_asset_profiles(config, limit=50):
+    client = bigquery.Client(project=config["project_id"])
+    project_id = config["project_id"]
+    query = f"""
+    SELECT
+      COALESCE(fp.ticker, mp.ticker) AS ticker,
+      fp.asset_type,
+      mp.trading_style,
+      fp.sector_profile,
+      fp.cycle_profile,
+      fp.factor_rationale,
+      fp.primary_demand_driver,
+      fp.primary_risk_driver,
+      mp.trend_weight,
+      mp.momentum_weight,
+      mp.volume_weight,
+      mp.volatility_weight,
+      mp.regime_weight,
+      mp.growth_sensitivity,
+      mp.defensive_sensitivity,
+      mp.energy_sensitivity,
+      mp.crypto_sensitivity,
+      mp.usd_sensitivity,
+      mp.rates_sensitivity,
+      mp.geopolitical_sensitivity,
+      mp.risk_appetite_sensitivity,
+      fp.semiconductor_cycle_sensitivity,
+      fp.ai_capex_sensitivity,
+      fp.consumer_cycle_sensitivity,
+      fp.advertising_cycle_sensitivity,
+      fp.energy_input_sensitivity,
+      fp.electricity_cost_sensitivity,
+      fp.rates_duration_sensitivity,
+      fp.usd_revenue_sensitivity,
+      fp.geopolitical_supply_sensitivity,
+      fp.liquidity_risk_sensitivity,
+      fp.crypto_flow_sensitivity,
+      fp.btc_dominance_sensitivity,
+      fp.regulatory_sensitivity,
+      fp.breakout_preference,
+      fp.pullback_preference,
+      fp.support_rebound_preference,
+      fp.volume_confirmation_importance
+    FROM `{project_id}.acciones_dataset.trading_asset_macro_profile` mp
+    FULL OUTER JOIN `{project_id}.acciones_dataset.trading_asset_factor_profile` fp
+      ON fp.ticker = mp.ticker
+    ORDER BY ticker
+    LIMIT @limit
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[bigquery.ScalarQueryParameter("limit", "INT64", limit)]
+    )
+    return [dict(row) for row in client.query(query, job_config=job_config).result()]
+
+
+def fetch_cycle_profile_performance(config, week_end, lookback_weeks=4, limit=50):
+    client = bigquery.Client(project=config["project_id"])
+    query = f"""
+    SELECT
+      cycle_profile,
+      asset_type,
+      strategy_version,
+      COUNT(*) AS closed_trades,
+      COUNTIF(is_win) AS wins,
+      COUNTIF(NOT is_win) AS losses,
+      ROUND(SAFE_DIVIDE(COUNTIF(is_win), COUNT(*)) * 100, 2) AS win_rate_pct,
+      ROUND(SUM(net_pnl_clp), 0) AS pnl_clp,
+      ROUND(AVG(net_return_pct) * 100, 2) AS avg_net_return_pct,
+      ROUND(AVG(setup_score), 2) AS avg_setup_score,
+      ROUND(AVG(macro_alignment_score), 2) AS avg_macro_alignment_score,
+      ROUND(AVG(factor_alignment_score), 2) AS avg_factor_alignment_score,
+      COUNTIF(trade_status = "STOP_LOSS") AS stop_loss_count,
+      COUNTIF(trade_status IN ("TAKE_PROFIT_1", "TAKE_PROFIT_2")) AS take_profit_count
+    FROM {_table_ref(config["results_table"])}
+    WHERE outcome_date BETWEEN DATE_SUB(@week_end, INTERVAL @lookback_weeks * 7 - 1 DAY) AND @week_end
+      AND outcome_date IS NOT NULL
+    GROUP BY cycle_profile, asset_type, strategy_version
+    ORDER BY ABS(pnl_clp) DESC, closed_trades DESC
+    LIMIT @limit
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("week_end", "DATE", week_end),
+            bigquery.ScalarQueryParameter("lookback_weeks", "INT64", lookback_weeks),
+            bigquery.ScalarQueryParameter("limit", "INT64", limit),
+        ]
     )
     return [dict(row) for row in client.query(query, job_config=job_config).result()]
 

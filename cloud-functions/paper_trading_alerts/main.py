@@ -46,8 +46,10 @@ def main(request):
             ensure_feedback_table,
             ensure_weekly_review_table,
             fetch_closed_trades,
+            fetch_asset_profiles,
             fetch_new_trades,
             fetch_strategy_performance,
+            fetch_cycle_profile_performance,
             fetch_multiweek_strategy_results,
             fetch_summary,
             fetch_weekly_global_summary,
@@ -73,7 +75,17 @@ def main(request):
             week_end = week_start + timedelta(days=6)
             daily_feedback = fetch_weekly_feedback(config, week_end, lookback_days=7)
             multiweek_results = fetch_multiweek_strategy_results(config, week_end, lookback_weeks=lookback_weeks)
-            review = generate_weekly_strategy_review(config, week_start, week_end, daily_feedback, multiweek_results)
+            asset_profiles = fetch_asset_profiles(config)
+            cycle_profile_performance = fetch_cycle_profile_performance(config, week_end, lookback_weeks=lookback_weeks)
+            review = generate_weekly_strategy_review(
+                config,
+                week_start,
+                week_end,
+                daily_feedback,
+                multiweek_results,
+                asset_profiles,
+                cycle_profile_performance,
+            )
 
             if not dry_run:
                 save_weekly_strategy_review(
@@ -165,11 +177,12 @@ def main(request):
         new_trades = fetch_new_trades(config, summary_date)
         closed_trades = fetch_closed_trades(config, summary_date)
         strategy_performance = fetch_strategy_performance(config)
+        asset_profiles = fetch_asset_profiles(config)
         feedback = None
 
         if run_ai_feedback and config.get("ai_feedback_enabled"):
             try:
-                feedback = generate_trading_feedback(config, summary, new_trades, closed_trades, strategy_performance)
+                feedback = generate_trading_feedback(config, summary, new_trades, closed_trades, strategy_performance, asset_profiles)
             except Exception as exc:
                 logging.exception("AI trading feedback failed")
                 feedback = {

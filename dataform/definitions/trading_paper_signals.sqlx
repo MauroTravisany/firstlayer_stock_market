@@ -12,51 +12,56 @@ config {
     nonNull: ["analysis_date", "ticker", "paper_signal"],
     uniqueKey: ["analysis_date", "signal_hour", "ticker", "strategy_version"]
   },
-  dependencies: ["trading_strategy_versions", "trading_asset_macro_profile", "trading_asset_factor_profile", "trading_macro_context", "trading_weekly_strategy_adjustments"]
+  dependencies: ["trading_strategy_versions", "trading_asset_macro_profile", "trading_asset_factor_profile", "trading_macro_context", "trading_weekly_strategy_adjustments", "trading_weekly_profile_adjustments"]
 }
 
-WITH base AS (
+WITH profile_adjustments AS (
+  SELECT *
+  FROM ${ref("trading_weekly_profile_adjustments")}
+),
+base AS (
   SELECT
     f.*,
     COALESCE(mp.trading_style, f.trading_group) AS trading_style,
     COALESCE(mp.macro_rationale, "Perfil macro no definido; usa sensibilidad neutral.") AS macro_rationale,
     COALESCE(mp.demand_geography, "No especificado") AS demand_geography,
     COALESCE(mp.holder_base, "No especificado") AS holder_base,
-    COALESCE(mp.trend_weight, 1.0) AS trend_weight,
-    COALESCE(mp.momentum_weight, 1.0) AS momentum_weight,
-    COALESCE(mp.volume_weight, 1.0) AS volume_weight,
-    COALESCE(mp.volatility_weight, 1.0) AS volatility_weight,
-    COALESCE(mp.regime_weight, 1.0) AS regime_weight,
-    COALESCE(mp.growth_sensitivity, 0.0) AS growth_sensitivity,
-    COALESCE(mp.defensive_sensitivity, 0.0) AS defensive_sensitivity,
-    COALESCE(mp.energy_sensitivity, 0.0) AS energy_sensitivity,
-    COALESCE(mp.crypto_sensitivity, 0.0) AS crypto_sensitivity,
-    COALESCE(mp.usd_sensitivity, 0.0) AS usd_sensitivity,
-    COALESCE(mp.rates_sensitivity, 0.0) AS rates_sensitivity,
-    COALESCE(mp.geopolitical_sensitivity, 0.0) AS geopolitical_sensitivity,
-    COALESCE(mp.risk_appetite_sensitivity, 0.0) AS risk_appetite_sensitivity,
+    COALESCE(pa_ticker.trend_weight, pa_all.trend_weight, mp.trend_weight, 1.0) AS trend_weight,
+    COALESCE(pa_ticker.momentum_weight, pa_all.momentum_weight, mp.momentum_weight, 1.0) AS momentum_weight,
+    COALESCE(pa_ticker.volume_weight, pa_all.volume_weight, mp.volume_weight, 1.0) AS volume_weight,
+    COALESCE(pa_ticker.volatility_weight, pa_all.volatility_weight, mp.volatility_weight, 1.0) AS volatility_weight,
+    COALESCE(pa_ticker.regime_weight, pa_all.regime_weight, mp.regime_weight, 1.0) AS regime_weight,
+    COALESCE(pa_ticker.growth_sensitivity, pa_all.growth_sensitivity, mp.growth_sensitivity, 0.0) AS growth_sensitivity,
+    COALESCE(pa_ticker.defensive_sensitivity, pa_all.defensive_sensitivity, mp.defensive_sensitivity, 0.0) AS defensive_sensitivity,
+    COALESCE(pa_ticker.energy_sensitivity, pa_all.energy_sensitivity, mp.energy_sensitivity, 0.0) AS energy_sensitivity,
+    COALESCE(pa_ticker.crypto_sensitivity, pa_all.crypto_sensitivity, mp.crypto_sensitivity, 0.0) AS crypto_sensitivity,
+    COALESCE(pa_ticker.usd_sensitivity, pa_all.usd_sensitivity, mp.usd_sensitivity, 0.0) AS usd_sensitivity,
+    COALESCE(pa_ticker.rates_sensitivity, pa_all.rates_sensitivity, mp.rates_sensitivity, 0.0) AS rates_sensitivity,
+    COALESCE(pa_ticker.geopolitical_sensitivity, pa_all.geopolitical_sensitivity, mp.geopolitical_sensitivity, 0.0) AS geopolitical_sensitivity,
+    COALESCE(pa_ticker.risk_appetite_sensitivity, pa_all.risk_appetite_sensitivity, mp.risk_appetite_sensitivity, 0.0) AS risk_appetite_sensitivity,
     COALESCE(fp.sector_profile, "Perfil sectorial no definido") AS sector_profile,
     COALESCE(fp.cycle_profile, "CYCLE_NEUTRAL") AS cycle_profile,
     COALESCE(fp.factor_rationale, "Sin perfil de factores especifico; usa score neutral.") AS factor_rationale,
     COALESCE(fp.primary_demand_driver, "No especificado") AS primary_demand_driver,
     COALESCE(fp.primary_risk_driver, "No especificado") AS primary_risk_driver,
-    COALESCE(fp.semiconductor_cycle_sensitivity, 0.0) AS semiconductor_cycle_sensitivity,
-    COALESCE(fp.ai_capex_sensitivity, 0.0) AS ai_capex_sensitivity,
-    COALESCE(fp.consumer_cycle_sensitivity, 0.0) AS consumer_cycle_sensitivity,
-    COALESCE(fp.advertising_cycle_sensitivity, 0.0) AS advertising_cycle_sensitivity,
-    COALESCE(fp.energy_input_sensitivity, 0.0) AS energy_input_sensitivity,
-    COALESCE(fp.electricity_cost_sensitivity, 0.0) AS electricity_cost_sensitivity,
-    COALESCE(fp.rates_duration_sensitivity, 0.0) AS rates_duration_sensitivity,
-    COALESCE(fp.usd_revenue_sensitivity, 0.0) AS usd_revenue_sensitivity,
-    COALESCE(fp.geopolitical_supply_sensitivity, 0.0) AS geopolitical_supply_sensitivity,
-    COALESCE(fp.liquidity_risk_sensitivity, 0.0) AS liquidity_risk_sensitivity,
-    COALESCE(fp.crypto_flow_sensitivity, 0.0) AS crypto_flow_sensitivity,
-    COALESCE(fp.btc_dominance_sensitivity, 0.0) AS btc_dominance_sensitivity,
-    COALESCE(fp.regulatory_sensitivity, 0.0) AS regulatory_sensitivity,
-    COALESCE(fp.breakout_preference, 1.0) AS breakout_preference,
-    COALESCE(fp.pullback_preference, 1.0) AS pullback_preference,
-    COALESCE(fp.support_rebound_preference, 1.0) AS support_rebound_preference,
-    COALESCE(fp.volume_confirmation_importance, 1.0) AS volume_confirmation_importance,
+    COALESCE(pa_ticker.semiconductor_cycle_sensitivity, pa_all.semiconductor_cycle_sensitivity, fp.semiconductor_cycle_sensitivity, 0.0) AS semiconductor_cycle_sensitivity,
+    COALESCE(pa_ticker.ai_capex_sensitivity, pa_all.ai_capex_sensitivity, fp.ai_capex_sensitivity, 0.0) AS ai_capex_sensitivity,
+    COALESCE(pa_ticker.consumer_cycle_sensitivity, pa_all.consumer_cycle_sensitivity, fp.consumer_cycle_sensitivity, 0.0) AS consumer_cycle_sensitivity,
+    COALESCE(pa_ticker.advertising_cycle_sensitivity, pa_all.advertising_cycle_sensitivity, fp.advertising_cycle_sensitivity, 0.0) AS advertising_cycle_sensitivity,
+    COALESCE(pa_ticker.energy_input_sensitivity, pa_all.energy_input_sensitivity, fp.energy_input_sensitivity, 0.0) AS energy_input_sensitivity,
+    COALESCE(pa_ticker.electricity_cost_sensitivity, pa_all.electricity_cost_sensitivity, fp.electricity_cost_sensitivity, 0.0) AS electricity_cost_sensitivity,
+    COALESCE(pa_ticker.rates_duration_sensitivity, pa_all.rates_duration_sensitivity, fp.rates_duration_sensitivity, 0.0) AS rates_duration_sensitivity,
+    COALESCE(pa_ticker.usd_revenue_sensitivity, pa_all.usd_revenue_sensitivity, fp.usd_revenue_sensitivity, 0.0) AS usd_revenue_sensitivity,
+    COALESCE(pa_ticker.geopolitical_supply_sensitivity, pa_all.geopolitical_supply_sensitivity, fp.geopolitical_supply_sensitivity, 0.0) AS geopolitical_supply_sensitivity,
+    COALESCE(pa_ticker.liquidity_risk_sensitivity, pa_all.liquidity_risk_sensitivity, fp.liquidity_risk_sensitivity, 0.0) AS liquidity_risk_sensitivity,
+    COALESCE(pa_ticker.crypto_flow_sensitivity, pa_all.crypto_flow_sensitivity, fp.crypto_flow_sensitivity, 0.0) AS crypto_flow_sensitivity,
+    COALESCE(pa_ticker.btc_dominance_sensitivity, pa_all.btc_dominance_sensitivity, fp.btc_dominance_sensitivity, 0.0) AS btc_dominance_sensitivity,
+    COALESCE(pa_ticker.regulatory_sensitivity, pa_all.regulatory_sensitivity, fp.regulatory_sensitivity, 0.0) AS regulatory_sensitivity,
+    COALESCE(pa_ticker.breakout_preference, pa_all.breakout_preference, fp.breakout_preference, 1.0) AS breakout_preference,
+    COALESCE(pa_ticker.pullback_preference, pa_all.pullback_preference, fp.pullback_preference, 1.0) AS pullback_preference,
+    COALESCE(pa_ticker.support_rebound_preference, pa_all.support_rebound_preference, fp.support_rebound_preference, 1.0) AS support_rebound_preference,
+    COALESCE(pa_ticker.volume_confirmation_importance, pa_all.volume_confirmation_importance, fp.volume_confirmation_importance, 1.0) AS volume_confirmation_importance,
+    COALESCE(pa_ticker.profile_adjustment_summary, pa_all.profile_adjustment_summary, "NO_PROFILE_ADJUSTMENT") AS profile_adjustment_summary,
     COALESCE(mc.macro_regime, "SIN_CONTEXTO_MACRO") AS macro_regime,
     COALESCE(mc.external_macro_data_status, "SIN_CONTEXTO_MACRO") AS external_macro_data_status,
     COALESCE(mc.qqq_return_5d, 0.0) AS qqq_return_5d,
@@ -138,6 +143,12 @@ WITH base AS (
     ON mp.ticker = f.ticker
   LEFT JOIN ${ref("trading_asset_factor_profile")} fp
     ON fp.ticker = f.ticker
+  LEFT JOIN profile_adjustments pa_ticker
+    ON pa_ticker.affected_ticker = f.ticker
+   AND f.analysis_date BETWEEN pa_ticker.effective_from AND pa_ticker.effective_to
+  LEFT JOIN profile_adjustments pa_all
+    ON UPPER(pa_all.affected_ticker) = "ALL"
+   AND f.analysis_date BETWEEN pa_all.effective_from AND pa_all.effective_to
   LEFT JOIN ${ref("trading_macro_context")} mc
     ON mc.analysis_date = f.analysis_date
    AND mc.signal_hour = f.signal_hour
@@ -377,6 +388,7 @@ SELECT
   weekly_adjustment_type,
   weekly_adjustment_summary,
   weekly_adjustment_week_end,
+  profile_adjustment_summary,
   weighted_technical_score,
   macro_alignment_score,
   factor_alignment_score,
@@ -440,6 +452,7 @@ SELECT
     "; factor=", CAST(factor_alignment_score AS STRING),
     "; macro_regimen=", macro_regime,
     "; ajuste_semanal=", weekly_adjustment_status,
+    "; ajuste_perfil=", profile_adjustment_summary,
     "; perfil=", trading_style,
     "; perfil_factor=", cycle_profile,
     "; motivo_factor=", factor_risk_notes,
