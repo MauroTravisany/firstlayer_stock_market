@@ -46,7 +46,9 @@ Reglas:
 - Separa observaciones basadas en datos de hipotesis.
 - Evalua costos, spread/slippage, sobreoperacion, stops, horizontes y diferencias por estrategia.
 - Evalua si el contexto macro usado por activo tiene sentido: growth, defensivo, energia/commodities, cripto, dolar, tasas, euro, geopolitica y apetito por riesgo.
-- Si un activo es semiconductor, cripto, software, publicidad digital o consumo global, revisa si el macro_alignment_score deberia pesar mas o menos.
+- Evalua tambien el perfil fino por activo: sector_profile, cycle_profile, factor_alignment_score y factor_risk_notes.
+- Si un activo es semiconductor, cripto, software, publicidad digital, consumo global o mega cap defensiva/growth, revisa si el factor_alignment_score y el macro_alignment_score deberian pesar mas o menos.
+- Para cripto, diferencia BTC dominante, rotacion altcoin, volumen relativo, liquidez y risk-off. Si faltan flujos reales on-chain/exchange/funding, dilo como brecha de datos.
 - Si faltan noticias externas, indicalo como informacion a revisar, no lo inventes.
 - Sugiere cambios de parametros solo como hipotesis para revisar, nunca como cambio automatico.
 
@@ -117,6 +119,8 @@ Reglas:
 - Si falta historial suficiente, usa PENDIENTE_OBSERVACION.
 - Incluye resultados acumulados de varias semanas cuando existan: win rate, P&L ficticio, estrategias/tickers que mejor o peor funcionaron.
 - Evalua por activo, estrategia, macro_regime, stop, take profit, horarios y sobreoperacion.
+- Evalua por cycle_profile y factor_alignment_score: identifica si ciertos perfiles de activo funcionan mejor/peor y si algun factor esta sobreponderado o subponderado.
+- Para BTC/ETH/COIN, revisa si el proxy de flujo cripto fue suficiente o si falta informacion externa como funding, open interest, stablecoin flows o exchange netflows.
 - El sistema debe aprender de forma controlada: guardar hipotesis, comparar resultados y pedir aprobacion antes de tocar reglas productivas.
 - approval_status general debe ser uno de: PENDIENTE_APROBACION, APLICAR_EN_BACKTEST, PENDIENTE_OBSERVACION, SIN_CAMBIOS, SIN_IA.
 

@@ -1,0 +1,43 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_asset_factor_profile",
+  description: "Perfil fino por activo para paper trading: industria, ciclo, factores de riesgo y ponderaciones especificas por naturaleza del activo.",
+  tags: ["trading", "paper", "daily", "factor", "profile"]
+}
+
+SELECT *
+FROM UNNEST([
+  STRUCT(
+    "AAPL" AS ticker,
+    "STOCK" AS asset_type,
+    "Technology hardware/services" AS sector_profile,
+    "MEGA_CAP_GROWTH_QUALITY" AS cycle_profile,
+    "Consumo premium, servicios recurrentes, dolar y China." AS factor_rationale,
+    "Consumo global premium y ecosistema iPhone/servicios" AS primary_demand_driver,
+    "Dolar fuerte, tasas altas, China/geopolitica y menor consumo discrecional" AS primary_risk_driver,
+    0.20 AS semiconductor_cycle_sensitivity,
+    0.15 AS ai_capex_sensitivity,
+    0.65 AS consumer_cycle_sensitivity,
+    0.10 AS advertising_cycle_sensitivity,
+    0.00 AS energy_input_sensitivity,
+    0.00 AS electricity_cost_sensitivity,
+    0.75 AS rates_duration_sensitivity,
+    0.55 AS usd_revenue_sensitivity,
+    0.35 AS geopolitical_supply_sensitivity,
+    0.70 AS liquidity_risk_sensitivity,
+    0.00 AS crypto_flow_sensitivity,
+    0.00 AS btc_dominance_sensitivity,
+    0.10 AS regulatory_sensitivity,
+    0.90 AS breakout_preference,
+    0.85 AS pullback_preference,
+    0.55 AS support_rebound_preference,
+    0.95 AS volume_confirmation_importance
+  ),
+  STRUCT("MSFT", "STOCK", "Software/cloud/AI", "MEGA_CAP_GROWTH_QUALITY", "Cloud, software recurrente e IA; alta sensibilidad a tasas por duracion.", "Cloud, enterprise software e IA", "Tasas altas, menor gasto cloud, regulacion IA/antitrust", 0.25, 0.85, 0.25, 0.10, 0.00, 0.05, 0.80, 0.40, 0.20, 0.75, 0.00, 0.00, 0.30, 0.85, 0.90, 0.55, 0.85),
+  STRUCT("NVDA", "STOCK", "Semiconductors/AI infrastructure", "HIGH_BETA_SEMICONDUCTOR_AI", "Depende del ciclo de semiconductores, gasto IA, energia de data centers y restricciones geopoliticas.", "Capex IA, data centers, cloud hyperscalers", "Ciclo chips, restricciones China/Taiwan, tasas y menor capex IA", 1.00, 1.00, 0.10, 0.00, 0.10, 0.35, 0.85, 0.35, 0.85, 0.95, 0.10, 0.00, 0.55, 1.10, 0.75, 0.45, 1.15),
+  STRUCT("META", "STOCK", "Digital advertising/AI", "GROWTH_ADVERTISING", "Depende de publicidad digital, consumo, IA y apetito por growth.", "Publicidad digital, engagement y eficiencia IA", "Desaceleracion publicidad, regulacion, tasas y riesgo reputacional", 0.10, 0.55, 0.70, 1.00, 0.00, 0.10, 0.70, 0.25, 0.15, 0.80, 0.00, 0.00, 0.45, 0.90, 0.85, 0.50, 0.95),
+  STRUCT("COIN", "STOCK", "Crypto exchange equity", "CRYPTO_BETA_EQUITY", "Accion cripto: volumen, BTC/ETH, regulacion y apetito especulativo mandan mas que ratios clasicos.", "Volumen spot/derivados cripto, retail/institucional y ciclo BTC/ETH", "Regulacion, caida de volumen cripto, risk-off y spread alto", 0.00, 0.10, 0.10, 0.00, 0.00, 0.00, 0.45, 0.55, 0.30, 1.00, 1.15, 0.70, 1.00, 1.15, 0.60, 0.35, 1.20),
+  STRUCT("BTC-USD", "CRYPTO", "Crypto reserve asset", "CRYPTO_MAJOR_BTC", "Activo 24/7 sin fundamentales corporativos: domina liquidez global, dolar, tasas, volumen y ciclo BTC.", "Liquidez global, demanda reserva digital, ETF/institucional y momentum cripto", "Dolar fuerte, tasas, risk-off, salida de volumen y regulacion", 0.00, 0.00, 0.00, 0.00, 0.00, 0.10, 0.70, 0.85, 0.25, 1.00, 1.00, 1.00, 0.55, 0.95, 0.55, 0.45, 1.20),
+  STRUCT("ETH-USD", "CRYPTO", "Crypto smart contract platform", "CRYPTO_MAJOR_ETH_ALT_BETA", "Mayor beta que BTC: importa rotacion altcoin, ETH/BTC, volumen y liquidez global.", "Actividad de red, DeFi/tokenizacion, rotacion altcoin y liquidez cripto", "BTC dominante sin rotacion, risk-off, tasas, regulacion y caida de volumen", 0.00, 0.10, 0.00, 0.00, 0.00, 0.15, 0.70, 0.85, 0.20, 1.00, 1.15, -0.85, 0.65, 1.00, 0.60, 0.45, 1.25)
+])
