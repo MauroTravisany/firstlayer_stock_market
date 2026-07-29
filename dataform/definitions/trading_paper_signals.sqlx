@@ -19,6 +19,19 @@ WITH profile_adjustments AS (
   SELECT *
   FROM ${ref("trading_weekly_profile_adjustments")}
 ),
+earnings_context AS (
+  SELECT * EXCEPT (rn)
+  FROM (
+    SELECT
+      *,
+      ROW_NUMBER() OVER (
+        PARTITION BY analysis_date, ticker
+        ORDER BY signal_hour DESC
+      ) AS rn
+    FROM ${ref("trading_earnings_context")}
+  )
+  WHERE rn = 1
+),
 base AS (
   SELECT
     f.*,
@@ -159,9 +172,8 @@ base AS (
   LEFT JOIN ${ref("trading_macro_context")} mc
     ON mc.analysis_date = f.analysis_date
    AND mc.signal_hour = f.signal_hour
-  LEFT JOIN ${ref("trading_earnings_context")} ec
+  LEFT JOIN earnings_context ec
     ON ec.analysis_date = f.analysis_date
-   AND ec.signal_hour = f.signal_hour
    AND ec.ticker = f.ticker
   CROSS JOIN ${ref("trading_strategy_versions")} s
   LEFT JOIN ${ref("trading_weekly_strategy_adjustments")} wa
