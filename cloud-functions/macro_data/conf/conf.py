@@ -32,7 +32,17 @@ def load_config():
         "dataset_id": dataset_id,
         "market_table": f"{project_id}.{dataset_id}.{os.environ.get('MACRO_MARKET_TABLE_ID', 'macro_market_snapshot')}",
         "news_table": f"{project_id}.{dataset_id}.{os.environ.get('MACRO_NEWS_TABLE_ID', 'macro_news_signal')}",
+        "earnings_table": f"{project_id}.{dataset_id}.{os.environ.get('MACRO_EARNINGS_TABLE_ID', 'macro_earnings_calendar')}",
+        "portfolio_table": f"{project_id}.{dataset_id}.{os.environ.get('PORTFOLIO_TABLE_ID', 'portfolio_assets')}",
         "time_zone": os.environ.get("TIME_ZONE", "America/Santiago"),
         "gdelt_timespan": os.environ.get("GDELT_TIMESPAN", "4H"),
         "gdelt_maxrecords": int(os.environ.get("GDELT_MAX_RECORDS", "75")),
+        "tickers": [
+            ticker.strip().upper()
+            for ticker in os.environ.get(
+                "TICKERS",
+                "AAPL,MSFT,NVDA,META,GOOG,GOOGL,AMZN,TSLA,MELI,COIN,BTC-USD,ETH-USD",
+            ).replace(";", ",").split(",")
+            if ticker.strip()
+        ],
     }

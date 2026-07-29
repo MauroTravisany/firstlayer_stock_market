@@ -4,6 +4,7 @@ from collections import Counter
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import pandas as pd
 import requests
 import yfinance as yf
 
@@ -151,4 +152,102 @@ def fetch_news_rows(slot, timespan="4H", maxrecords=75):
                     "loaded_at": loaded_at,
                 }
             )
+    return rows
+
+
+def _safe_float(value):
+    if value is None or pd.isna(value):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _event_status(days_to_earnings, surprise_pct):
+    if days_to_earnings is None:
+        return "NO_EARNINGS_DATA"
+    if days_to_earnings < -5:
+        return "OLD_RESULT"
+    if days_to_earnings <= 0:
+        if surprise_pct is None:
+            return "RECENT_RESULT"
+        if surprise_pct >= 5:
+            return "RECENT_POSITIVE_SURPRISE"
+        if surprise_pct <= -5:
+            return "RECENT_NEGATIVE_SURPRISE"
+        return "RECENT_INLINE_RESULT"
+    if days_to_earnings <= 3:
+        return "EARNINGS_IMMINENT"
+    if days_to_earnings <= 14:
+        return "PRE_EARNINGS_WINDOW"
+    return "EARNINGS_FAR"
+
+
+def _empty_earnings_row(slot, ticker, loaded_at, message):
+    slot_utc = slot.astimezone(ZoneInfo("UTC")).isoformat()
+    return {
+        "snapshot_slot": slot_utc,
+        "snapshot_date": slot.date().isoformat(),
+        "signal_hour": slot.time().strftime("%H:%M:%S"),
+        "ticker": ticker,
+        "earnings_date": None,
+        "days_to_earnings": None,
+        "earnings_time": message[:100],
+        "eps_estimate": None,
+        "reported_eps": None,
+        "surprise_pct": None,
+        "event_status": "NO_EARNINGS_DATA",
+        "source": "yfinance_yahoo_public",
+        "loaded_at": loaded_at,
+    }
+
+
+def fetch_earnings_rows(slot, tickers, limit=8):
+    rows = []
+    loaded_at = datetime.now(ZoneInfo("UTC")).isoformat()
+    slot_utc = slot.astimezone(ZoneInfo("UTC")).isoformat()
+    stock_tickers = [ticker for ticker in tickers if not ticker.endswith("-USD")]
+
+    for ticker in stock_tickers:
+        try:
+            earnings = yf.Ticker(ticker).get_earnings_dates(limit=limit)
+            if earnings is None or earnings.empty:
+                rows.append(_empty_earnings_row(slot, ticker, loaded_at, "Sin calendario en Yahoo"))
+                continue
+
+            normalized = earnings.reset_index()
+            date_col = normalized.columns[0]
+            normalized["earnings_dt"] = pd.to_datetime(normalized[date_col], errors="coerce", utc=True)
+            normalized = normalized.dropna(subset=["earnings_dt"])
+            if normalized.empty:
+                rows.append(_empty_earnings_row(slot, ticker, loaded_at, "Calendario Yahoo sin fechas validas"))
+                continue
+
+            normalized["days_abs"] = (normalized["earnings_dt"].dt.date - slot.date()).apply(lambda delta: abs(delta.days))
+            event = normalized.sort_values("days_abs").iloc[0]
+            earnings_date = event["earnings_dt"].date()
+            days_to_earnings = (earnings_date - slot.date()).days
+            surprise_pct = _safe_float(event.get("Surprise(%)"))
+
+            rows.append(
+                {
+                    "snapshot_slot": slot_utc,
+                    "snapshot_date": slot.date().isoformat(),
+                    "signal_hour": slot.time().strftime("%H:%M:%S"),
+                    "ticker": ticker,
+                    "earnings_date": earnings_date.isoformat(),
+                    "days_to_earnings": int(days_to_earnings),
+                    "earnings_time": str(event.get("Earnings Date") or event.get("Hour") or "")[:100],
+                    "eps_estimate": _safe_float(event.get("EPS Estimate")),
+                    "reported_eps": _safe_float(event.get("Reported EPS")),
+                    "surprise_pct": surprise_pct,
+                    "event_status": _event_status(days_to_earnings, surprise_pct),
+                    "source": "yfinance_yahoo_public",
+                    "loaded_at": loaded_at,
+                }
+            )
+        except Exception as exc:
+            logging.warning("Failed earnings calendar for %s: %s", ticker, exc)
+            rows.append(_empty_earnings_row(slot, ticker, loaded_at, f"ERROR: {exc}"))
     return rows

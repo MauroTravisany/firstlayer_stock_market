@@ -60,16 +60,31 @@ El contexto de mercado vive en `trading_macro_context` y se calcula por bloques 
 
 - mercado general, tecnologia/growth, defensivos, energia, tasas, dolar, euro, volatilidad, oro, petroleo, BTC y ETH,
 - noticias por temas: conflictos geopoliticos, tasas/inflacion, dolar/divisas, regulacion crypto, semiconductores/IA y energia,
+- miedo del mercado, calculado con VIX, movimiento de SPY/QQQ y noticias de estres,
 - fallback interno para no detener el proceso si una fuente externa falla.
 
 `external_macro_data_status` indica si la senal uso datos externos completos, solo mercado, solo noticias o solo proxy.
 
-El servicio `stockmacrodata` carga las tablas `macro_market_snapshot` y `macro_news_signal` cada 4 horas, 10 minutos despues de la carga de precios y antes del recalculo de Dataform.
+El servicio `stockmacrodata` carga las tablas `macro_market_snapshot`, `macro_news_signal` y `macro_earnings_calendar` cada 4 horas, 10 minutos despues de la carga de precios y antes del recalculo de Dataform.
+
+## Resultados corporativos y miedo
+
+La tabla `trading_earnings_context` agrega contexto de resultados por ticker. Marca si una empresa esta cerca de reportar, si acaba de reportar, si hubo sorpresa positiva/negativa o si Yahoo no entrego calendario.
+
+Ese dato se incorpora al score con `earnings_event_score`:
+
+- resultados inminentes bajan confianza por riesgo de gap,
+- sorpresa negativa reciente penaliza,
+- sorpresa positiva reciente suma, pero la IA debe revisar calidad del resultado,
+- si faltan datos de earnings, se marca como brecha y baja levemente la confianza.
+
+La IA recibe `market_fear_score`, `market_fear_regime`, `earnings_event_status` y `earnings_context_note`. Con eso puede detectar casos donde el EPS o ingresos fueron buenos pero la accion cae por calidad del resultado, por ejemplo FCF negativo, capex elevado, guidance debil o inversion agresiva en IA.
 
 La senal final combina:
 
 - score tecnico ponderado por tipo de activo,
 - ajuste macro segun sensibilidad del activo,
+- miedo de mercado y contexto de resultados,
 - reglas v1-v4 de riesgo, stop y horizonte.
 
 ## Feedback IA

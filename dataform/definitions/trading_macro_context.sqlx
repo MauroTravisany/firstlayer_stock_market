@@ -44,6 +44,7 @@ external_market AS (
     MAX(IF(factor_name = "energy_equity_xle", return_5d, NULL)) AS xle_return_5d,
     MAX(IF(factor_name = "bitcoin", return_5d, NULL)) AS btc_return_5d,
     MAX(IF(factor_name = "ethereum", return_5d, NULL)) AS eth_return_5d,
+    MAX(IF(factor_name = "volatility_vix", close, NULL)) AS vix_close,
     COUNT(*) AS external_market_rows
   FROM `stocks-437902.acciones_dataset.macro_market_snapshot`
   GROUP BY analysis_date, signal_hour
@@ -132,7 +133,47 @@ scores AS (
       WHEN COALESCE(spy_return_5d, growth_return_20d) <= -0.02 THEN -1.0
       WHEN growth_volatility_20d <= 0.020 AND growth_return_20d > 0 THEN 0.75
       ELSE 0
-    END AS risk_appetite_raw_score
+    END AS risk_appetite_raw_score,
+    GREATEST(
+      0,
+      LEAST(
+        100,
+        ROUND(
+          50
+          + CASE
+              WHEN COALESCE(vix_close, 0) >= 35 THEN 30
+              WHEN COALESCE(vix_close, 0) >= 25 THEN 20
+              WHEN COALESCE(vix_close, 0) >= 20 THEN 10
+              WHEN COALESCE(vix_close, 0) > 0 AND COALESCE(vix_close, 0) <= 14 THEN -15
+              ELSE 0
+            END
+          + CASE
+              WHEN COALESCE(vix_return_5d, 0) >= 0.25 THEN 15
+              WHEN COALESCE(vix_return_5d, 0) >= 0.10 THEN 8
+              WHEN COALESCE(vix_return_5d, 0) <= -0.15 THEN -8
+              ELSE 0
+            END
+          + CASE
+              WHEN COALESCE(spy_return_5d, growth_return_20d) <= -0.04 THEN 12
+              WHEN COALESCE(spy_return_5d, growth_return_20d) <= -0.02 THEN 7
+              WHEN COALESCE(spy_return_5d, growth_return_20d) >= 0.02 THEN -7
+              ELSE 0
+            END
+          + CASE
+              WHEN COALESCE(qqq_return_5d, growth_return_20d) <= -0.04 THEN 10
+              WHEN COALESCE(qqq_return_5d, growth_return_20d) <= -0.02 THEN 5
+              WHEN COALESCE(qqq_return_5d, growth_return_20d) >= 0.02 THEN -5
+              ELSE 0
+            END
+          + CASE
+              WHEN COALESCE(geopolitical_articles, 0) >= 50 OR COALESCE(rates_articles, 0) >= 60 THEN 8
+              WHEN COALESCE(geopolitical_articles, 0) >= 25 OR COALESCE(rates_articles, 0) >= 30 THEN 4
+              ELSE 0
+            END,
+          0
+        )
+      )
+    ) AS market_fear_score
   FROM joined
 )
 
@@ -158,6 +199,7 @@ SELECT
   xle_return_5d,
   btc_return_5d,
   eth_return_5d,
+  vix_close,
   geopolitical_articles,
   rates_articles,
   usd_fx_articles,
@@ -172,13 +214,28 @@ SELECT
   usd_pressure_score,
   eur_pressure_score,
   geopolitical_risk_score,
+  market_fear_score,
+  CASE
+    WHEN market_fear_score >= 80 THEN "EXTREME_FEAR"
+    WHEN market_fear_score >= 65 THEN "FEAR"
+    WHEN market_fear_score <= 25 THEN "GREED"
+    WHEN market_fear_score <= 40 THEN "LOW_FEAR"
+    ELSE "NEUTRAL"
+  END AS market_fear_regime,
   ROUND(
     COALESCE(growth_cycle_score, 0) +
     COALESCE(crypto_cycle_score, 0) * 0.5 +
-    COALESCE(risk_appetite_raw_score, 0),
+    COALESCE(risk_appetite_raw_score, 0) -
+    CASE
+      WHEN market_fear_score >= 80 THEN 1.25
+      WHEN market_fear_score >= 65 THEN 0.75
+      WHEN market_fear_score <= 25 THEN -0.35
+      ELSE 0
+    END,
     2
   ) AS risk_appetite_score,
   CASE
+    WHEN market_fear_score >= 80 THEN "EXTREME_FEAR"
     WHEN geopolitical_risk_score <= -1 THEN "GEOPOLITICAL_STRESS"
     WHEN rates_pressure_score <= -1 THEN "RATES_PRESSURE"
     WHEN crypto_cycle_score >= 1.5 AND growth_cycle_score >= 0 THEN "CRYPTO_RISK_ON"

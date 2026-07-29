@@ -1,0 +1,69 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_earnings_context",
+  description: "Contexto de resultados por ticker para paper trading. Identifica ventanas pre/post earnings y riesgo de evento.",
+  tags: ["trading", "paper", "daily", "earnings"],
+  bigquery: {
+    partitionBy: "analysis_date",
+    clusterBy: ["ticker", "earnings_event_status"]
+  },
+  assertions: {
+    nonNull: ["analysis_date", "signal_hour", "ticker"],
+    uniqueKey: ["analysis_date", "signal_hour", "ticker"]
+  },
+  dependencies: ["macro_earnings_schema_update"]
+}
+
+WITH raw AS (
+  SELECT
+    snapshot_date AS analysis_date,
+    SAFE_CAST(signal_hour AS TIME) AS signal_hour,
+    ticker,
+    earnings_date,
+    days_to_earnings,
+    earnings_time,
+    eps_estimate,
+    reported_eps,
+    surprise_pct,
+    event_status,
+    loaded_at,
+    ROW_NUMBER() OVER (
+      PARTITION BY snapshot_date, SAFE_CAST(signal_hour AS TIME), ticker
+      ORDER BY loaded_at DESC
+    ) AS rn
+  FROM `stocks-437902.acciones_dataset.macro_earnings_calendar`
+)
+
+SELECT
+  analysis_date,
+  signal_hour,
+  ticker,
+  earnings_date,
+  days_to_earnings,
+  earnings_time,
+  eps_estimate,
+  reported_eps,
+  surprise_pct,
+  COALESCE(event_status, "NO_EARNINGS_DATA") AS earnings_event_status,
+  CASE
+    WHEN event_status IN ("RECENT_NEGATIVE_SURPRISE") THEN -1.25
+    WHEN event_status IN ("RECENT_POSITIVE_SURPRISE") THEN 0.75
+    WHEN event_status IN ("EARNINGS_IMMINENT") THEN -0.75
+    WHEN event_status IN ("PRE_EARNINGS_WINDOW") THEN -0.35
+    WHEN event_status IN ("RECENT_INLINE_RESULT", "RECENT_RESULT") THEN 0.10
+    WHEN event_status = "NO_EARNINGS_DATA" THEN -0.10
+    ELSE 0.0
+  END AS earnings_event_score,
+  CASE
+    WHEN event_status = "NO_EARNINGS_DATA" THEN "Yahoo no entrego calendario/resultado; operar con menor confianza."
+    WHEN event_status = "EARNINGS_IMMINENT" THEN "Resultados dentro de 3 dias; riesgo alto de gap/noticia."
+    WHEN event_status = "PRE_EARNINGS_WINDOW" THEN "Resultados proximos; conviene reducir confianza o tamano."
+    WHEN event_status = "RECENT_NEGATIVE_SURPRISE" THEN "Resultado reciente bajo expectativa; revisar guidance, margenes, FCF y capex."
+    WHEN event_status = "RECENT_POSITIVE_SURPRISE" THEN "Resultado reciente sobre expectativa; validar si el precio ya lo desconto."
+    WHEN event_status IN ("RECENT_INLINE_RESULT", "RECENT_RESULT") THEN "Resultado reciente; revisar reaccion del precio y calidad del resultado."
+    ELSE "Sin evento de resultados cercano."
+  END AS earnings_context_note,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM raw
+WHERE rn = 1

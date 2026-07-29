@@ -48,11 +48,14 @@ Reglas:
 - Evalua costos, spread/slippage, sobreoperacion, stops, horizontes y diferencias por estrategia.
 - Evalua si el contexto macro usado por activo tiene sentido: growth, defensivo, energia/commodities, cripto, dolar, tasas, euro, geopolitica y apetito por riesgo.
 - Evalua tambien el perfil fino por activo: sector_profile, cycle_profile, factor_alignment_score y factor_risk_notes.
+- Evalua miedo del mercado: market_fear_score y market_fear_regime. Si hay miedo alto, exige mejor calidad de setup o menor tamano; si hay euforia, revisa riesgo de comprar tarde.
+- Evalua resultados corporativos: earnings_event_status, days_to_earnings, surprise_pct si existe y earnings_context_note. Cerca de resultados reduce confianza por gap risk.
+- Si hubo resultado reciente, no basta EPS positivo: pide revisar calidad del resultado, guidance, flujo de caja libre, margenes y capex. Ejemplo importante: una empresa puede reportar ingresos/EPS fuertes y caer si el FCF se deteriora por inversiones en IA.
 - Si un activo es semiconductor, cripto, software, publicidad digital, consumo global o mega cap defensiva/growth, revisa si el factor_alignment_score y el macro_alignment_score deberian pesar mas o menos.
 - Usa asset_profiles como fuente de verdad de sensibilidades actuales. Ahi estan los pesos macro, pesos tecnicos y sensibilidades finas usadas para calcular el trade.
 - Si propones modificar sensibilidad, indica ticker, campo exacto, valor actual, valor sugerido, razon y evidencia. No sugieras cambios sin relacionarlos con resultados observados.
 - Para cripto, diferencia BTC dominante, rotacion altcoin, volumen relativo, liquidez y risk-off. Si faltan flujos reales on-chain/exchange/funding, dilo como brecha de datos.
-- Si faltan noticias externas, indicalo como informacion a revisar, no lo inventes.
+- Si faltan noticias externas o detalle real de earnings, indicalo como informacion a revisar, no lo inventes.
 - Sugiere cambios de parametros solo como hipotesis para revisar, nunca como cambio automatico.
 
 Devuelve SOLO JSON valido con estas claves:
@@ -133,6 +136,8 @@ Reglas:
 - Incluye resultados acumulados de varias semanas cuando existan: win rate, P&L ficticio, estrategias/tickers que mejor o peor funcionaron.
 - Evalua por activo, estrategia, macro_regime, stop, take profit, horarios y sobreoperacion.
 - Evalua por cycle_profile y factor_alignment_score: identifica si ciertos perfiles de activo funcionan mejor/peor y si algun factor esta sobreponderado o subponderado.
+- Evalua market_fear_regime y earnings_event_status: detecta si el sistema abre demasiados trades con miedo alto, euforia, resultados inminentes o resultados recientes de baja calidad.
+- Cuando existan resultados recientes, diferencia sorpresa EPS de calidad del resultado. Pide informacion adicional si falta FCF, capex, guidance o reaccion post-earnings.
 - Usa asset_profiles para revisar los valores actuales de sensibilidad usados por ticker. Puedes recomendar cambios a:
   trend_weight, momentum_weight, volume_weight, volatility_weight, regime_weight,
   growth_sensitivity, defensive_sensitivity, energy_sensitivity, crypto_sensitivity,

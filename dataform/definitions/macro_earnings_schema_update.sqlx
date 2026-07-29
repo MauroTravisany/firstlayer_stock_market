@@ -1,0 +1,23 @@
+config {
+  type: "operations",
+  hasOutput: false,
+  tags: ["trading", "paper", "daily", "earnings", "schema"]
+}
+
+CREATE TABLE IF NOT EXISTS `stocks-437902.acciones_dataset.macro_earnings_calendar` (
+  snapshot_slot TIMESTAMP,
+  snapshot_date DATE,
+  signal_hour STRING,
+  ticker STRING,
+  earnings_date DATE,
+  days_to_earnings INT64,
+  earnings_time STRING,
+  eps_estimate FLOAT64,
+  reported_eps FLOAT64,
+  surprise_pct FLOAT64,
+  event_status STRING,
+  source STRING,
+  loaded_at TIMESTAMP
+)
+PARTITION BY snapshot_date
+CLUSTER BY ticker, event_status;

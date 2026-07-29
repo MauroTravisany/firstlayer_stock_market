@@ -13,15 +13,26 @@ logging.basicConfig(level=logging.INFO)
 def main(request):
     try:
         config = load_config()
-        from custom_function.bq_operations import ensure_tables, merge_market_rows, merge_news_rows
-        from custom_function.data_sources import current_slot, fetch_market_rows, fetch_news_rows
+        request_json = request.get_json(silent=True) or {}
+
+        from custom_function.bq_operations import (
+            ensure_tables,
+            fetch_portfolio_tickers,
+            merge_earnings_rows,
+            merge_market_rows,
+            merge_news_rows,
+        )
+        from custom_function.data_sources import current_slot, fetch_earnings_rows, fetch_market_rows, fetch_news_rows
 
         ensure_tables(config)
+        tickers = request_json.get("tickers") or fetch_portfolio_tickers(config) or config["tickers"]
         slot = current_slot(config["time_zone"])
         market_rows = fetch_market_rows(slot)
         news_rows = fetch_news_rows(slot, config["gdelt_timespan"], config["gdelt_maxrecords"])
+        earnings_rows = fetch_earnings_rows(slot, tickers)
         market_count = merge_market_rows(config, market_rows)
         news_count = merge_news_rows(config, news_rows)
+        earnings_count = merge_earnings_rows(config, earnings_rows)
 
         return (
             json.dumps(
@@ -30,6 +41,7 @@ def main(request):
                     "snapshot_slot": slot.isoformat(),
                     "market_rows": market_count,
                     "news_rows": news_count,
+                    "earnings_rows": earnings_count,
                 }
             ),
             200,

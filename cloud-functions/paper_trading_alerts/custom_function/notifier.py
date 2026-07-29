@@ -40,6 +40,8 @@ def _trade_line(row):
         f"tp1 {_number(row.get('take_profit_1'), 2)} | "
         f"macro {_number(row.get('macro_alignment_score'), 2)} {row.get('macro_regime')} | "
         f"factor {_number(row.get('factor_alignment_score'), 2)} | "
+        f"miedo {_number(row.get('market_fear_score'), 0)} {row.get('market_fear_regime')} | "
+        f"resultados {row.get('earnings_event_status')} | "
         f"monto {_money_clp(row.get('position_notional_clp'))}{adjustment_text}"
     )
 
@@ -50,6 +52,8 @@ def _closed_line(row):
         f"entrada {_number(row.get('theoretical_entry_price'), 2)} | "
         f"salida {_number(row.get('exit_price'), 2)} | "
         f"macro {_number(row.get('macro_alignment_score'), 2)} | "
+        f"miedo {_number(row.get('market_fear_score'), 0)} | "
+        f"resultados {row.get('earnings_event_status')} | "
         f"PnL {_money_clp(row.get('net_pnl_clp'))}"
     )
 

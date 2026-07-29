@@ -12,7 +12,7 @@ config {
     nonNull: ["analysis_date", "ticker", "paper_signal"],
     uniqueKey: ["analysis_date", "signal_hour", "ticker", "strategy_version"]
   },
-  dependencies: ["trading_strategy_versions", "trading_asset_macro_profile", "trading_asset_factor_profile", "trading_macro_context", "trading_weekly_strategy_adjustments", "trading_weekly_profile_adjustments"]
+  dependencies: ["trading_strategy_versions", "trading_asset_macro_profile", "trading_asset_factor_profile", "trading_macro_context", "trading_earnings_context", "trading_weekly_strategy_adjustments", "trading_weekly_profile_adjustments"]
 }
 
 WITH profile_adjustments AS (
@@ -82,6 +82,13 @@ base AS (
     COALESCE(mc.eur_pressure_score, 0.0) AS eur_pressure_score,
     COALESCE(mc.geopolitical_risk_score, 0.0) AS geopolitical_risk_score,
     COALESCE(mc.risk_appetite_score, 0.0) AS risk_appetite_score,
+    COALESCE(mc.market_fear_score, 50.0) AS market_fear_score,
+    COALESCE(mc.market_fear_regime, "NEUTRAL") AS market_fear_regime,
+    ec.earnings_date,
+    ec.days_to_earnings,
+    COALESCE(ec.earnings_event_status, "NO_EARNINGS_DATA") AS earnings_event_status,
+    COALESCE(ec.earnings_event_score, 0.0) AS earnings_event_score,
+    COALESCE(ec.earnings_context_note, "Sin contexto de resultados.") AS earnings_context_note,
     s.strategy_version,
     s.strategy_name,
     s.paper_capital_clp,
@@ -152,6 +159,10 @@ base AS (
   LEFT JOIN ${ref("trading_macro_context")} mc
     ON mc.analysis_date = f.analysis_date
    AND mc.signal_hour = f.signal_hour
+  LEFT JOIN ${ref("trading_earnings_context")} ec
+    ON ec.analysis_date = f.analysis_date
+   AND ec.signal_hour = f.signal_hour
+   AND ec.ticker = f.ticker
   CROSS JOIN ${ref("trading_strategy_versions")} s
   LEFT JOIN ${ref("trading_weekly_strategy_adjustments")} wa
     ON wa.adjustment_status = "ACTIVE_BACKTEST"
@@ -300,7 +311,7 @@ levels AS (
       END
     ) AS stop_distance_pct,
     SAFE_DIVIDE((spread_bps + slippage_bps) * 2, 10000) AS estimated_roundtrip_cost_pct,
-    ROUND(weighted_technical_score + macro_alignment_score + factor_alignment_score, 2) AS setup_score,
+    ROUND(weighted_technical_score + macro_alignment_score + factor_alignment_score + earnings_event_score, 2) AS setup_score,
     (
       (NOT require_strong_trend OR (day_close > sma_50 AND sma_20 > sma_50)) AND
       (NOT require_volume_confirmation OR volume_vs_20d_avg >= 1.10) AND
@@ -384,6 +395,13 @@ SELECT
   market_regime,
   macro_regime,
   external_macro_data_status,
+  market_fear_score,
+  market_fear_regime,
+  earnings_date,
+  days_to_earnings,
+  earnings_event_status,
+  earnings_event_score,
+  earnings_context_note,
   weekly_adjustment_status,
   weekly_adjustment_type,
   weekly_adjustment_summary,
@@ -450,7 +468,12 @@ SELECT
     "; tecnico=", CAST(weighted_technical_score AS STRING),
     "; macro=", CAST(macro_alignment_score AS STRING),
     "; factor=", CAST(factor_alignment_score AS STRING),
+    "; earnings=", CAST(earnings_event_score AS STRING),
+    "; miedo=", CAST(market_fear_score AS STRING),
+    "; miedo_regimen=", market_fear_regime,
     "; macro_regimen=", macro_regime,
+    "; earnings_estado=", earnings_event_status,
+    "; earnings_nota=", earnings_context_note,
     "; ajuste_semanal=", weekly_adjustment_status,
     "; ajuste_perfil=", profile_adjustment_summary,
     "; perfil=", trading_style,
