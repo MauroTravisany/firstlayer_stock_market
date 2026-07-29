@@ -108,3 +108,25 @@ Cada viernes se genera `trading_weekly_ai_strategy_review`, que resume las suger
 Las recomendaciones con estado `APLICAR_EN_BACKTEST`, confianza suficiente y evidencia repetida se convierten en ajustes semanales en `trading_weekly_strategy_adjustments`.
 
 Estos ajustes se aplican solo al paper trading durante la semana siguiente. No operan dinero real. La regla queda trazable en cada senal con `weekly_adjustment_status`, `weekly_adjustment_type` y `weekly_adjustment_summary`, para comparar despues si la mejora funciono.
+
+## Backtesting contextual
+
+El sistema incluye un backtest contextual para comparar las estrategias v1-v4 bajo contextos similares:
+
+- miedo de mercado,
+- proxy monetario/tasas,
+- proxy politico/sistemico,
+- estado de compania,
+- ciclo de crecimiento/calidad/FCF,
+- earnings cercanos o recientes,
+- ciclo cripto.
+
+Tablas principales:
+
+- `trading_historical_context`: arma el contexto historico por ticker, fecha y hora. Cuando no existe dato macro/noticias real, usa proxies derivados de precios, volatilidad y fundamentales disponibles as-of-date.
+- `trading_backtest_context_variants`: define variantes de pesos, por ejemplo macro defensiva, growth momentum, evita eventos, calidad/valoracion y ciclo cripto.
+- `trading_contextual_backtest_results`: evalua cada variante contra el camino futuro de precios, usando entrada, stop, take profit, costos y tamano ficticio.
+- `trading_contextual_backtest_summary`: resume resultados por variante, estrategia y contexto similar.
+- `trading_contextual_backtest_recommendations`: recomienda la mejor variante por activo, estrategia y contexto.
+
+Limitacion actual: el contexto monetario/politico historico es proxy cuando no existian tablas macro/noticias cargadas para esa fecha. Para hacerlo mas profesional, conviene cargar historia real de VIX, SPY/QQQ, TNX, dolar, petroleo, calendario de earnings y noticias historicas.

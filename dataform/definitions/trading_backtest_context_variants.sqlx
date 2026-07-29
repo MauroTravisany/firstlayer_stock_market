@@ -1,0 +1,62 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_backtest_context_variants",
+  description: "Variantes de ponderacion para backtesting contextual. Permite comparar sensibilidad a miedo, tasas proxy, earnings y estado de compania.",
+  tags: ["trading", "paper", "backtest", "context", "daily", "portfolio", "valuation"]
+}
+
+SELECT *
+FROM UNNEST([
+  STRUCT(
+    "baseline_actual" AS variant_id,
+    "Reglas actuales sin ajuste adicional" AS variant_name,
+    "Control. Usa el setup_score actual producido por el sistema." AS variant_description,
+    0.00 AS fear_weight,
+    0.00 AS monetary_weight,
+    0.00 AS earnings_weight,
+    0.00 AS company_lifecycle_weight,
+    0.00 AS quality_weight,
+    0.00 AS valuation_state_weight,
+    0.00 AS political_risk_weight,
+    0.00 AS crypto_cycle_weight,
+    0.00 AS min_trade_score_add,
+    1.00 AS position_size_multiplier
+  ),
+  STRUCT(
+    "risk_aware_macro",
+    "Macro defensiva",
+    "Castiga miedo alto, presion de tasas, riesgo politico y earnings cercanos. Busca menos trades, mejor control de perdida.",
+    0.85, 0.75, 0.70, 0.35, 0.30, 0.20, 0.60, 0.25, 0.25, 0.85
+  ),
+  STRUCT(
+    "growth_momentum",
+    "Growth momentum",
+    "Favorece empresas en crecimiento y momentum cuando el contexto no esta en miedo extremo. Tolera mas volatilidad.",
+    0.35, 0.30, 0.35, 0.80, 0.35, 0.10, 0.25, 0.40, -0.20, 1.05
+  ),
+  STRUCT(
+    "event_avoidant",
+    "Evita eventos",
+    "Penaliza fuerte reportes de resultados cercanos o recientes con mala calidad. Util para evitar gaps por earnings.",
+    0.45, 0.40, 1.25, 0.35, 0.35, 0.20, 0.35, 0.20, 0.35, 0.75
+  ),
+  STRUCT(
+    "quality_value",
+    "Calidad y valoracion",
+    "Prioriza companias estables/de calidad y castiga sobrevaloracion o deterioro de FCF/margenes.",
+    0.45, 0.35, 0.55, 0.65, 0.90, 0.85, 0.25, 0.15, 0.10, 0.90
+  ),
+  STRUCT(
+    "crypto_cycle",
+    "Ciclo cripto",
+    "Da mas peso al ciclo BTC/ETH, liquidez y regimen cripto. Solo deberia destacar en BTC, ETH y COIN.",
+    0.40, 0.35, 0.20, 0.15, 0.10, 0.00, 0.35, 1.10, -0.10, 1.00
+  ),
+  STRUCT(
+    "contrarian_fear_quality",
+    "Contraria con calidad",
+    "Acepta miedo moderado si la empresa es de calidad y no hay deterioro fundamental. Castiga miedo extremo.",
+    -0.25, 0.15, 0.45, 0.60, 0.85, 0.50, 0.20, 0.10, 0.20, 0.80
+  )
+])

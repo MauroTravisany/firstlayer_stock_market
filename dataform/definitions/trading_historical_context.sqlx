@@ -1,0 +1,269 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_historical_context",
+  description: "Contexto historico para backtesting: miedo, proxy monetario/tasas, contexto politico, ciclo cripto y estado fundamental as-of-date.",
+  tags: ["trading", "paper", "backtest", "context", "daily", "portfolio", "valuation"],
+  bigquery: {
+    partitionBy: "analysis_date",
+    clusterBy: ["ticker", "context_similarity_key"]
+  },
+  assertions: {
+    nonNull: ["analysis_date", "signal_hour", "ticker", "context_similarity_key"],
+    uniqueKey: ["analysis_date", "signal_hour", "ticker"]
+  },
+  dependencies: ["trading_price_features", "trading_earnings_context", "portfolio_company_status_daily"]
+}
+
+WITH market_by_slot AS (
+  SELECT
+    analysis_date,
+    signal_hour,
+    AVG(IF(asset_type = "STOCK", return_20d, NULL)) AS stock_return_20d,
+    AVG(IF(asset_type = "STOCK", return_60d, NULL)) AS stock_return_60d,
+    AVG(IF(asset_type = "STOCK", atr_pct, NULL)) AS stock_atr_pct,
+    AVG(IF(ticker IN ("AAPL", "MSFT", "NVDA", "META", "COIN"), return_20d, NULL)) AS growth_proxy_return_20d,
+    AVG(IF(ticker IN ("AAPL", "MSFT", "NVDA", "META", "COIN"), return_60d, NULL)) AS growth_proxy_return_60d,
+    AVG(IF(ticker IN ("AAPL", "MSFT", "NVDA", "META", "COIN"), atr_pct, NULL)) AS growth_proxy_atr_pct,
+    MAX(IF(ticker = "BTC-USD", return_20d, NULL)) AS btc_return_20d,
+    MAX(IF(ticker = "BTC-USD", return_60d, NULL)) AS btc_return_60d,
+    MAX(IF(ticker = "ETH-USD", return_20d, NULL)) AS eth_return_20d,
+    MAX(IF(ticker = "ETH-USD", return_60d, NULL)) AS eth_return_60d,
+    MAX(IF(ticker = "ETH-USD", eth_vs_btc_60d, NULL)) AS eth_vs_btc_60d
+  FROM ${ref("trading_price_features")}
+  GROUP BY analysis_date, signal_hour
+),
+market_scored AS (
+  SELECT
+    *,
+    GREATEST(
+      0,
+      LEAST(
+        100,
+        ROUND(
+          50
+          + CASE
+              WHEN COALESCE(growth_proxy_return_20d, stock_return_20d) <= -0.12 THEN 20
+              WHEN COALESCE(growth_proxy_return_20d, stock_return_20d) <= -0.07 THEN 12
+              WHEN COALESCE(growth_proxy_return_20d, stock_return_20d) <= -0.03 THEN 6
+              WHEN COALESCE(growth_proxy_return_20d, stock_return_20d) >= 0.08 THEN -10
+              WHEN COALESCE(growth_proxy_return_20d, stock_return_20d) >= 0.04 THEN -5
+              ELSE 0
+            END
+          + CASE
+              WHEN COALESCE(growth_proxy_atr_pct, stock_atr_pct) >= 0.055 THEN 18
+              WHEN COALESCE(growth_proxy_atr_pct, stock_atr_pct) >= 0.040 THEN 10
+              WHEN COALESCE(growth_proxy_atr_pct, stock_atr_pct) <= 0.018 THEN -6
+              ELSE 0
+            END
+          + CASE
+              WHEN COALESCE(btc_return_20d, 0) <= -0.18 AND COALESCE(eth_return_20d, 0) <= -0.18 THEN 8
+              WHEN COALESCE(btc_return_20d, 0) >= 0.18 AND COALESCE(eth_return_20d, 0) >= 0.18 THEN -5
+              ELSE 0
+            END,
+          0
+        )
+      )
+    ) AS historical_fear_score,
+    CASE
+      WHEN COALESCE(growth_proxy_return_20d, stock_return_20d) <= -0.07
+        AND COALESCE(growth_proxy_atr_pct, stock_atr_pct) >= 0.035 THEN "RATES_PRESSURE_PROXY"
+      WHEN COALESCE(growth_proxy_return_60d, stock_return_60d) >= 0.08
+        AND COALESCE(growth_proxy_atr_pct, stock_atr_pct) <= 0.035 THEN "MONETARY_SUPPORT_PROXY"
+      WHEN COALESCE(growth_proxy_return_20d, stock_return_20d) <= -0.03 THEN "TIGHTENING_OR_RISK_OFF_PROXY"
+      ELSE "MONETARY_NEUTRAL_PROXY"
+    END AS monetary_regime_proxy,
+    CASE
+      WHEN COALESCE(growth_proxy_atr_pct, stock_atr_pct) >= 0.055
+        AND COALESCE(growth_proxy_return_20d, stock_return_20d) <= -0.07 THEN "POLITICAL_OR_SYSTEMIC_STRESS_PROXY"
+      ELSE "POLITICAL_CONTEXT_UNKNOWN"
+    END AS political_regime_proxy,
+    CASE
+      WHEN COALESCE(btc_return_60d, 0) > 0.08 AND COALESCE(eth_vs_btc_60d, 0) > 0.08 THEN "ALTCOIN_ROTATION"
+      WHEN COALESCE(btc_return_60d, 0) > 0.08 THEN "BTC_DOMINANTE"
+      WHEN COALESCE(btc_return_60d, 0) < -0.12 AND COALESCE(eth_return_60d, 0) < -0.12 THEN "CRYPTO_DEBIL"
+      ELSE "CRYPTO_NEUTRAL"
+    END AS crypto_context_regime
+  FROM market_by_slot
+),
+financial_asof AS (
+  SELECT * EXCEPT(rn)
+  FROM (
+    SELECT
+      p.analysis_date,
+      p.signal_hour,
+      p.ticker,
+      s.period_end_date,
+      s.report_date,
+      s.revenue,
+      s.net_income,
+      s.free_cash_flow,
+      s.total_debt,
+      s.shareholders_equity,
+      LAG(s.revenue, 4) OVER (PARTITION BY p.ticker ORDER BY s.period_end_date) AS revenue_same_q_prev_year,
+      ROW_NUMBER() OVER (
+        PARTITION BY p.analysis_date, p.signal_hour, p.ticker
+        ORDER BY COALESCE(s.report_date, s.period_end_date) DESC, s.period_end_date DESC, s.loaded_at DESC
+      ) AS rn
+    FROM ${ref("trading_price_features")} p
+    LEFT JOIN `stocks-437902.acciones_dataset.financial_statements` s
+      ON s.ticker = p.ticker
+     AND COALESCE(s.report_date, s.period_end_date) <= p.analysis_date
+  )
+  WHERE rn = 1
+),
+status_asof AS (
+  SELECT * EXCEPT(rn)
+  FROM (
+    SELECT
+      p.analysis_date,
+      p.signal_hour,
+      p.ticker,
+      st.company_status,
+      st.status_group,
+      st.classification,
+      st.risk_level,
+      st.technical_trend,
+      st.final_score,
+      st.quality_score,
+      st.valuation_score,
+      st.risk_score,
+      ROW_NUMBER() OVER (
+        PARTITION BY p.analysis_date, p.signal_hour, p.ticker
+        ORDER BY st.analysis_date DESC
+      ) AS rn
+    FROM ${ref("trading_price_features")} p
+    LEFT JOIN ${ref("portfolio_company_status_daily")} st
+      ON st.ticker = p.ticker
+     AND st.analysis_date <= p.analysis_date
+  )
+  WHERE rn = 1
+),
+earnings_asof AS (
+  SELECT * EXCEPT(rn)
+  FROM (
+    SELECT
+      p.analysis_date,
+      p.signal_hour,
+      p.ticker,
+      e.earnings_date,
+      e.days_to_earnings,
+      e.earnings_event_status,
+      e.earnings_event_score,
+      e.earnings_context_note,
+      ROW_NUMBER() OVER (
+        PARTITION BY p.analysis_date, p.signal_hour, p.ticker
+        ORDER BY e.analysis_date DESC, e.signal_hour DESC
+      ) AS rn
+    FROM ${ref("trading_price_features")} p
+    LEFT JOIN ${ref("trading_earnings_context")} e
+      ON e.ticker = p.ticker
+     AND e.analysis_date <= p.analysis_date
+  )
+  WHERE rn = 1
+)
+
+SELECT
+  p.analysis_date,
+  p.signal_hour,
+  p.signal_timestamp,
+  p.ticker,
+  p.asset_type,
+  p.trading_group,
+  p.return_5d,
+  p.return_20d,
+  p.return_60d,
+  p.atr_pct,
+  p.volume_vs_20d_avg,
+  ms.stock_return_20d,
+  ms.growth_proxy_return_20d,
+  ms.stock_atr_pct,
+  ms.btc_return_20d,
+  ms.eth_return_20d,
+  ms.eth_vs_btc_60d,
+  ms.historical_fear_score,
+  CASE
+    WHEN ms.historical_fear_score >= 80 THEN "EXTREME_FEAR"
+    WHEN ms.historical_fear_score >= 65 THEN "FEAR"
+    WHEN ms.historical_fear_score <= 25 THEN "GREED"
+    WHEN ms.historical_fear_score <= 40 THEN "LOW_FEAR"
+    ELSE "NEUTRAL"
+  END AS historical_fear_regime,
+  ms.monetary_regime_proxy,
+  ms.political_regime_proxy,
+  ms.crypto_context_regime,
+  fa.period_end_date,
+  fa.report_date,
+  ROUND(SAFE_DIVIDE(fa.revenue - fa.revenue_same_q_prev_year, fa.revenue_same_q_prev_year), 4) AS revenue_yoy,
+  ROUND(SAFE_DIVIDE(fa.net_income, fa.revenue), 4) AS net_margin_asof,
+  ROUND(SAFE_DIVIDE(fa.free_cash_flow, fa.revenue), 4) AS fcf_margin_asof,
+  ROUND(SAFE_DIVIDE(fa.total_debt, fa.shareholders_equity), 4) AS debt_to_equity_asof,
+  CASE
+    WHEN p.asset_type = "CRYPTO" THEN "CRYPTO_NO_COMPANY_STATUS"
+    WHEN fa.period_end_date IS NULL THEN "NO_FINANCIAL_CONTEXT"
+    WHEN SAFE_DIVIDE(fa.revenue - fa.revenue_same_q_prev_year, fa.revenue_same_q_prev_year) >= 0.15
+      AND SAFE_DIVIDE(fa.free_cash_flow, fa.revenue) >= 0 THEN "GROWTH_QUALITY"
+    WHEN SAFE_DIVIDE(fa.revenue - fa.revenue_same_q_prev_year, fa.revenue_same_q_prev_year) >= 0.15
+      AND SAFE_DIVIDE(fa.free_cash_flow, fa.revenue) < 0 THEN "GROWTH_FCF_PRESSURE"
+    WHEN SAFE_DIVIDE(fa.revenue - fa.revenue_same_q_prev_year, fa.revenue_same_q_prev_year) BETWEEN 0.03 AND 0.15
+      AND SAFE_DIVIDE(fa.net_income, fa.revenue) >= 0.08 THEN "STABLE_QUALITY"
+    WHEN SAFE_DIVIDE(fa.net_income, fa.revenue) < 0 OR SAFE_DIVIDE(fa.free_cash_flow, fa.revenue) < -0.05 THEN "TURNAROUND_RISK"
+    ELSE "STABLE_OR_MIXED"
+  END AS company_lifecycle_context,
+  COALESCE(sa.company_status, "NO_STATUS_CONTEXT") AS company_status,
+  COALESCE(sa.status_group, "NO_STATUS_GROUP") AS status_group,
+  COALESCE(sa.classification, "NO_CLASSIFICATION") AS classification,
+  COALESCE(sa.risk_level, "NO_RISK_LEVEL") AS risk_level,
+  COALESCE(sa.technical_trend, "NO_TECHNICAL_TREND") AS technical_trend,
+  sa.final_score AS fundamental_final_score,
+  sa.quality_score AS fundamental_quality_score,
+  sa.valuation_score AS fundamental_valuation_score,
+  sa.risk_score AS fundamental_risk_score,
+  ea.earnings_date,
+  ea.days_to_earnings,
+  COALESCE(ea.earnings_event_status, "NO_EARNINGS_DATA") AS earnings_event_status,
+  COALESCE(ea.earnings_event_score, 0.0) AS earnings_event_score,
+  COALESCE(ea.earnings_context_note, "Sin contexto historico de resultados.") AS earnings_context_note,
+  CONCAT(
+    COALESCE(ms.monetary_regime_proxy, "MONETARY_UNKNOWN"), "|",
+    CASE
+      WHEN ms.historical_fear_score >= 80 THEN "EXTREME_FEAR"
+      WHEN ms.historical_fear_score >= 65 THEN "FEAR"
+      WHEN ms.historical_fear_score <= 25 THEN "GREED"
+      WHEN ms.historical_fear_score <= 40 THEN "LOW_FEAR"
+      ELSE "NEUTRAL"
+    END, "|",
+    COALESCE(ms.political_regime_proxy, "POLITICAL_UNKNOWN"), "|",
+    COALESCE(sa.status_group, "NO_STATUS_GROUP"), "|",
+    CASE
+      WHEN p.asset_type = "CRYPTO" THEN "CRYPTO_NO_COMPANY_STATUS"
+      WHEN fa.period_end_date IS NULL THEN "NO_FINANCIAL_CONTEXT"
+      WHEN SAFE_DIVIDE(fa.revenue - fa.revenue_same_q_prev_year, fa.revenue_same_q_prev_year) >= 0.15
+        AND SAFE_DIVIDE(fa.free_cash_flow, fa.revenue) >= 0 THEN "GROWTH_QUALITY"
+      WHEN SAFE_DIVIDE(fa.revenue - fa.revenue_same_q_prev_year, fa.revenue_same_q_prev_year) >= 0.15
+        AND SAFE_DIVIDE(fa.free_cash_flow, fa.revenue) < 0 THEN "GROWTH_FCF_PRESSURE"
+      WHEN SAFE_DIVIDE(fa.revenue - fa.revenue_same_q_prev_year, fa.revenue_same_q_prev_year) BETWEEN 0.03 AND 0.15
+        AND SAFE_DIVIDE(fa.net_income, fa.revenue) >= 0.08 THEN "STABLE_QUALITY"
+      WHEN SAFE_DIVIDE(fa.net_income, fa.revenue) < 0 OR SAFE_DIVIDE(fa.free_cash_flow, fa.revenue) < -0.05 THEN "TURNAROUND_RISK"
+      ELSE "STABLE_OR_MIXED"
+    END, "|",
+    COALESCE(ea.earnings_event_status, "NO_EARNINGS_DATA"), "|",
+    COALESCE(ms.crypto_context_regime, "CRYPTO_NEUTRAL")
+  ) AS context_similarity_key,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM ${ref("trading_price_features")} p
+LEFT JOIN market_scored ms
+  ON ms.analysis_date = p.analysis_date
+ AND ms.signal_hour = p.signal_hour
+LEFT JOIN financial_asof fa
+  ON fa.analysis_date = p.analysis_date
+ AND fa.signal_hour = p.signal_hour
+ AND fa.ticker = p.ticker
+LEFT JOIN status_asof sa
+  ON sa.analysis_date = p.analysis_date
+ AND sa.signal_hour = p.signal_hour
+ AND sa.ticker = p.ticker
+LEFT JOIN earnings_asof ea
+  ON ea.analysis_date = p.analysis_date
+ AND ea.signal_hour = p.signal_hour
+ AND ea.ticker = p.ticker
