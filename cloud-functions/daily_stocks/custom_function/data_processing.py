@@ -10,6 +10,7 @@ logging.basicConfig(level=logging.INFO)
 CRYPTO_INTERVAL = "1h"
 CRYPTO_OUTPUT_FREQUENCY = "4h"
 DEFAULT_INTERVAL = "15m"
+HISTORICAL_DAILY_THRESHOLD_DAYS = 59
 
 
 def generate_unique_id(ticker, fecha, hora):
@@ -40,7 +41,10 @@ def save_data_to_json(ticker, output_file, target_date, asset_type="STOCK", end_
 
     end_date = end_date or target_date + timedelta(days=1)
     asset_type = str(asset_type or "STOCK").upper()
-    interval = CRYPTO_INTERVAL if asset_type == "CRYPTO" else DEFAULT_INTERVAL
+    range_days = (end_date - target_date).days
+    oldest_intraday_date = datetime.now().date() - timedelta(days=HISTORICAL_DAILY_THRESHOLD_DAYS)
+    use_daily_history = range_days > HISTORICAL_DAILY_THRESHOLD_DAYS or target_date < oldest_intraday_date
+    interval = "1d" if use_daily_history else (CRYPTO_INTERVAL if asset_type == "CRYPTO" else DEFAULT_INTERVAL)
 
     try:
         try:
@@ -60,7 +64,7 @@ def save_data_to_json(ticker, output_file, target_date, asset_type="STOCK", end_
         if stock_data.empty:
             raise ValueError(
                 f"No data returned for ticker {ticker} between {target_date} and {end_date}. "
-                "Use a valid trading day within yfinance intraday history."
+                "Use a valid market range supported by Yahoo Finance."
             )
 
         stock_data["volatilidad"] = ((stock_data["High"] - stock_data["Low"]) / stock_data["Open"]) * 100
@@ -95,8 +99,8 @@ def save_data_to_json(ticker, output_file, target_date, asset_type="STOCK", end_
 
                 file.write(json.dumps(message) + "\n")
 
-        logging.info("Datos para %s guardados en %s", ticker, output_file)
-        return len(stock_data)
+        logging.info("Datos para %s guardados en %s con intervalo %s", ticker, output_file, interval)
+        return {"rows": len(stock_data), "interval": interval}
     except Exception:
         logging.exception("Error al procesar los datos de %s", ticker)
         raise

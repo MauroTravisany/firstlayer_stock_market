@@ -139,4 +139,14 @@ curl.exe --ssl-no-revoke -s -X POST 'https://stockmacrodata-10359734256.us-east1
 
 El backfill macro es idempotente: mergea por `snapshot_slot` y `symbol`, por lo que repetirlo no duplica registros.
 
+El historico de precios del portafolio se carga desde `stockdaily`. Para rangos antiguos o mayores a 59 dias, el servicio usa intervalo diario `1d` porque Yahoo Finance no entrega intradia historico amplio:
+
+```powershell
+$bodyPath = Join-Path $env:TEMP 'stockdaily_backfill_full.json'
+Set-Content -LiteralPath $bodyPath -Value '{"start_date":"2019-01-01","end_date":"2026-07-30","send_alert":false}' -NoNewline
+curl.exe --ssl-no-revoke -s -X POST 'https://stockdaily-10359734256.us-east1.run.app' -H 'Content-Type: application/json' --data-binary "@$bodyPath"
+```
+
+El backfill de precios tambien es idempotente: mergea por `id` (`ticker`, `fecha`, `hora`). Para backfills grandes conviene ejecutarlo en lotes si Cloud Run responde `429 Rate exceeded`, porque el proceso puede seguir ocupado cargando datos.
+
 Limitacion actual: las noticias historicas y el calendario historico completo de resultados aun no estan backfilleados con la misma profundidad. El siguiente paso para mejorar precision es sumar historia real de noticias/eventos y earnings por fecha as-of-date.

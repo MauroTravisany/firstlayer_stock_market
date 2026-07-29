@@ -79,7 +79,13 @@ def process_ticker(ticker, bucket_name, bq_table, target_date, asset_type="STOCK
     output_file = f"{ticker}_{output_suffix}.json"
     gcs_output_path = f"gs://{bucket_name}/{ticker}/{output_file}"
 
-    rows_loaded = save_data_to_json(ticker, output_file, target_date, asset_type=asset_type, end_date=end_date)
+    load_result = save_data_to_json(ticker, output_file, target_date, asset_type=asset_type, end_date=end_date)
+    if isinstance(load_result, dict):
+        rows_loaded = load_result.get("rows", 0)
+        price_interval = load_result.get("interval")
+    else:
+        rows_loaded = load_result
+        price_interval = None
     upload_to_gcs(bucket_name, output_file, f"{ticker}/{output_file}")
     load_data_to_bigquery(bq_table, gcs_output_path)
 
@@ -92,6 +98,7 @@ def process_ticker(ticker, bucket_name, bq_table, target_date, asset_type="STOCK
         "data_status": "PRICE_OK",
         "severity": "OK",
         "rows_loaded": rows_loaded,
+        "price_interval": price_interval,
     }
 
 
