@@ -33,6 +33,15 @@ Solucion pragmatica:
 6. Crear compilation result nuevo.
 7. Crear workflow invocation con ese compilation result o esperar el scheduler si no urge.
 
+Limitacion confirmada:
+- Un compilation result creado desde `workspace` se puede ejecutar manualmente con `workflowInvocations.create`.
+- Ese compilation result NO se puede promover como `releaseCompilationResult` de `production`; Dataform devuelve:
+  `release_compilation_result was not created from this release config`.
+- Para que los schedulers futuros usen el cambio, el release `production` debe crear una compilacion propia desde su `releaseConfig`.
+- Si la API crea una compilacion desde `releaseConfig` pero sigue resolviendo un SHA viejo, la via confiable es usar la UI de Dataform:
+  `Release & Scheduling` -> `production` -> `New compilation`.
+- Despues de eso, consultar el release y verificar que `releaseCompilationResult` sea nuevo y que `:query` contenga las tablas/columnas esperadas.
+
 Notas de PowerShell:
 - En URLs con `:query`, usar `${compilation}:query`; si se usa `$compilation:query`, PowerShell interpreta mal la variable.
 - En URLs con query string, usar `${release}?updateMask=...`; si se usa `$release?`, PowerShell corta la variable.
