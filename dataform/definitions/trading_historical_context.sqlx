@@ -33,9 +33,33 @@ WITH market_by_slot AS (
   FROM ${ref("trading_price_features")}
   GROUP BY analysis_date, signal_hour
 ),
+external_market_by_date AS (
+  SELECT
+    snapshot_date AS analysis_date,
+    MAX(IF(factor_name = "us_equity_spy", return_20d, NULL)) AS ext_spy_return_20d,
+    MAX(IF(factor_name = "growth_tech_qqq", return_20d, NULL)) AS ext_qqq_return_20d,
+    MAX(IF(factor_name = "small_caps_iwm", return_20d, NULL)) AS ext_iwm_return_20d,
+    MAX(IF(factor_name = "volatility_vix", return_20d, NULL)) AS ext_vix_return_20d,
+    MAX(IF(factor_name = "usd_dollar_uup", return_20d, NULL)) AS ext_uup_return_20d,
+    MAX(IF(factor_name = "eur_usd", return_20d, NULL)) AS ext_eurusd_return_20d,
+    MAX(IF(factor_name = "us_10y_yield", return_20d, NULL)) AS ext_tnx_return_20d,
+    MAX(IF(factor_name = "wti_oil", return_20d, NULL)) AS ext_oil_return_20d,
+    MAX(IF(factor_name = "gold", return_20d, NULL)) AS ext_gold_return_20d,
+    MAX(IF(factor_name = "bitcoin", return_20d, NULL)) AS ext_btc_return_20d,
+    MAX(IF(factor_name = "ethereum", return_20d, NULL)) AS ext_eth_return_20d,
+    MAX(IF(factor_name = "volatility_vix", close, NULL)) AS ext_vix_close,
+    COUNT(*) AS external_market_rows
+  FROM `stocks-437902.acciones_dataset.macro_market_snapshot`
+  GROUP BY analysis_date
+),
 market_scored AS (
   SELECT
-    *,
+    m.*,
+    e.* EXCEPT (analysis_date),
+    CASE
+      WHEN COALESCE(e.external_market_rows, 0) > 0 THEN "REAL_MARKET_CONTEXT"
+      ELSE "PROXY_MARKET_CONTEXT"
+    END AS historical_market_context_source,
     GREATEST(
       0,
       LEAST(
@@ -43,11 +67,18 @@ market_scored AS (
         ROUND(
           50
           + CASE
-              WHEN COALESCE(growth_proxy_return_20d, stock_return_20d) <= -0.12 THEN 20
-              WHEN COALESCE(growth_proxy_return_20d, stock_return_20d) <= -0.07 THEN 12
-              WHEN COALESCE(growth_proxy_return_20d, stock_return_20d) <= -0.03 THEN 6
-              WHEN COALESCE(growth_proxy_return_20d, stock_return_20d) >= 0.08 THEN -10
-              WHEN COALESCE(growth_proxy_return_20d, stock_return_20d) >= 0.04 THEN -5
+              WHEN COALESCE(ext_vix_close, 0) >= 35 THEN 30
+              WHEN COALESCE(ext_vix_close, 0) >= 25 THEN 20
+              WHEN COALESCE(ext_vix_close, 0) >= 20 THEN 10
+              WHEN COALESCE(ext_vix_close, 0) > 0 AND COALESCE(ext_vix_close, 0) <= 14 THEN -15
+              ELSE 0
+            END
+          + CASE
+              WHEN COALESCE(ext_qqq_return_20d, growth_proxy_return_20d, stock_return_20d) <= -0.12 THEN 20
+              WHEN COALESCE(ext_qqq_return_20d, growth_proxy_return_20d, stock_return_20d) <= -0.07 THEN 12
+              WHEN COALESCE(ext_qqq_return_20d, growth_proxy_return_20d, stock_return_20d) <= -0.03 THEN 6
+              WHEN COALESCE(ext_qqq_return_20d, growth_proxy_return_20d, stock_return_20d) >= 0.08 THEN -10
+              WHEN COALESCE(ext_qqq_return_20d, growth_proxy_return_20d, stock_return_20d) >= 0.04 THEN -5
               ELSE 0
             END
           + CASE
@@ -57,8 +88,14 @@ market_scored AS (
               ELSE 0
             END
           + CASE
-              WHEN COALESCE(btc_return_20d, 0) <= -0.18 AND COALESCE(eth_return_20d, 0) <= -0.18 THEN 8
-              WHEN COALESCE(btc_return_20d, 0) >= 0.18 AND COALESCE(eth_return_20d, 0) >= 0.18 THEN -5
+              WHEN COALESCE(ext_vix_return_20d, 0) >= 0.30 THEN 12
+              WHEN COALESCE(ext_vix_return_20d, 0) >= 0.15 THEN 6
+              WHEN COALESCE(ext_vix_return_20d, 0) <= -0.20 THEN -6
+              ELSE 0
+            END
+          + CASE
+              WHEN COALESCE(ext_btc_return_20d, btc_return_20d, 0) <= -0.18 AND COALESCE(ext_eth_return_20d, eth_return_20d, 0) <= -0.18 THEN 8
+              WHEN COALESCE(ext_btc_return_20d, btc_return_20d, 0) >= 0.18 AND COALESCE(ext_eth_return_20d, eth_return_20d, 0) >= 0.18 THEN -5
               ELSE 0
             END,
           0
@@ -66,25 +103,31 @@ market_scored AS (
       )
     ) AS historical_fear_score,
     CASE
-      WHEN COALESCE(growth_proxy_return_20d, stock_return_20d) <= -0.07
+      WHEN COALESCE(ext_tnx_return_20d, 0) >= 0.08 THEN "RATES_PRESSURE_REAL"
+      WHEN COALESCE(ext_tnx_return_20d, 0) <= -0.08 THEN "MONETARY_SUPPORT_REAL"
+      WHEN COALESCE(ext_qqq_return_20d, growth_proxy_return_20d, stock_return_20d) <= -0.07
         AND COALESCE(growth_proxy_atr_pct, stock_atr_pct) >= 0.035 THEN "RATES_PRESSURE_PROXY"
       WHEN COALESCE(growth_proxy_return_60d, stock_return_60d) >= 0.08
         AND COALESCE(growth_proxy_atr_pct, stock_atr_pct) <= 0.035 THEN "MONETARY_SUPPORT_PROXY"
-      WHEN COALESCE(growth_proxy_return_20d, stock_return_20d) <= -0.03 THEN "TIGHTENING_OR_RISK_OFF_PROXY"
+      WHEN COALESCE(ext_qqq_return_20d, growth_proxy_return_20d, stock_return_20d) <= -0.03 THEN "TIGHTENING_OR_RISK_OFF_PROXY"
       ELSE "MONETARY_NEUTRAL_PROXY"
     END AS monetary_regime_proxy,
     CASE
+      WHEN COALESCE(ext_vix_close, 0) >= 30
+        OR COALESCE(ext_vix_return_20d, 0) >= 0.35 THEN "SYSTEMIC_STRESS_REAL"
       WHEN COALESCE(growth_proxy_atr_pct, stock_atr_pct) >= 0.055
-        AND COALESCE(growth_proxy_return_20d, stock_return_20d) <= -0.07 THEN "POLITICAL_OR_SYSTEMIC_STRESS_PROXY"
+        AND COALESCE(ext_qqq_return_20d, growth_proxy_return_20d, stock_return_20d) <= -0.07 THEN "POLITICAL_OR_SYSTEMIC_STRESS_PROXY"
       ELSE "POLITICAL_CONTEXT_UNKNOWN"
     END AS political_regime_proxy,
     CASE
-      WHEN COALESCE(btc_return_60d, 0) > 0.08 AND COALESCE(eth_vs_btc_60d, 0) > 0.08 THEN "ALTCOIN_ROTATION"
-      WHEN COALESCE(btc_return_60d, 0) > 0.08 THEN "BTC_DOMINANTE"
-      WHEN COALESCE(btc_return_60d, 0) < -0.12 AND COALESCE(eth_return_60d, 0) < -0.12 THEN "CRYPTO_DEBIL"
+      WHEN COALESCE(ext_btc_return_20d, btc_return_60d, 0) > 0.08 AND COALESCE(eth_vs_btc_60d, 0) > 0.08 THEN "ALTCOIN_ROTATION"
+      WHEN COALESCE(ext_btc_return_20d, btc_return_60d, 0) > 0.08 THEN "BTC_DOMINANTE"
+      WHEN COALESCE(ext_btc_return_20d, btc_return_60d, 0) < -0.12 AND COALESCE(ext_eth_return_20d, eth_return_60d, 0) < -0.12 THEN "CRYPTO_DEBIL"
       ELSE "CRYPTO_NEUTRAL"
     END AS crypto_context_regime
-  FROM market_by_slot
+  FROM market_by_slot m
+  LEFT JOIN external_market_by_date e
+    ON e.analysis_date = m.analysis_date
 ),
 financial_asof AS (
   SELECT * EXCEPT(rn)
@@ -181,6 +224,13 @@ SELECT
   ms.btc_return_20d,
   ms.eth_return_20d,
   ms.eth_vs_btc_60d,
+  ms.ext_spy_return_20d,
+  ms.ext_qqq_return_20d,
+  ms.ext_vix_return_20d,
+  ms.ext_vix_close,
+  ms.ext_tnx_return_20d,
+  ms.ext_uup_return_20d,
+  ms.historical_market_context_source,
   ms.historical_fear_score,
   CASE
     WHEN ms.historical_fear_score >= 80 THEN "EXTREME_FEAR"

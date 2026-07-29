@@ -23,8 +23,30 @@ def main(request):
             merge_news_rows,
         )
         from custom_function.data_sources import current_slot, fetch_earnings_rows, fetch_market_rows, fetch_news_rows
+        from custom_function.data_sources import fetch_market_history_rows
 
         ensure_tables(config)
+        mode = request_json.get("mode", "current")
+        if mode in ("backfill_market_history", "market_history"):
+            history_rows = fetch_market_history_rows(
+                start_date=request_json.get("start_date"),
+                end_date=request_json.get("end_date"),
+                years=int(request_json.get("years", 5)),
+                time_zone=config["time_zone"],
+            )
+            history_count = merge_market_rows(config, history_rows)
+            return (
+                json.dumps(
+                    {
+                        "status": "ok",
+                        "mode": mode,
+                        "market_rows": history_count,
+                    }
+                ),
+                200,
+                {"Content-Type": "application/json"},
+            )
+
         tickers = request_json.get("tickers") or fetch_portfolio_tickers(config) or config["tickers"]
         slot = current_slot(config["time_zone"])
         market_rows = fetch_market_rows(slot)

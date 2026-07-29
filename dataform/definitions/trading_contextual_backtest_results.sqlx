@@ -63,9 +63,9 @@ scored AS (
       ELSE 0.0
     END AS fear_context_component,
     CASE
-      WHEN c.monetary_regime_proxy = "RATES_PRESSURE_PROXY" THEN -1.00
+      WHEN c.monetary_regime_proxy IN ("RATES_PRESSURE_REAL", "RATES_PRESSURE_PROXY") THEN -1.00
       WHEN c.monetary_regime_proxy = "TIGHTENING_OR_RISK_OFF_PROXY" THEN -0.55
-      WHEN c.monetary_regime_proxy = "MONETARY_SUPPORT_PROXY" THEN 0.65
+      WHEN c.monetary_regime_proxy IN ("MONETARY_SUPPORT_REAL", "MONETARY_SUPPORT_PROXY") THEN 0.65
       ELSE 0.0
     END AS monetary_context_component,
     CASE
@@ -88,7 +88,7 @@ scored AS (
       ELSE 0.0
     END AS valuation_state_component,
     CASE
-      WHEN c.political_regime_proxy = "POLITICAL_OR_SYSTEMIC_STRESS_PROXY" THEN -0.90
+      WHEN c.political_regime_proxy IN ("SYSTEMIC_STRESS_REAL", "POLITICAL_OR_SYSTEMIC_STRESS_PROXY") THEN -0.90
       ELSE 0.0
     END AS political_risk_component,
     CASE

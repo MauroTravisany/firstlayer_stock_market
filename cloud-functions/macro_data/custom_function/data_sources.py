@@ -1,7 +1,7 @@
 import json
 import logging
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -152,6 +152,61 @@ def fetch_news_rows(slot, timespan="4H", maxrecords=75):
                     "loaded_at": loaded_at,
                 }
             )
+    return rows
+
+
+def fetch_market_history_rows(start_date=None, end_date=None, years=5, time_zone="America/Santiago"):
+    end = pd.to_datetime(end_date).date() if end_date else datetime.now(ZoneInfo(time_zone)).date()
+    start = pd.to_datetime(start_date).date() if start_date else end - timedelta(days=365 * int(years))
+    if start > end:
+        raise ValueError("start_date cannot be after end_date")
+
+    tickers = list(MACRO_SYMBOLS.keys())
+    data = yf.download(
+        tickers=" ".join(tickers),
+        start=start.isoformat(),
+        end=(end + timedelta(days=1)).isoformat(),
+        interval="1d",
+        auto_adjust=False,
+        progress=False,
+        threads=True,
+        timeout=45,
+    )
+    rows = []
+    loaded_at = datetime.now(ZoneInfo("UTC")).isoformat()
+    local_tz = ZoneInfo(time_zone)
+
+    for symbol in tickers:
+        try:
+            close_series = data["Close"][symbol].dropna()
+            if close_series.empty:
+                logging.warning("No historical macro data for %s", symbol)
+                continue
+            close_series = close_series.sort_index()
+            for idx, close_value in enumerate(close_series):
+                snapshot_date = pd.to_datetime(close_series.index[idx]).date()
+                previous = float(close_series.iloc[idx - 1]) if idx >= 1 else None
+                prev_5 = float(close_series.iloc[idx - 5]) if idx >= 5 else None
+                prev_20 = float(close_series.iloc[idx - 20]) if idx >= 20 else None
+                slot = datetime.combine(snapshot_date, datetime.min.time(), tzinfo=local_tz)
+                rows.append(
+                    {
+                        "snapshot_slot": slot.astimezone(ZoneInfo("UTC")).isoformat(),
+                        "snapshot_date": snapshot_date.isoformat(),
+                        "signal_hour": "00:00:00",
+                        "symbol": symbol,
+                        "factor_name": MACRO_SYMBOLS[symbol],
+                        "close": float(close_value),
+                        "previous_close": previous,
+                        "return_1d": _pct(float(close_value), previous),
+                        "return_5d": _pct(float(close_value), prev_5),
+                        "return_20d": _pct(float(close_value), prev_20),
+                        "source": "yfinance_yahoo_public_history",
+                        "loaded_at": loaded_at,
+                    }
+                )
+        except Exception as exc:
+            logging.warning("Failed historical macro symbol %s: %s", symbol, exc)
     return rows
 
 

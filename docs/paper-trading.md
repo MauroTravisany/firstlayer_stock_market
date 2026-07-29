@@ -123,10 +123,20 @@ El sistema incluye un backtest contextual para comparar las estrategias v1-v4 ba
 
 Tablas principales:
 
-- `trading_historical_context`: arma el contexto historico por ticker, fecha y hora. Cuando no existe dato macro/noticias real, usa proxies derivados de precios, volatilidad y fundamentales disponibles as-of-date.
+- `trading_historical_context`: arma el contexto historico por ticker, fecha y hora. Usa datos macro reales de `macro_market_snapshot` cuando existen y cae a proxies derivados de precios, volatilidad y fundamentales disponibles as-of-date.
 - `trading_backtest_context_variants`: define variantes de pesos, por ejemplo macro defensiva, growth momentum, evita eventos, calidad/valoracion y ciclo cripto.
 - `trading_contextual_backtest_results`: evalua cada variante contra el camino futuro de precios, usando entrada, stop, take profit, costos y tamano ficticio.
 - `trading_contextual_backtest_summary`: resume resultados por variante, estrategia y contexto similar.
 - `trading_contextual_backtest_recommendations`: recomienda la mejor variante por activo, estrategia y contexto.
 
-Limitacion actual: el contexto monetario/politico historico es proxy cuando no existian tablas macro/noticias cargadas para esa fecha. Para hacerlo mas profesional, conviene cargar historia real de VIX, SPY/QQQ, TNX, dolar, petroleo, calendario de earnings y noticias historicas.
+El historico macro se puede cargar con el servicio `stockmacrodata`:
+
+```powershell
+$bodyPath = Join-Path $env:TEMP 'macro_backfill_full.json'
+Set-Content -LiteralPath $bodyPath -Value '{"mode":"backfill_market_history","start_date":"2019-01-01","end_date":"2026-07-29"}' -NoNewline
+curl.exe --ssl-no-revoke -s -X POST 'https://stockmacrodata-10359734256.us-east1.run.app' -H 'Content-Type: application/json' --data-binary "@$bodyPath"
+```
+
+El backfill macro es idempotente: mergea por `snapshot_slot` y `symbol`, por lo que repetirlo no duplica registros.
+
+Limitacion actual: las noticias historicas y el calendario historico completo de resultados aun no estan backfilleados con la misma profundidad. El siguiente paso para mejorar precision es sumar historia real de noticias/eventos y earnings por fecha as-of-date.
