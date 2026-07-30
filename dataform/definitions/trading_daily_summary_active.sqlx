@@ -1,0 +1,156 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_daily_summary_active",
+  description: "Resumen diario de paper trading usando senales activas ajustadas por backtesting contextual.",
+  tags: ["trading", "paper", "daily", "summary", "active"],
+  bigquery: {
+    partitionBy: "summary_date"
+  },
+  assertions: {
+    nonNull: ["summary_date"],
+    uniqueKey: ["summary_date"]
+  },
+  dependencies: ["trading_price_features", "trading_paper_signals_active", "trading_paper_trade_results_active"]
+}
+
+WITH dates AS (
+  SELECT DISTINCT analysis_date AS summary_date
+  FROM ${ref("trading_price_features")}
+),
+new_trades AS (
+  SELECT
+    analysis_date AS summary_date,
+    COUNTIF(paper_signal = "TRADE_LONG") AS new_trade_count,
+    COUNTIF(paper_signal = "VIGILAR") AS watch_count,
+    COUNTIF(active_config_status = "ACTIVE_FROM_BACKTEST") AS backtest_adjusted_signal_count,
+    STRING_AGG(
+      IF(
+        paper_signal = "TRADE_LONG",
+        CONCAT(
+          strategy_version, " ", CAST(signal_hour AS STRING), " ", ticker, " ", setup_type,
+          " entrada ", CAST(theoretical_entry_price AS STRING),
+          " stop ", CAST(stop_loss AS STRING),
+          " tp1 ", CAST(take_profit_1 AS STRING),
+          " ajuste ", active_variant_id_final
+        ),
+        NULL
+      ),
+      " | "
+      ORDER BY setup_score DESC, signal_hour DESC, strategy_version
+      LIMIT 12
+    ) AS new_trade_details
+  FROM ${ref("trading_paper_signals_active")}
+  GROUP BY summary_date
+),
+closed_trades AS (
+  SELECT
+    outcome_date AS summary_date,
+    COUNT(*) AS closed_trade_count,
+    COUNTIF(is_win) AS winning_trade_count,
+    COUNTIF(NOT is_win) AS losing_trade_count,
+    ROUND(SUM(net_pnl_clp), 0) AS realized_pnl_clp,
+    STRING_AGG(
+      CONCAT(strategy_version, " ", CAST(signal_hour AS STRING), " ", ticker, " ", result_label, " ", CAST(net_pnl_clp AS STRING), " CLP"),
+      " | "
+      ORDER BY ABS(net_pnl_clp) DESC
+      LIMIT 12
+    ) AS closed_trade_details
+  FROM ${ref("trading_paper_trade_results_active")}
+  WHERE outcome_date IS NOT NULL
+  GROUP BY summary_date
+),
+open_trades AS (
+  SELECT
+    d.summary_date,
+    COUNTIF(r.trade_status = "OPEN") AS open_trade_count,
+    ROUND(SUM(IF(r.trade_status = "OPEN", r.position_notional_clp, 0)), 0) AS open_notional_clp
+  FROM dates d
+  LEFT JOIN ${ref("trading_paper_trade_results_active")} r
+    ON r.analysis_date <= d.summary_date
+   AND (r.outcome_date IS NULL OR r.outcome_date > d.summary_date)
+  GROUP BY d.summary_date
+),
+totals AS (
+  SELECT
+    COUNT(*) AS all_closed_trades,
+    COUNTIF(is_win) AS all_wins,
+    COUNTIF(NOT is_win) AS all_losses,
+    ROUND(SUM(net_pnl_clp), 0) AS all_realized_pnl_clp,
+    ROUND(SAFE_DIVIDE(COUNTIF(is_win), COUNT(*)) * 100, 2) AS all_win_rate_pct
+  FROM ${ref("trading_paper_trade_results_active")}
+  WHERE outcome_date IS NOT NULL
+),
+strategy_totals AS (
+  SELECT
+    STRING_AGG(
+      CONCAT(
+        strategy_version,
+        ": ", CAST(closed_count AS STRING), " cerrados, ",
+        CAST(win_rate_pct AS STRING), "% win, ",
+        CAST(realized_pnl_clp AS STRING), " CLP"
+      ),
+      " | "
+      ORDER BY realized_pnl_clp DESC
+    ) AS strategy_performance_summary
+  FROM (
+    SELECT
+      strategy_version,
+      COUNT(*) AS closed_count,
+      ROUND(SAFE_DIVIDE(COUNTIF(is_win), COUNT(*)) * 100, 2) AS win_rate_pct,
+      ROUND(SUM(net_pnl_clp), 0) AS realized_pnl_clp
+    FROM ${ref("trading_paper_trade_results_active")}
+    WHERE outcome_date IS NOT NULL
+    GROUP BY strategy_version
+  )
+)
+
+SELECT
+  d.summary_date,
+  COALESCE(n.new_trade_count, 0) AS new_trade_count,
+  COALESCE(n.watch_count, 0) AS watch_count,
+  COALESCE(n.backtest_adjusted_signal_count, 0) AS backtest_adjusted_signal_count,
+  COALESCE(c.closed_trade_count, 0) AS closed_trade_count,
+  COALESCE(c.winning_trade_count, 0) AS winning_trade_count,
+  COALESCE(c.losing_trade_count, 0) AS losing_trade_count,
+  COALESCE(c.realized_pnl_clp, 0) AS realized_pnl_clp,
+  o.open_trade_count,
+  o.open_notional_clp,
+  t.all_closed_trades,
+  t.all_wins,
+  t.all_losses,
+  t.all_realized_pnl_clp,
+  t.all_win_rate_pct,
+  COALESCE(st.strategy_performance_summary, "Sin historico por estrategia") AS strategy_performance_summary,
+  25000.0 AS daily_target_min_clp,
+  100000.0 AS daily_target_max_clp,
+  CASE
+    WHEN COALESCE(c.realized_pnl_clp, 0) >= 100000 THEN "SOBRE_OBJETIVO"
+    WHEN COALESCE(c.realized_pnl_clp, 0) >= 25000 THEN "OBJETIVO_CUMPLIDO"
+    WHEN COALESCE(c.realized_pnl_clp, 0) > 0 THEN "POSITIVO_BAJO_OBJETIVO"
+    WHEN COALESCE(c.realized_pnl_clp, 0) = 0 THEN "SIN_CIERRES"
+    ELSE "NEGATIVO"
+  END AS daily_result_status,
+  COALESCE(n.new_trade_details, "Sin trades nuevos") AS new_trade_details,
+  COALESCE(c.closed_trade_details, "Sin cierres") AS closed_trade_details,
+  CONCAT(
+    "Paper trading activo ", CAST(d.summary_date AS STRING),
+    ": nuevos=", CAST(COALESCE(n.new_trade_count, 0) AS STRING),
+    ", vigilar=", CAST(COALESCE(n.watch_count, 0) AS STRING),
+    ", ajustadas_backtest=", CAST(COALESCE(n.backtest_adjusted_signal_count, 0) AS STRING),
+    ", cerrados=", CAST(COALESCE(c.closed_trade_count, 0) AS STRING),
+    ", ganadores=", CAST(COALESCE(c.winning_trade_count, 0) AS STRING),
+    ", perdedores=", CAST(COALESCE(c.losing_trade_count, 0) AS STRING),
+    ", PnL=", CAST(COALESCE(c.realized_pnl_clp, 0) AS STRING), " CLP",
+    ", winrate_hist=", CAST(COALESCE(t.all_win_rate_pct, 0) AS STRING), "%"
+  ) AS discord_summary,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM dates d
+LEFT JOIN new_trades n
+  ON n.summary_date = d.summary_date
+LEFT JOIN closed_trades c
+  ON c.summary_date = d.summary_date
+LEFT JOIN open_trades o
+  ON o.summary_date = d.summary_date
+CROSS JOIN totals t
+CROSS JOIN strategy_totals st
