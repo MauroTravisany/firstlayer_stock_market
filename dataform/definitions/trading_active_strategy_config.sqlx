@@ -23,13 +23,11 @@ WITH eligible AS (
     ROW_NUMBER() OVER (
       PARTITION BY r.ticker, r.strategy_version, r.context_similarity_key
       ORDER BY
-        CASE r.recommendation
-          WHEN "MEJOR_CONTEXTO_ACTIVO" THEN 1
-          WHEN "USABLE" THEN 2
-          ELSE 9
-        END,
-        r.total_pnl_clp DESC,
-        r.win_rate_pct DESC,
+        r.stability_score DESC,
+        r.pnl_p05_clp DESC,
+        r.profit_factor DESC,
+        r.stop_loss_rate_pct ASC,
+        r.avg_pnl_clp DESC,
         r.closed_trades DESC
     ) AS rn
   FROM ${ref("trading_contextual_backtest_recommendations")} r
@@ -37,7 +35,9 @@ WITH eligible AS (
     ON v.variant_id = r.variant_id
   WHERE r.recommendation IN ("MEJOR_CONTEXTO_ACTIVO", "USABLE")
     AND r.total_pnl_clp > 0
-    AND r.win_rate_pct >= 48
+    AND r.avg_pnl_clp > 0
+    AND r.profit_factor >= 1.05
+    AND r.stop_loss_rate_pct < 60
     AND (
       (r.asset_type = "CRYPTO" AND r.closed_trades >= 30)
       OR (r.asset_type != "CRYPTO" AND r.closed_trades >= 8)
@@ -66,10 +66,21 @@ SELECT
   win_rate_pct,
   total_pnl_clp,
   avg_pnl_clp,
+  avg_win_pnl_clp,
+  avg_loss_pnl_clp,
+  gross_profit_clp,
+  gross_loss_clp,
+  profit_factor,
   avg_net_return_pct,
   pnl_p05_clp,
+  pnl_p25_clp,
+  pnl_median_clp,
+  stop_loss_rate_pct,
   stop_loss_count,
   take_profit_count,
+  take_profit_to_stop_ratio,
+  stability_score,
+  risk_quality_flag,
   min_trade_score_add,
   position_size_multiplier,
   recommendation,
