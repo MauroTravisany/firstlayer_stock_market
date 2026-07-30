@@ -180,6 +180,12 @@ Reglas obligatorias:
 32. Para CRYPTO usa precio, retorno 20/60/120 dias, SMA 20/60/120, high_252d, low_252d, volatilidad, crypto_regime, eth_btc_ratio y eth_vs_btc_60d.
 33. Si crypto_regime es BTC_DOMINANTE, explica que Bitcoin lidera y que las altcoins aun no muestran fuerza relativa clara. Si es ALTCOIN_ROTATION, explica que ETH supera a BTC y podria haber mayor apetito por altcoins. Si es CRYPTO_DEBIL, enfatiza riesgo.
 34. Para BTC/ETH usa ai_valuation_opinion como lectura relativa: BARATA si esta castigado pero recuperando tendencia, PRECIO_JUSTO si no hay ventaja clara, CARA si esta sobreextendido, DATOS_INSUFICIENTES si faltan precios.
+35. Para acciones, usa earnings_date, days_to_earnings, surprise_pct, earnings_event_status, earnings_score, earnings_context_note, ratios_may_be_stale_after_earnings y earnings_data_freshness_note como contexto obligatorio.
+36. Si earnings_event_status indica resultado reciente, no asumas que PE, forward PE, P/S, EV/EBITDA, margenes, deuda o FCF ya incluyen el nuevo reporte. Explica explicitamente si los ratios internos podrian estar desfasados.
+37. Si ratios_may_be_stale_after_earnings es true, baja la confianza, marca la discrepancia y busca fuentes externas recientes como investor relations, 10-Q/10-K, press release de resultados, transcript o Reuters para contrastar revenue, EPS, guidance, margenes, FCF y capex.
+38. Si hubo sorpresa positiva de EPS pero el precio cae, evalua calidad del resultado: guidance, flujo de caja libre, capex, margenes, deuda y reaccion del mercado. No concluyas que es compra solo por EPS positivo.
+39. Si hubo sorpresa negativa o guidance debil, eleva el riesgo de venta/observacion aunque los ratios historicos parezcan baratos.
+40. Si los resultados estan proximos, exige mayor margen de seguridad y advierte riesgo de gap. No envies compra clara si el caso depende de un reporte que aun no ocurre.
 """
 
 
@@ -285,6 +291,11 @@ def analyze_ticker(config, signal_row):
                     "No confirmes una oportunidad clara solo porque signal lo diga; valida que los multiplos sean razonables y que no exista una contradiccion de valoracion. "
                     "Si la accion tiene calidad alta pero multiplos caros, explica que no es una compra clara y que requiere mejor precio o mayor margen de seguridad. "
                     "Usa peer_group, peer_valuation_label, peer_relative_score y percentiles relativos para comparar contra homologos. "
+                    "Usa earnings_date, days_to_earnings, surprise_pct, earnings_event_status, earnings_score, earnings_context_note, ratios_may_be_stale_after_earnings y earnings_data_freshness_note para interpretar resultados recientes o proximos. "
+                    "Si ratios_may_be_stale_after_earnings es true, trata los ratios internos como posiblemente atrasados y busca contexto externo reciente de resultados, guidance, FCF, capex y margenes. "
+                    "Si el EPS fue positivo pero la accion bajo, explica posibles razones como guidance debil, flujo de caja libre negativo, capex alto, margenes bajo presion o expectativas demasiado altas. "
+                    "Si hay resultado reciente negativo, revisa si la tesis de compra debe degradarse a observar o si aparece una tesis de venta parcial. "
+                    "Si hay resultados inminentes, baja la confianza de compras claras por riesgo de gap y dilo en lenguaje simple. "
                     "Si asset_type es ETF, evalualo como instrumento de seguimiento/allocacion y no como empresa con fundamentales corporativos. "
                     "Si asset_type es CRYPTO, evalualo como criptoactivo: no tiene ganancias, ventas, EBITDA ni balance corporativo comparable. "
                     "Para CRYPTO enfocate en tendencia, drawdown contra maximo anual, recuperacion sobre medias moviles, volatilidad, regimen BTC/ETH, eth_btc_ratio y eth_vs_btc_60d. "
@@ -420,6 +431,13 @@ def build_portfolio_summary(config, analysis_rows):
             "peer_group": row.get("peer_group"),
             "peer_valuation_label": row.get("peer_valuation_label"),
             "peer_relative_score": row.get("peer_relative_score"),
+            "earnings_date": row.get("earnings_date"),
+            "days_to_earnings": row.get("days_to_earnings"),
+            "surprise_pct": row.get("surprise_pct"),
+            "earnings_event_status": row.get("earnings_event_status"),
+            "earnings_context_note": row.get("earnings_context_note"),
+            "ratios_may_be_stale_after_earnings": row.get("ratios_may_be_stale_after_earnings"),
+            "earnings_data_freshness_note": row.get("earnings_data_freshness_note"),
         }
         for row in analysis_rows
     ]

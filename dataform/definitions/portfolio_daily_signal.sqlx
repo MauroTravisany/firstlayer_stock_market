@@ -11,7 +11,8 @@ config {
   assertions: {
     nonNull: ["analysis_date", "ticker", "signal"],
     uniqueKey: ["analysis_date", "ticker"]
-  }
+  },
+  dependencies: ["macro_earnings_schema_update"]
 }
 
 WITH price_daily AS (
@@ -98,9 +99,77 @@ crypto_context AS (
   WHERE ticker IN ("BTC-USD", "ETH-USD")
   GROUP BY analysis_date
 ),
+earnings_context AS (
+  SELECT * EXCEPT(rn)
+  FROM (
+    SELECT
+      snapshot_date AS analysis_date,
+      ticker,
+      earnings_date,
+      days_to_earnings,
+      earnings_time,
+      eps_estimate,
+      reported_eps,
+      surprise_pct,
+      COALESCE(event_status, "NO_EARNINGS_DATA") AS earnings_event_status,
+      source AS earnings_source,
+      loaded_at AS earnings_loaded_at,
+      ROW_NUMBER() OVER (
+        PARTITION BY snapshot_date, ticker
+        ORDER BY loaded_at DESC, SAFE_CAST(signal_hour AS TIME) DESC
+      ) AS rn
+    FROM `stocks-437902.acciones_dataset.macro_earnings_calendar`
+  )
+  WHERE rn = 1
+),
 base AS (
   SELECT
     v.*,
+    e.earnings_date,
+    e.days_to_earnings,
+    e.earnings_time,
+    e.eps_estimate,
+    e.reported_eps,
+    e.surprise_pct,
+    COALESCE(e.earnings_event_status, "NO_EARNINGS_DATA") AS earnings_event_status,
+    e.earnings_source,
+    e.earnings_loaded_at,
+    CASE
+      WHEN COALESCE(e.earnings_event_status, "NO_EARNINGS_DATA") = "RECENT_NEGATIVE_SURPRISE" THEN -1.5
+      WHEN COALESCE(e.earnings_event_status, "NO_EARNINGS_DATA") = "RECENT_POSITIVE_SURPRISE" THEN 0.75
+      WHEN COALESCE(e.earnings_event_status, "NO_EARNINGS_DATA") IN ("RECENT_INLINE_RESULT", "RECENT_RESULT") THEN 0.10
+      WHEN COALESCE(e.earnings_event_status, "NO_EARNINGS_DATA") = "EARNINGS_IMMINENT" THEN -0.75
+      WHEN COALESCE(e.earnings_event_status, "NO_EARNINGS_DATA") = "PRE_EARNINGS_WINDOW" THEN -0.35
+      WHEN COALESCE(e.earnings_event_status, "NO_EARNINGS_DATA") = "NO_EARNINGS_DATA" THEN -0.10
+      ELSE 0
+    END AS earnings_score,
+    CASE
+      WHEN COALESCE(e.earnings_event_status, "NO_EARNINGS_DATA") = "RECENT_NEGATIVE_SURPRISE" THEN "Resultado reciente bajo expectativa: validar guidance, margenes, flujo de caja y reaccion del precio antes de comprar."
+      WHEN COALESCE(e.earnings_event_status, "NO_EARNINGS_DATA") = "RECENT_POSITIVE_SURPRISE" THEN "Resultado reciente sobre expectativa: validar si el precio ya desconto la buena noticia."
+      WHEN COALESCE(e.earnings_event_status, "NO_EARNINGS_DATA") IN ("RECENT_INLINE_RESULT", "RECENT_RESULT") THEN "Resultado reciente: revisar calidad del resultado y reaccion posterior del mercado."
+      WHEN COALESCE(e.earnings_event_status, "NO_EARNINGS_DATA") = "EARNINGS_IMMINENT" THEN "Resultados dentro de 3 dias: alto riesgo de salto de precio por noticia."
+      WHEN COALESCE(e.earnings_event_status, "NO_EARNINGS_DATA") = "PRE_EARNINGS_WINDOW" THEN "Resultados proximos: conviene exigir mas margen de seguridad."
+      WHEN COALESCE(e.earnings_event_status, "NO_EARNINGS_DATA") = "NO_EARNINGS_DATA" THEN "Yahoo no entrego calendario de resultados; menor confianza en el contexto."
+      ELSE "Sin evento de resultados cercano."
+    END AS earnings_context_note,
+    CASE
+      WHEN COALESCE(e.earnings_event_status, "NO_EARNINGS_DATA") IN ("RECENT_NEGATIVE_SURPRISE", "RECENT_POSITIVE_SURPRISE", "RECENT_INLINE_RESULT", "RECENT_RESULT")
+        AND v.period_end_date IS NOT NULL
+        AND e.earnings_date IS NOT NULL
+        AND v.period_end_date < e.earnings_date
+        THEN TRUE
+      ELSE FALSE
+    END AS ratios_may_be_stale_after_earnings,
+    CASE
+      WHEN COALESCE(e.earnings_event_status, "NO_EARNINGS_DATA") IN ("RECENT_NEGATIVE_SURPRISE", "RECENT_POSITIVE_SURPRISE", "RECENT_INLINE_RESULT", "RECENT_RESULT")
+        AND v.period_end_date IS NOT NULL
+        AND e.earnings_date IS NOT NULL
+        AND v.period_end_date < e.earnings_date
+        THEN "Los ratios/estados financieros internos pueden estar desfasados frente al ultimo reporte; la IA debe contrastar fuentes recientes."
+      WHEN COALESCE(e.earnings_event_status, "NO_EARNINGS_DATA") IN ("RECENT_NEGATIVE_SURPRISE", "RECENT_POSITIVE_SURPRISE", "RECENT_INLINE_RESULT", "RECENT_RESULT")
+        THEN "Existe reporte reciente; validar si Yahoo ya actualizo ratios, flujo de caja, capex y guidance."
+      ELSE "Sin alerta de rezago por resultados."
+    END AS earnings_data_freshness_note,
     pb.peer_count,
     pb.peer_median_pe,
     pb.peer_median_forward_pe,
@@ -140,6 +209,9 @@ base AS (
     c.eth_vs_btc_60d,
     c.crypto_regime
   FROM ${ref("portfolio_valuation_daily")} v
+  LEFT JOIN earnings_context e
+    ON e.ticker = v.ticker
+   AND e.analysis_date = v.analysis_date
   LEFT JOIN ${ref("peer_benchmark_daily")} pb
     ON pb.ticker = v.ticker
    AND pb.analysis_date = v.analysis_date
@@ -191,6 +263,8 @@ scored AS (
            WHEN financial_data_status = "SIN_SNAPSHOT_FINANCIERO" THEN -3
            WHEN financial_data_status = "FINANCIERO_REZAGADO" THEN -1
            ELSE 0 END +
+      CASE WHEN ratios_may_be_stale_after_earnings THEN -1.5 ELSE 0 END +
+      CASE WHEN earnings_event_status = "NO_EARNINGS_DATA" AND asset_type = "STOCK" THEN -0.25 ELSE 0 END +
       CASE WHEN asset_type = "CRYPTO" THEN 0 WHEN pe_ratio IS NULL THEN -0.25 ELSE 0 END +
       CASE WHEN asset_type = "CRYPTO" THEN 0 WHEN forward_pe IS NULL THEN -0.25 ELSE 0 END +
       CASE WHEN asset_type = "CRYPTO" THEN 0 WHEN price_to_sales IS NULL THEN -0.25 ELSE 0 END +
@@ -308,7 +382,8 @@ final_scored AS (
       momentum_score +
       technical_score +
       data_quality_score +
-      risk_score,
+      risk_score +
+      CASE WHEN asset_type = "CRYPTO" THEN 0 ELSE earnings_score END,
       2
     ) AS final_score
   FROM adaptive_guardrails
@@ -326,7 +401,9 @@ sell_scored AS (
       CASE WHEN forward_pe IS NOT NULL AND forward_pe > forward_pe_expensive THEN 1 ELSE 0 END +
       CASE WHEN price_to_sales IS NOT NULL AND price_to_sales > ps_expensive THEN 1 ELSE 0 END +
       CASE WHEN ev_to_ebitda IS NOT NULL AND ev_to_ebitda > ev_ebitda_expensive THEN 1 ELSE 0 END +
-      CASE WHEN valuation_model = "BANK_ROE_BOOK_VALUE" AND price_to_book IS NOT NULL AND price_to_book > pb_expensive THEN 1 ELSE 0 END,
+      CASE WHEN valuation_model = "BANK_ROE_BOOK_VALUE" AND price_to_book IS NOT NULL AND price_to_book > pb_expensive THEN 1 ELSE 0 END +
+      CASE WHEN earnings_event_status = "RECENT_NEGATIVE_SURPRISE" THEN 1.5 ELSE 0 END +
+      CASE WHEN ratios_may_be_stale_after_earnings THEN 0.75 ELSE 0 END,
       2
     ) AS sell_score,
     ROUND(
@@ -381,6 +458,17 @@ SELECT
   peer_relative_score,
   peer_valuation_label,
   financial_data_status,
+  earnings_date,
+  days_to_earnings,
+  earnings_time,
+  eps_estimate,
+  reported_eps,
+  surprise_pct,
+  earnings_event_status,
+  earnings_score,
+  earnings_context_note,
+  ratios_may_be_stale_after_earnings,
+  earnings_data_freshness_note,
   valuation_score,
   value_component,
   quality_score,
@@ -490,6 +578,14 @@ SELECT
     "; regimen_crypto=", COALESCE(crypto_regime, "NA"),
     "; eth_vs_btc_60d=", COALESCE(CAST(ROUND(eth_vs_btc_60d * 100, 1) AS STRING), "NA"), "%",
     "; eth_btc_ratio=", COALESCE(CAST(ROUND(eth_btc_ratio, 6) AS STRING), "NA"),
+    "; earnings_estado=", COALESCE(earnings_event_status, "NA"),
+    "; earnings_fecha=", COALESCE(CAST(earnings_date AS STRING), "NA"),
+    "; dias_a_resultados=", COALESCE(CAST(days_to_earnings AS STRING), "NA"),
+    "; sorpresa_eps=", COALESCE(CAST(ROUND(surprise_pct, 2) AS STRING), "NA"),
+    "; earnings_score=", CAST(ROUND(earnings_score, 2) AS STRING),
+    "; ratios_rezagados_por_resultados=", CAST(ratios_may_be_stale_after_earnings AS STRING),
+    "; nota_resultados=", earnings_context_note,
+    "; nota_frescura=", earnings_data_freshness_note,
     "; guardrail_compra=", CAST(buy_multiple_guardrail_pass AS STRING),
     "; ", buy_guardrail_reason,
     "; peers=", COALESCE(peer_valuation_label, "SIN_PEERS"),
@@ -530,6 +626,12 @@ SELECT
     "; forward_pe=", COALESCE(CAST(ROUND(forward_pe, 2) AS STRING), "NA"),
     "; ps=", COALESCE(CAST(ROUND(price_to_sales, 2) AS STRING), "NA"),
     "; ev_ebitda=", COALESCE(CAST(ROUND(ev_to_ebitda, 2) AS STRING), "NA"),
+    "; earnings_estado=", COALESCE(earnings_event_status, "NA"),
+    "; earnings_fecha=", COALESCE(CAST(earnings_date AS STRING), "NA"),
+    "; dias_a_resultados=", COALESCE(CAST(days_to_earnings AS STRING), "NA"),
+    "; sorpresa_eps=", COALESCE(CAST(ROUND(surprise_pct, 2) AS STRING), "NA"),
+    "; ratios_rezagados_por_resultados=", CAST(ratios_may_be_stale_after_earnings AS STRING),
+    "; nota_resultados=", earnings_context_note,
     "; calidad=", CAST(ROUND(quality_score, 2) AS STRING),
     "; riesgo=", CAST(ROUND(risk_score, 2) AS STRING),
     "; tecnico=", CAST(ROUND(technical_score, 2) AS STRING),

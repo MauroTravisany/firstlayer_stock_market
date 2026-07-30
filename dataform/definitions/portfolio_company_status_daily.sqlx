@@ -62,6 +62,17 @@ WITH base AS (
     risk_level,
     technical_trend,
     missing_data_impact,
+    earnings_date,
+    days_to_earnings,
+    earnings_time,
+    eps_estimate,
+    reported_eps,
+    surprise_pct,
+    earnings_event_status,
+    earnings_score,
+    earnings_context_note,
+    ratios_may_be_stale_after_earnings,
+    earnings_data_freshness_note,
     fair_value_estimate,
     conservative_fair_value,
     margin_of_safety_pct,
@@ -97,6 +108,7 @@ with_previous AS (
     LAG(risk_level) OVER ticker_window AS previous_risk_level,
     LAG(technical_trend) OVER ticker_window AS previous_technical_trend,
     LAG(missing_data_impact) OVER ticker_window AS previous_missing_data_impact,
+    LAG(earnings_event_status) OVER ticker_window AS previous_earnings_event_status,
     LAG(final_score) OVER ticker_window AS previous_final_score,
     LAG(sell_score) OVER ticker_window AS previous_sell_score,
     LAG(margin_of_safety_pct) OVER ticker_window AS previous_margin_of_safety_pct,
@@ -119,6 +131,7 @@ SELECT
     WHEN COALESCE(risk_level, "NA") != COALESCE(previous_risk_level, "NA") THEN TRUE
     WHEN COALESCE(technical_trend, "NA") != COALESCE(previous_technical_trend, "NA") THEN TRUE
     WHEN COALESCE(missing_data_impact, "NA") != COALESCE(previous_missing_data_impact, "NA") THEN TRUE
+    WHEN COALESCE(earnings_event_status, "NA") != COALESCE(previous_earnings_event_status, "NA") THEN TRUE
     WHEN ABS(COALESCE(final_score - previous_final_score, 0)) >= 2 THEN TRUE
     WHEN ABS(COALESCE(margin_of_safety_pct - previous_margin_of_safety_pct, 0)) >= 0.05 THEN TRUE
     ELSE FALSE
@@ -131,6 +144,7 @@ SELECT
     WHEN COALESCE(risk_level, "NA") != COALESCE(previous_risk_level, "NA") THEN "CAMBIO_RIESGO"
     WHEN COALESCE(technical_trend, "NA") != COALESCE(previous_technical_trend, "NA") THEN "CAMBIO_TENDENCIA"
     WHEN COALESCE(missing_data_impact, "NA") != COALESCE(previous_missing_data_impact, "NA") THEN "CAMBIO_CALIDAD_DATOS"
+    WHEN COALESCE(earnings_event_status, "NA") != COALESCE(previous_earnings_event_status, "NA") THEN "CAMBIO_RESULTADOS"
     WHEN ABS(COALESCE(final_score - previous_final_score, 0)) >= 2 THEN "CAMBIO_SCORE"
     WHEN ABS(COALESCE(margin_of_safety_pct - previous_margin_of_safety_pct, 0)) >= 0.05 THEN "CAMBIO_MARGEN_SEGURIDAD"
     ELSE "SIN_CAMBIO_RELEVANTE"
@@ -147,6 +161,9 @@ SELECT
     "; riesgo=", COALESCE(risk_level, "NA"),
     "; tendencia=", COALESCE(technical_trend, "NA"),
     "; datos=", COALESCE(missing_data_impact, "NA"),
+    "; earnings=", COALESCE(earnings_event_status, "NA"),
+    "; fecha_resultados=", COALESCE(CAST(earnings_date AS STRING), "NA"),
+    "; ratios_rezagados=", CAST(ratios_may_be_stale_after_earnings AS STRING),
     "; score_delta=", COALESCE(CAST(ROUND(final_score - previous_final_score, 2) AS STRING), "NA"),
     "; margen_delta=", COALESCE(CAST(ROUND((margin_of_safety_pct - previous_margin_of_safety_pct) * 100, 1) AS STRING), "NA"), "%"
   ) AS status_reason,
