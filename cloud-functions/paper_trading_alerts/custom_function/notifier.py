@@ -29,6 +29,30 @@ def _number(value, decimals=2):
     return str(round(float(value), decimals))
 
 
+def _signed_money_clp(value):
+    value = float(value or 0)
+    if value > 0:
+        return f"+{_money_clp(value)}"
+    if value < 0:
+        return f"-{_money_clp(abs(value))}"
+    return _money_clp(value)
+
+
+def _plain_status_label(value):
+    labels = {
+        "SOBRE_OBJETIVO": "positivo sobre objetivo",
+        "OBJETIVO_CUMPLIDO": "positivo dentro del objetivo",
+        "POSITIVO_BAJO_OBJETIVO": "positivo bajo objetivo",
+        "SIN_CIERRES": "sin cierres",
+        "NEGATIVO": "negativo",
+        "SEMANA_POSITIVA_SOBRE_OBJETIVO": "semana positiva sobre objetivo",
+        "SEMANA_POSITIVA": "semana positiva",
+        "SEMANA_SIN_RESULTADO": "semana sin resultado",
+        "SEMANA_NEGATIVA": "semana negativa",
+    }
+    return labels.get(value or "", value or "sin estado")
+
+
 def _trade_line(row):
     profile_adjustment = row.get("profile_adjustment_summary")
     adjustment_text = "" if not profile_adjustment or profile_adjustment == "NO_PROFILE_ADJUSTMENT" else " | ajuste perfil activo"
@@ -73,36 +97,70 @@ def build_discord_payload(summary, new_trades, closed_trades, feedback=None):
 
     new_lines = "\n".join([_trade_line(row) for row in new_trades]) or "Sin entradas nuevas."
     closed_lines = "\n".join([_closed_line(row) for row in closed_trades]) or "Sin cierres realizados."
+    day_start = summary.get("day_start_equity_clp")
+    day_end = summary.get("day_end_equity_clp")
+    week_pnl = summary.get("week_to_date_pnl_clp")
+    week_status = summary.get("week_to_date_status")
+    day_read = summary.get("daily_plain_read") or "Resumen diario disponible."
+    week_read = summary.get("weekly_plain_read") or "Resumen semanal disponible."
 
     return {
         "embeds": [
             {
                 "title": f"Paper trading diario | {summary.get('summary_date')}",
-                "description": summary.get("discord_summary") or "Resumen paper trading.",
+                "description": (
+                    f"{day_read}\n"
+                    f"{week_read}\n"
+                    "Lectura: se mide dinero ficticio; sirve para evaluar consistencia, no para operar dinero real."
+                ),
                 "color": color,
                 "fields": [
-                    {"name": "Resultado del dia", "value": f"{status} | PnL {_money_clp(pnl)}", "inline": False},
                     {
-                        "name": "Trades",
+                        "name": "Capital simulado",
                         "value": (
-                            f"Nuevos: {summary.get('new_trade_count', 0)} | "
-                            f"Cerrados: {summary.get('closed_trade_count', 0)} | "
-                            f"Ganaron: {summary.get('winning_trade_count', 0)} | "
-                            f"Perdieron: {summary.get('losing_trade_count', 0)}"
+                            f"Inicio del dia: {_money_clp(day_start)}\n"
+                            f"Cierre del dia: {_money_clp(day_end)}\n"
+                            f"Resultado del dia: {_signed_money_clp(pnl)} ({_plain_status_label(status)})"
                         ),
                         "inline": False,
                     },
                     {
-                        "name": "Objetivo ficticio",
-                        "value": f"{_money_clp(summary.get('daily_target_min_clp'))} a {_money_clp(summary.get('daily_target_max_clp'))} diarios",
+                        "name": "Actividad del dia",
+                        "value": (
+                            f"Entradas nuevas: {summary.get('new_trade_count', 0)}\n"
+                            f"En observacion: {summary.get('watch_count', 0)}\n"
+                            f"Cierres: {summary.get('closed_trade_count', 0)}\n"
+                            f"Ganados: {summary.get('winning_trade_count', 0)} | Perdidos: {summary.get('losing_trade_count', 0)}"
+                        ),
                         "inline": False,
                     },
                     {
-                        "name": "Historico",
+                        "name": "Semana en curso",
+                        "value": (
+                            f"Periodo: {summary.get('week_start')} a {summary.get('week_end')}\n"
+                            f"Resultado semanal acumulado: {_signed_money_clp(week_pnl)} ({_plain_status_label(week_status)})\n"
+                            f"Cierres semana: {summary.get('week_to_date_closed_trades', 0)}\n"
+                            f"Ganados: {summary.get('week_to_date_winning_trades', 0)} | "
+                            f"Perdidos: {summary.get('week_to_date_losing_trades', 0)} | "
+                            f"Win rate: {_number(summary.get('week_to_date_win_rate_pct'), 1)}%"
+                        ),
+                        "inline": False,
+                    },
+                    {
+                        "name": "Meta diaria",
+                        "value": (
+                            f"Rango objetivo ficticio: {_money_clp(summary.get('daily_target_min_clp'))} a "
+                            f"{_money_clp(summary.get('daily_target_max_clp'))}.\n"
+                            "Prioridad actual: evitar perdidas grandes y buscar avances moderados."
+                        ),
+                        "inline": False,
+                    },
+                    {
+                        "name": "Historico acumulado",
                         "value": (
                             f"Cerrados: {summary.get('all_closed_trades', 0)} | "
                             f"Win rate: {_number(summary.get('all_win_rate_pct'), 2)}% | "
-                            f"PnL total {_money_clp(summary.get('all_realized_pnl_clp'))}"
+                            f"Resultado total: {_signed_money_clp(summary.get('all_realized_pnl_clp'))}"
                         ),
                         "inline": False,
                     },

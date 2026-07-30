@@ -60,6 +60,62 @@ closed_trades AS (
   WHERE outcome_date IS NOT NULL
   GROUP BY summary_date
 ),
+capital AS (
+  SELECT
+    ROUND(MAX(paper_capital_clp), 0) AS paper_capital_clp
+  FROM ${ref("trading_paper_signals_active")}
+),
+daily_outcomes AS (
+  SELECT
+    d.summary_date,
+    COALESCE(c.realized_pnl_clp, 0) AS daily_pnl_clp,
+    COALESCE(c.closed_trade_count, 0) AS closed_trade_count,
+    COALESCE(c.winning_trade_count, 0) AS winning_trade_count,
+    COALESCE(c.losing_trade_count, 0) AS losing_trade_count
+  FROM dates d
+  LEFT JOIN closed_trades c
+    ON c.summary_date = d.summary_date
+),
+equity_curve AS (
+  SELECT
+    *,
+    ROUND(SUM(daily_pnl_clp) OVER (
+      ORDER BY summary_date
+      ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+    ), 0) AS cumulative_pnl_before_day,
+    ROUND(SUM(daily_pnl_clp) OVER (
+      ORDER BY summary_date
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ), 0) AS cumulative_pnl_end_day
+  FROM daily_outcomes
+),
+weekly_outcomes AS (
+  SELECT
+    summary_date,
+    DATE_TRUNC(summary_date, WEEK(MONDAY)) AS week_start,
+    DATE_ADD(DATE_TRUNC(summary_date, WEEK(MONDAY)), INTERVAL 6 DAY) AS week_end,
+    ROUND(SUM(daily_pnl_clp) OVER (
+      PARTITION BY DATE_TRUNC(summary_date, WEEK(MONDAY))
+      ORDER BY summary_date
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ), 0) AS week_to_date_pnl_clp,
+    SUM(closed_trade_count) OVER (
+      PARTITION BY DATE_TRUNC(summary_date, WEEK(MONDAY))
+      ORDER BY summary_date
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS week_to_date_closed_trades,
+    SUM(winning_trade_count) OVER (
+      PARTITION BY DATE_TRUNC(summary_date, WEEK(MONDAY))
+      ORDER BY summary_date
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS week_to_date_winning_trades,
+    SUM(losing_trade_count) OVER (
+      PARTITION BY DATE_TRUNC(summary_date, WEEK(MONDAY))
+      ORDER BY summary_date
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS week_to_date_losing_trades
+  FROM daily_outcomes
+),
 open_trades AS (
   SELECT
     d.summary_date,
@@ -107,6 +163,17 @@ strategy_totals AS (
 
 SELECT
   d.summary_date,
+  cpt.paper_capital_clp,
+  ROUND(cpt.paper_capital_clp + COALESCE(ec.cumulative_pnl_before_day, 0), 0) AS day_start_equity_clp,
+  ROUND(cpt.paper_capital_clp + COALESCE(ec.cumulative_pnl_end_day, 0), 0) AS day_end_equity_clp,
+  ROUND(COALESCE(ec.cumulative_pnl_end_day, 0), 0) AS cumulative_pnl_clp,
+  wo.week_start,
+  wo.week_end,
+  COALESCE(wo.week_to_date_pnl_clp, 0) AS week_to_date_pnl_clp,
+  COALESCE(wo.week_to_date_closed_trades, 0) AS week_to_date_closed_trades,
+  COALESCE(wo.week_to_date_winning_trades, 0) AS week_to_date_winning_trades,
+  COALESCE(wo.week_to_date_losing_trades, 0) AS week_to_date_losing_trades,
+  ROUND(SAFE_DIVIDE(wo.week_to_date_winning_trades, wo.week_to_date_closed_trades) * 100, 2) AS week_to_date_win_rate_pct,
   COALESCE(n.new_trade_count, 0) AS new_trade_count,
   COALESCE(n.watch_count, 0) AS watch_count,
   COALESCE(n.backtest_adjusted_signal_count, 0) AS backtest_adjusted_signal_count,
@@ -131,10 +198,30 @@ SELECT
     WHEN COALESCE(c.realized_pnl_clp, 0) = 0 THEN "SIN_CIERRES"
     ELSE "NEGATIVO"
   END AS daily_result_status,
+  CASE
+    WHEN COALESCE(wo.week_to_date_pnl_clp, 0) >= 100000 THEN "SEMANA_POSITIVA_SOBRE_OBJETIVO"
+    WHEN COALESCE(wo.week_to_date_pnl_clp, 0) > 0 THEN "SEMANA_POSITIVA"
+    WHEN COALESCE(wo.week_to_date_pnl_clp, 0) = 0 THEN "SEMANA_SIN_RESULTADO"
+    ELSE "SEMANA_NEGATIVA"
+  END AS week_to_date_status,
+  CASE
+    WHEN COALESCE(c.realized_pnl_clp, 0) > 0 THEN "El dia cerro positivo."
+    WHEN COALESCE(c.realized_pnl_clp, 0) < 0 THEN "El dia cerro negativo; foco en controlar perdida y revisar stops."
+    WHEN COALESCE(c.closed_trade_count, 0) = 0 THEN "No hubo cierres; el resultado depende de posiciones abiertas."
+    ELSE "El dia quedo neutro."
+  END AS daily_plain_read,
+  CASE
+    WHEN COALESCE(wo.week_to_date_pnl_clp, 0) > 0 THEN "La semana va positiva."
+    WHEN COALESCE(wo.week_to_date_pnl_clp, 0) < 0 THEN "La semana va negativa; conviene mantener cautela."
+    ELSE "La semana va plana."
+  END AS weekly_plain_read,
   COALESCE(n.new_trade_details, "Sin trades nuevos") AS new_trade_details,
   COALESCE(c.closed_trade_details, "Sin cierres") AS closed_trade_details,
   CONCAT(
     "Paper trading activo ", CAST(d.summary_date AS STRING),
+    ": inicio=", CAST(ROUND(cpt.paper_capital_clp + COALESCE(ec.cumulative_pnl_before_day, 0), 0) AS STRING),
+    " CLP, cierre=", CAST(ROUND(cpt.paper_capital_clp + COALESCE(ec.cumulative_pnl_end_day, 0), 0) AS STRING),
+    " CLP",
     ": nuevos=", CAST(COALESCE(n.new_trade_count, 0) AS STRING),
     ", vigilar=", CAST(COALESCE(n.watch_count, 0) AS STRING),
     ", ajustadas_backtest=", CAST(COALESCE(n.backtest_adjusted_signal_count, 0) AS STRING),
@@ -142,10 +229,15 @@ SELECT
     ", ganadores=", CAST(COALESCE(c.winning_trade_count, 0) AS STRING),
     ", perdedores=", CAST(COALESCE(c.losing_trade_count, 0) AS STRING),
     ", PnL=", CAST(COALESCE(c.realized_pnl_clp, 0) AS STRING), " CLP",
+    ", semana=", CAST(COALESCE(wo.week_to_date_pnl_clp, 0) AS STRING), " CLP",
     ", winrate_hist=", CAST(COALESCE(t.all_win_rate_pct, 0) AS STRING), "%"
   ) AS discord_summary,
   CURRENT_TIMESTAMP() AS calculated_at
 FROM dates d
+LEFT JOIN equity_curve ec
+  ON ec.summary_date = d.summary_date
+LEFT JOIN weekly_outcomes wo
+  ON wo.summary_date = d.summary_date
 LEFT JOIN new_trades n
   ON n.summary_date = d.summary_date
 LEFT JOIN closed_trades c
@@ -154,3 +246,4 @@ LEFT JOIN open_trades o
   ON o.summary_date = d.summary_date
 CROSS JOIN totals t
 CROSS JOIN strategy_totals st
+CROSS JOIN capital cpt
