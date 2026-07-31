@@ -458,7 +458,7 @@ def build_portfolio_summary(config, analysis_rows):
                     "No des recomendacion financiera personalizada. "
                     "Todos los campos de texto deben estar escritos en espanol. "
                     f"analysis_date={analysis_date}\n"
-                    f"analysis_rows={json.dumps(compact_rows, ensure_ascii=True)}"
+                    f"analysis_rows={json.dumps(compact_rows, ensure_ascii=True, default=str)}"
                 ),
             },
         ],
