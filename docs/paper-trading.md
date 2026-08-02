@@ -31,6 +31,39 @@ Discord se envia una vez al dia, a las 21:40 America/Santiago, con el resumen de
 
 La consistencia se mide por P&L ficticio, win rate, cantidad de trades cerrados y cantidad de trades abiertos. El objetivo no fuerza operaciones: si no hay setup, no se abre trade.
 
+## Alpaca Paper demo
+
+El servicio `papertradeexecutor` conecta las senales activas con Alpaca Paper Trading. Es demo-only: por seguridad solo permite `https://paper-api.alpaca.markets` y falla si se intenta usar el endpoint live.
+
+Flujo:
+
+- Lee `trading_paper_signals_active`.
+- Toma solo senales `TRADE_LONG` del ultimo bloque disponible.
+- Usa `paper_trade_id` como base de `client_order_id`, por lo que repetir el proceso no duplica la misma orden.
+- Consulta posiciones abiertas en Alpaca y evita abrir otra orden si ya existe posicion en el mismo simbolo.
+- Limita el riesgo con `ALPACA_MAX_ORDERS_PER_RUN`, `ALPACA_MAX_ORDERS_PER_DAY`, `ALPACA_MAX_OPEN_POSITIONS` y `ALPACA_MAX_NOTIONAL_USD`.
+- Guarda cada intento en `trading_alpaca_paper_executions`, incluyendo payload, respuesta de Alpaca y `X-Request-ID`.
+
+Por defecto usa orden simple de mercado con notional pequeno (`ALPACA_EQUITY_ORDER_CLASS=simple`) para ser compatible con cuentas demo chicas y acciones caras. Los niveles de stop y take profit quedan registrados desde el sistema para comparacion. Si se quiere que el broker deje una salida automaticada para acciones, se puede cambiar `ALPACA_EQUITY_ORDER_CLASS=bracket`; cripto en Alpaca no soporta bracket, por eso usa orden simple.
+
+El scheduler corre cada 4 horas a los `:55`, despues de precios, macro y Dataform. El resumen de Discord sigue siendo una sola vez al dia.
+
+Prueba manual segura:
+
+```powershell
+$bodyPath = Join-Path $env:TEMP 'alpaca_paper_dry_run.json'
+Set-Content -LiteralPath $bodyPath -Value '{"dry_run":true,"max_orders":1}' -NoNewline
+curl.exe --ssl-no-revoke -s -X POST 'https://papertradeexecutor-10359734256.us-east1.run.app' -H 'Content-Type: application/json' --data-binary "@$bodyPath"
+```
+
+Ejecucion real en paper:
+
+```powershell
+$bodyPath = Join-Path $env:TEMP 'alpaca_paper_execute.json'
+Set-Content -LiteralPath $bodyPath -Value '{"execute":true,"max_orders":1}' -NoNewline
+curl.exe --ssl-no-revoke -s -X POST 'https://papertradeexecutor-10359734256.us-east1.run.app' -H 'Content-Type: application/json' --data-binary "@$bodyPath"
+```
+
 ## Estrategias v1-v4
 
 Las reglas estan versionadas en `trading_strategy_versions`:
