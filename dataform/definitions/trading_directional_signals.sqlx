@@ -26,7 +26,7 @@ decision AS (
     GREATEST(min_trade_score, 6.0) AS directional_threshold,
     CASE
       WHEN paper_signal = "TRADE_LONG" AND long_score >= GREATEST(min_trade_score, 6.0) AND long_score >= short_score + 0.75 AND risk_score < 82 THEN "LONG"
-      WHEN setup_type != "SIN_SETUP" AND short_score >= GREATEST(min_trade_score, 6.0) AND short_score >= long_score + 1.00 AND weighted_technical_score <= -1.5 AND return_20d < -0.02 AND risk_score < 85 THEN "SHORT_SIMULATED"
+      WHEN short_score >= GREATEST(min_trade_score, 6.0) AND short_score >= long_score + 1.00 AND weighted_technical_score <= -1.5 AND return_20d < -0.02 AND risk_score < 85 THEN "SHORT_SIMULATED"
       ELSE "NO_TRADE"
     END AS direction
   FROM scored
@@ -37,9 +37,10 @@ positioned AS (
 )
 
 SELECT
-  * EXCEPT (paper_trade_id, paper_signal, direction, stop_loss, take_profit_1, take_profit_2, theoretical_quantity, position_notional_clp, signal_reason),
+  * EXCEPT (paper_trade_id, paper_signal, direction, setup_type, stop_loss, take_profit_1, take_profit_2, theoretical_quantity, position_notional_clp, signal_reason),
   TO_HEX(SHA256(CONCAT(CAST(signal_timestamp AS STRING), "|", ticker, "|", strategy_version, "|", direction))) AS paper_trade_id,
   CASE WHEN direction = "LONG" THEN "TRADE_LONG" WHEN direction = "SHORT_SIMULATED" THEN "TRADE_SHORT_SIMULATED" WHEN paper_signal = "VIGILAR" THEN "VIGILAR" ELSE "SIN_TRADE" END AS paper_signal,
+  CASE WHEN direction = "SHORT_SIMULATED" THEN "QUIEBRE_BAJISTA" ELSE setup_type END AS setup_type,
   direction,
   CASE WHEN direction = "LONG" THEN "EXECUTE_LONG_DEMO" WHEN direction = "SHORT_SIMULATED" THEN "SIMULATE_SHORT_ONLY" ELSE "NO_ACTION" END AS execution_action,
   CASE WHEN direction = "SHORT_SIMULATED" THEN ROUND(theoretical_entry_price * (1 + SAFE_DIVIDE(stop_distance_pct, 100)), 4) ELSE stop_loss END AS stop_loss,
