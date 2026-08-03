@@ -1,0 +1,51 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_directional_signals",
+  description: "Capa direccional del paper trading. Decide LONG, SHORT_SIMULATED o NO_TRADE con tecnica, macro, factores, miedo y riesgo de resultados. Solo LONG queda habilitado para ejecucion en Alpaca Paper.",
+  tags: ["trading", "paper", "directional", "daily"],
+  bigquery: { partitionBy: "analysis_date", clusterBy: ["direction", "ticker"] },
+  assertions: {
+    nonNull: ["analysis_date", "ticker", "paper_trade_id", "direction"],
+    uniqueKey: ["paper_trade_id"]
+  },
+  dependencies: ["trading_paper_signals_active"]
+}
+
+WITH scored AS (
+  SELECT
+    s.*,
+    ROUND(5 + COALESCE(s.weighted_technical_score, 0) * 0.70 + COALESCE(s.macro_alignment_score, 0) * 0.85 + COALESCE(s.factor_alignment_score, 0) * 0.85 + COALESCE(s.earnings_event_score, 0) * 0.50 + IF(COALESCE(s.return_20d, 0) > 0, 0.55, -0.35) + IF(COALESCE(s.volume_vs_20d_avg, 0) >= 1.10, 0.35, 0) - GREATEST(COALESCE(s.market_fear_score, 50) - 70, 0) / 20, 2) AS long_score,
+    ROUND(5 - COALESCE(s.weighted_technical_score, 0) * 0.75 - COALESCE(s.macro_alignment_score, 0) * 0.80 - COALESCE(s.factor_alignment_score, 0) * 0.80 - COALESCE(s.earnings_event_score, 0) * 0.45 + IF(COALESCE(s.return_5d, 0) < 0, 0.45, 0) + IF(COALESCE(s.return_20d, 0) < -0.02, 0.65, 0) + IF(COALESCE(s.volume_vs_20d_avg, 0) >= 1.10, 0.25, 0) + GREATEST(COALESCE(s.market_fear_score, 50) - 55, 0) / 22, 2) AS short_score,
+    ROUND(LEAST(100.0, GREATEST(COALESCE(s.market_fear_score, 50), 0) + LEAST(COALESCE(s.atr_pct, 0) * 650, 25) + CASE WHEN s.days_to_earnings BETWEEN 0 AND 3 THEN 18 WHEN s.days_to_earnings BETWEEN 4 AND 7 THEN 8 ELSE 0 END + CASE WHEN s.external_macro_data_status != "OK" THEN 8 ELSE 0 END), 1) AS risk_score
+  FROM ${ref("trading_paper_signals_active")} s
+),
+decision AS (
+  SELECT
+    *,
+    GREATEST(min_trade_score, 6.0) AS directional_threshold,
+    CASE
+      WHEN paper_signal = "TRADE_LONG" AND long_score >= GREATEST(min_trade_score, 6.0) AND long_score >= short_score + 0.75 AND risk_score < 82 THEN "LONG"
+      WHEN setup_type != "SIN_SETUP" AND short_score >= GREATEST(min_trade_score, 6.0) AND short_score >= long_score + 1.00 AND weighted_technical_score <= -1.5 AND return_20d < -0.02 AND risk_score < 85 THEN "SHORT_SIMULATED"
+      ELSE "NO_TRADE"
+    END AS direction
+  FROM scored
+),
+positioned AS (
+  SELECT *, CASE WHEN direction = "LONG" THEN 1.00 WHEN direction = "SHORT_SIMULATED" THEN 0.60 ELSE 0.00 END AS position_size_multiplier
+  FROM decision
+)
+
+SELECT
+  * EXCEPT (paper_trade_id, paper_signal, stop_loss, take_profit_1, take_profit_2, theoretical_quantity, position_notional_clp, signal_reason),
+  TO_HEX(SHA256(CONCAT(CAST(signal_timestamp AS STRING), "|", ticker, "|", strategy_version, "|", direction))) AS paper_trade_id,
+  CASE WHEN direction = "LONG" THEN "TRADE_LONG" WHEN direction = "SHORT_SIMULATED" THEN "TRADE_SHORT_SIMULATED" WHEN paper_signal = "VIGILAR" THEN "VIGILAR" ELSE "SIN_TRADE" END AS paper_signal,
+  direction,
+  CASE WHEN direction = "LONG" THEN "EXECUTE_LONG_DEMO" WHEN direction = "SHORT_SIMULATED" THEN "SIMULATE_SHORT_ONLY" ELSE "NO_ACTION" END AS execution_action,
+  CASE WHEN direction = "SHORT_SIMULATED" THEN ROUND(theoretical_entry_price * (1 + SAFE_DIVIDE(stop_distance_pct, 100)), 4) ELSE stop_loss END AS stop_loss,
+  CASE WHEN direction = "SHORT_SIMULATED" THEN ROUND(theoretical_entry_price * (1 - SAFE_DIVIDE(stop_distance_pct * 1.5, 100) - SAFE_DIVIDE(estimated_roundtrip_cost_pct, 100)), 4) ELSE take_profit_1 END AS take_profit_1,
+  CASE WHEN direction = "SHORT_SIMULATED" THEN ROUND(theoretical_entry_price * (1 - SAFE_DIVIDE(stop_distance_pct * 2.5, 100) - SAFE_DIVIDE(estimated_roundtrip_cost_pct, 100)), 4) ELSE take_profit_2 END AS take_profit_2,
+  ROUND(position_notional_clp * position_size_multiplier, 0) AS position_notional_clp,
+  ROUND(SAFE_DIVIDE(position_notional_clp * position_size_multiplier, theoretical_entry_price * usd_clp_assumption), 6) AS theoretical_quantity,
+  CONCAT(signal_reason, "; direccion=", direction, "; long_score=", CAST(long_score AS STRING), "; short_score=", CAST(short_score AS STRING), "; riesgo=", CAST(risk_score AS STRING), "; umbral=", CAST(directional_threshold AS STRING), "; accion=", CASE WHEN direction = "LONG" THEN "long habilitado para paper Alpaca" WHEN direction = "SHORT_SIMULATED" THEN "short solo simulado hasta validar historico" ELSE "sin operacion por ventaja insuficiente o riesgo elevado" END) AS signal_reason
+FROM positioned

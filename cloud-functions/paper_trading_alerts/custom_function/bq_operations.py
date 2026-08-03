@@ -178,8 +178,10 @@ def fetch_new_trades(config, summary_date, limit=20):
       signal_reason
     FROM {_table_ref(config["signals_table"])}
     WHERE analysis_date = @summary_date
-      AND paper_signal IN ("TRADE_LONG", "VIGILAR")
-    ORDER BY paper_signal, setup_score DESC, signal_hour DESC, strategy_version
+      AND paper_signal IN ("TRADE_LONG", "TRADE_SHORT_SIMULATED", "VIGILAR")
+    ORDER BY
+      CASE paper_signal WHEN "TRADE_LONG" THEN 1 WHEN "TRADE_SHORT_SIMULATED" THEN 2 ELSE 3 END,
+      setup_score DESC, signal_hour DESC, strategy_version
     LIMIT @limit
     """
     job_config = bigquery.QueryJobConfig(

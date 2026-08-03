@@ -74,6 +74,16 @@ SIN_DATOS
 
 `suggested_sell_price` marca una zona objetiva de revision de venta basada en precio actual, valoracion, momentum y riesgo. No es una orden de venta.
 
+## Paper trading direccional
+
+`trading_directional_signals` toma las senales activas y contrasta dos puntuaciones: una para subida y otra para caida. Ambas consideran tecnica, contexto macro, factores del activo, miedo de mercado, volatilidad y cercania de resultados.
+
+- `LONG`: ventaja al alza clara. Es el unico estado que puede enviarse a Alpaca Paper.
+- `SHORT_SIMULATED`: ventaja bajista clara. Se registra y se evalua en el backtest, pero no se envia al broker hasta que acumule evidencia suficiente.
+- `NO_TRADE`: no hay ventaja clara o el riesgo es elevado.
+
+`trading_directional_trade_results` mantiene el historial de ambos sentidos, aplicando spread, slippage, stop, objetivos y horizonte de la estrategia. `trading_directional_daily_summary` consolida largos reales de demo y cortos simulados.
+
 ## Ejecucion local
 
 Desde `dataform/`:

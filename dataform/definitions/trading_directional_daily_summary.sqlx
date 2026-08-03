@@ -1,0 +1,80 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_directional_daily_summary",
+  description: "Resumen diario de la capa direccional. Separa largos ejecutables de cortos que aun estan solo en validacion historica.",
+  tags: ["trading", "paper", "directional", "summary"],
+  bigquery: { partitionBy: "summary_date" },
+  assertions: { nonNull: ["summary_date"], uniqueKey: ["summary_date"] },
+  dependencies: ["trading_price_features", "trading_directional_signals", "trading_directional_trade_results"]
+}
+
+WITH dates AS (
+  SELECT DISTINCT analysis_date AS summary_date FROM ${ref("trading_price_features")}
+),
+new_trades AS (
+  SELECT analysis_date AS summary_date, COUNTIF(direction = "LONG") AS new_trade_count, COUNTIF(direction = "SHORT_SIMULATED") AS short_simulated_count, COUNTIF(paper_signal = "VIGILAR") AS watch_count
+  FROM ${ref("trading_directional_signals")} GROUP BY summary_date
+),
+closed AS (
+  SELECT outcome_date AS summary_date, COUNT(*) AS closed_trade_count, COUNTIF(is_win) AS winning_trade_count, COUNTIF(NOT is_win) AS losing_trade_count, ROUND(SUM(net_pnl_clp), 0) AS realized_pnl_clp
+  FROM ${ref("trading_directional_trade_results")} WHERE outcome_date IS NOT NULL GROUP BY summary_date
+),
+totals AS (
+  SELECT COUNT(*) AS all_closed_trades, COUNTIF(is_win) AS all_wins, COUNTIF(NOT is_win) AS all_losses, ROUND(SUM(net_pnl_clp), 0) AS all_realized_pnl_clp, ROUND(SAFE_DIVIDE(COUNTIF(is_win), COUNT(*)) * 100, 2) AS all_win_rate_pct
+  FROM ${ref("trading_directional_trade_results")} WHERE outcome_date IS NOT NULL
+),
+capital AS (SELECT ROUND(MAX(paper_capital_clp), 0) AS paper_capital_clp FROM ${ref("trading_directional_signals")}),
+daily AS (
+  SELECT d.summary_date, COALESCE(c.realized_pnl_clp, 0) AS daily_pnl_clp, COALESCE(c.closed_trade_count, 0) AS closed_trade_count, COALESCE(c.winning_trade_count, 0) AS winning_trade_count, COALESCE(c.losing_trade_count, 0) AS losing_trade_count
+  FROM dates d LEFT JOIN closed c ON c.summary_date = d.summary_date
+),
+equity AS (
+  SELECT *, ROUND(SUM(daily_pnl_clp) OVER (ORDER BY summary_date ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS cumulative_pnl_before_day, ROUND(SUM(daily_pnl_clp) OVER (ORDER BY summary_date), 0) AS cumulative_pnl_end_day FROM daily
+),
+week AS (
+  SELECT *, DATE_TRUNC(summary_date, WEEK(MONDAY)) AS week_start, DATE_ADD(DATE_TRUNC(summary_date, WEEK(MONDAY)), INTERVAL 6 DAY) AS week_end,
+    ROUND(SUM(daily_pnl_clp) OVER (PARTITION BY DATE_TRUNC(summary_date, WEEK(MONDAY)) ORDER BY summary_date), 0) AS week_to_date_pnl_clp,
+    SUM(closed_trade_count) OVER (PARTITION BY DATE_TRUNC(summary_date, WEEK(MONDAY)) ORDER BY summary_date) AS week_to_date_closed_trades,
+    SUM(winning_trade_count) OVER (PARTITION BY DATE_TRUNC(summary_date, WEEK(MONDAY)) ORDER BY summary_date) AS week_to_date_winning_trades,
+    SUM(losing_trade_count) OVER (PARTITION BY DATE_TRUNC(summary_date, WEEK(MONDAY)) ORDER BY summary_date) AS week_to_date_losing_trades
+  FROM equity
+),
+open_trades AS (
+  SELECT d.summary_date, COUNTIF(r.trade_status = "OPEN") AS open_trade_count, ROUND(SUM(IF(r.trade_status = "OPEN", r.position_notional_clp, 0)), 0) AS open_notional_clp
+  FROM dates d LEFT JOIN ${ref("trading_directional_trade_results")} r ON r.analysis_date <= d.summary_date AND (r.outcome_date IS NULL OR r.outcome_date > d.summary_date)
+  GROUP BY d.summary_date
+),
+strategy AS (
+  SELECT STRING_AGG(CONCAT(direction, " ", strategy_version, ": ", CAST(win_rate_pct AS STRING), "% win, ", CAST(realized_pnl_clp AS STRING), " CLP"), " | " ORDER BY realized_pnl_clp DESC) AS strategy_performance_summary
+  FROM (
+    SELECT direction, strategy_version, ROUND(SAFE_DIVIDE(COUNTIF(is_win), COUNT(*)) * 100, 1) AS win_rate_pct, ROUND(SUM(net_pnl_clp), 0) AS realized_pnl_clp
+    FROM ${ref("trading_directional_trade_results")}
+    WHERE outcome_date IS NOT NULL
+    GROUP BY direction, strategy_version
+  )
+)
+
+SELECT
+  w.summary_date, c.paper_capital_clp,
+  ROUND(c.paper_capital_clp + COALESCE(w.cumulative_pnl_before_day, 0), 0) AS day_start_equity_clp,
+  ROUND(c.paper_capital_clp + COALESCE(w.cumulative_pnl_end_day, 0), 0) AS day_end_equity_clp,
+  COALESCE(w.cumulative_pnl_end_day, 0) AS cumulative_pnl_clp,
+  w.week_start, w.week_end, w.week_to_date_pnl_clp, w.week_to_date_closed_trades, w.week_to_date_winning_trades, w.week_to_date_losing_trades,
+  ROUND(SAFE_DIVIDE(w.week_to_date_winning_trades, w.week_to_date_closed_trades) * 100, 2) AS week_to_date_win_rate_pct,
+  COALESCE(n.new_trade_count, 0) AS new_trade_count, COALESCE(n.short_simulated_count, 0) AS short_simulated_count, COALESCE(n.watch_count, 0) AS watch_count,
+  w.closed_trade_count, w.winning_trade_count, w.losing_trade_count, w.daily_pnl_clp AS realized_pnl_clp,
+  o.open_trade_count, o.open_notional_clp,
+  t.all_closed_trades, t.all_wins, t.all_losses, t.all_realized_pnl_clp, t.all_win_rate_pct,
+  COALESCE(s.strategy_performance_summary, "Sin historico por direccion") AS strategy_performance_summary,
+  25000.0 AS daily_target_min_clp, 100000.0 AS daily_target_max_clp,
+  CASE WHEN w.daily_pnl_clp >= 100000 THEN "SOBRE_OBJETIVO" WHEN w.daily_pnl_clp >= 25000 THEN "OBJETIVO_CUMPLIDO" WHEN w.daily_pnl_clp > 0 THEN "POSITIVO_BAJO_OBJETIVO" WHEN w.daily_pnl_clp = 0 THEN "SIN_CIERRES" ELSE "NEGATIVO" END AS daily_result_status,
+  CASE WHEN w.week_to_date_pnl_clp > 0 THEN "SEMANA_POSITIVA" WHEN w.week_to_date_pnl_clp < 0 THEN "SEMANA_NEGATIVA" ELSE "SEMANA_SIN_RESULTADO" END AS week_to_date_status,
+  CASE WHEN w.daily_pnl_clp > 0 THEN "El dia cerro positivo." WHEN w.daily_pnl_clp < 0 THEN "El dia cerro negativo; se mantiene el control de perdida." ELSE "No hubo cierres relevantes." END AS daily_plain_read,
+  CASE WHEN w.week_to_date_pnl_clp > 0 THEN "La semana va positiva." WHEN w.week_to_date_pnl_clp < 0 THEN "La semana va negativa; conviene mantener cautela." ELSE "La semana va plana." END AS weekly_plain_read,
+  CONCAT("Largos ejecutables=", CAST(COALESCE(n.new_trade_count, 0) AS STRING), "; cortos simulados=", CAST(COALESCE(n.short_simulated_count, 0) AS STRING), "; PnL diario=", CAST(w.daily_pnl_clp AS STRING), " CLP") AS discord_summary,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM week w
+LEFT JOIN new_trades n ON n.summary_date = w.summary_date
+LEFT JOIN open_trades o ON o.summary_date = w.summary_date
+CROSS JOIN totals t CROSS JOIN capital c CROSS JOIN strategy s

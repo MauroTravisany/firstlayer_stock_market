@@ -154,7 +154,7 @@ jobs:
               --timeout 300 \
               --concurrency 1 \
               --max-instances 1 \
-              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},OPENAI_MODEL=gpt-5-mini,ALERT_WEBHOOK_TYPE=auto,TRADING_SUMMARY_TABLE_ID=trading_daily_summary,TRADING_SIGNALS_TABLE_ID=trading_paper_signals,TRADING_RESULTS_TABLE_ID=trading_paper_trade_results,TRADING_ALERTS_TABLE_ID=trading_alerts_sent,TRADING_FEEDBACK_TABLE_ID=trading_ai_feedback_daily,TRADING_WEEKLY_REVIEW_TABLE_ID=trading_weekly_ai_strategy_review,TRADING_AI_FEEDBACK=true,TRADING_PROMPT_VERSION=paper-trading-feedback-v1"
+              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},OPENAI_MODEL=gpt-5-mini,ALERT_WEBHOOK_TYPE=auto,TRADING_SUMMARY_TABLE_ID=trading_directional_daily_summary,TRADING_SIGNALS_TABLE_ID=trading_directional_signals,TRADING_RESULTS_TABLE_ID=trading_directional_trade_results,TRADING_ALERTS_TABLE_ID=trading_alerts_sent,TRADING_FEEDBACK_TABLE_ID=trading_ai_feedback_daily,TRADING_WEEKLY_REVIEW_TABLE_ID=trading_weekly_ai_strategy_review,TRADING_AI_FEEDBACK=true,TRADING_PROMPT_VERSION=paper-trading-feedback-v2"
 
       - name: Deploy Alpaca paper trade executor to Cloud Run
         run: |
@@ -169,7 +169,7 @@ jobs:
               --timeout 300 \
               --concurrency 1 \
               --max-instances 1 \
-              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PAPER_EXECUTION_MODE=paper,TRADING_SIGNALS_TABLE_ID=trading_paper_signals_active,TRADING_RESULTS_TABLE_ID=trading_paper_trade_results_active,ALPACA_EXECUTIONS_TABLE_ID=trading_alpaca_paper_executions,ALPACA_EQUITY_ORDER_CLASS=simple,ALPACA_ENABLE_CRYPTO_ORDERS=true,ALPACA_MAX_ORDERS_PER_RUN=3,ALPACA_MAX_ORDERS_PER_DAY=5,ALPACA_MAX_OPEN_POSITIONS=5,ALPACA_MAX_NOTIONAL_USD=10,ALPACA_MIN_SETUP_SCORE=0,ALPACA_REQUEST_TIMEOUT_SECONDS=20"
+              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PAPER_EXECUTION_MODE=paper,TRADING_SIGNALS_TABLE_ID=trading_directional_signals,TRADING_RESULTS_TABLE_ID=trading_directional_trade_results,ALPACA_EXECUTIONS_TABLE_ID=trading_alpaca_paper_executions,ALPACA_EQUITY_ORDER_CLASS=simple,ALPACA_ENABLE_CRYPTO_ORDERS=true,ALPACA_MAX_ORDERS_PER_RUN=3,ALPACA_MAX_ORDERS_PER_DAY=5,ALPACA_MAX_OPEN_POSITIONS=5,ALPACA_MAX_NOTIONAL_USD=10,ALPACA_MIN_SETUP_SCORE=0,ALPACA_REQUEST_TIMEOUT_SECONDS=20"
 
       - name: Configure Alpaca paper trade executor scheduler
         run: |
@@ -183,7 +183,7 @@ jobs:
           if gcloud scheduler jobs describe paper-trade-executor-intraday --location us-east1 >/dev/null 2>&1; then
             gcloud scheduler jobs update http paper-trade-executor-intraday \
               --location us-east1 \
-              --schedule "55 */4 * * *" \
+              --schedule "55 */4 * * 1-5" \
               --time-zone "America/Santiago" \
               --uri "${SERVICE_URL}?execute=true" \
               --http-method POST \
@@ -194,7 +194,7 @@ jobs:
           else
             gcloud scheduler jobs create http paper-trade-executor-intraday \
               --location us-east1 \
-              --schedule "55 */4 * * *" \
+              --schedule "55 */4 * * 1-5" \
               --time-zone "America/Santiago" \
               --uri "${SERVICE_URL}?execute=true" \
               --http-method POST \
