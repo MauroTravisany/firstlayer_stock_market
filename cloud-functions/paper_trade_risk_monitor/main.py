@@ -13,8 +13,29 @@ def parse_bool(value, default=False):
     return str(value).strip().lower() in {"1", "true", "yes", "y", "si"}
 
 
+def request_values(request):
+    values = request.get_json(silent=True) or {}
+    if values:
+        return values
+
+    # Cloud Scheduler can send application/octet-stream. Accept its tiny,
+    # constrained key:value body without weakening the public request contract.
+    raw_body = request.get_data(cache=True, as_text=True).strip().strip("{}")
+    for item in raw_body.split(","):
+        key, separator, value = item.partition(":")
+        if not separator:
+            continue
+        key = key.strip().strip('"')
+        value = value.strip().strip('"')
+        if key == "execute":
+            values[key] = value.lower() == "true"
+        elif key == "asset_scope" and value.lower() in {"all", "equities", "crypto"}:
+            values[key] = value.lower()
+    return values
+
+
 def main(request):
-    request_json = request.get_json(silent=True) or {}
+    request_json = request_values(request)
     dry_run = parse_bool(request_json.get("dry_run", request.args.get("dry_run")), True)
     if request_json.get("execute") is True or str(request.args.get("execute")).lower() == "true":
         dry_run = False
