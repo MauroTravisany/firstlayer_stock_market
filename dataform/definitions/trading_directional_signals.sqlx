@@ -37,7 +37,7 @@ positioned AS (
 )
 
 SELECT
-  * EXCEPT (paper_trade_id, paper_signal, stop_loss, take_profit_1, take_profit_2, theoretical_quantity, position_notional_clp, signal_reason),
+  * EXCEPT (paper_trade_id, paper_signal, direction, stop_loss, take_profit_1, take_profit_2, theoretical_quantity, position_notional_clp, signal_reason),
   TO_HEX(SHA256(CONCAT(CAST(signal_timestamp AS STRING), "|", ticker, "|", strategy_version, "|", direction))) AS paper_trade_id,
   CASE WHEN direction = "LONG" THEN "TRADE_LONG" WHEN direction = "SHORT_SIMULATED" THEN "TRADE_SHORT_SIMULATED" WHEN paper_signal = "VIGILAR" THEN "VIGILAR" ELSE "SIN_TRADE" END AS paper_signal,
   direction,
