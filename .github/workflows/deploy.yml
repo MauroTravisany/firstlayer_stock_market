@@ -204,6 +204,82 @@ jobs:
               --attempt-deadline 300s
           fi
 
+      - name: Deploy Alpaca paper risk monitor to Cloud Run
+        run: |
+          gcloud run deploy papertraderiskmonitor \
+              --source ./cloud-functions/paper_trade_risk_monitor \
+              --platform managed \
+              --region us-east1 \
+              --no-allow-unauthenticated \
+              --clear-base-image \
+              --command python \
+              --args main.py \
+              --timeout 120 \
+              --concurrency 1 \
+              --max-instances 1 \
+              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PAPER_EXECUTION_MODE=paper,ALPACA_EXECUTIONS_TABLE_ID=trading_alpaca_paper_executions,ALPACA_MAX_EXITS_PER_RUN=3,ALPACA_REQUEST_TIMEOUT_SECONDS=20"
+
+      - name: Configure Alpaca equity risk monitor scheduler
+        run: |
+          SERVICE_URL="$(gcloud run services describe papertraderiskmonitor --platform managed --region us-east1 --format='value(status.url)')"
+          SERVICE_ACCOUNT="stock-alert-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
+          gcloud run services add-iam-policy-binding papertraderiskmonitor \
+            --region us-east1 \
+            --member "serviceAccount:${SERVICE_ACCOUNT}" \
+            --role "roles/run.invoker" \
+            --quiet
+          if gcloud scheduler jobs describe paper-trade-risk-equities --location us-east1 >/dev/null 2>&1; then
+            gcloud scheduler jobs update http paper-trade-risk-equities \
+              --location us-east1 \
+              --schedule "*/15 9-16 * * 1-5" \
+              --time-zone "America/New_York" \
+              --uri "${SERVICE_URL}?execute=true&asset_scope=equities" \
+              --http-method POST \
+              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
+              --oidc-token-audience "${SERVICE_URL}" \
+              --message-body "{}" \
+              --attempt-deadline 120s
+          else
+            gcloud scheduler jobs create http paper-trade-risk-equities \
+              --location us-east1 \
+              --schedule "*/15 9-16 * * 1-5" \
+              --time-zone "America/New_York" \
+              --uri "${SERVICE_URL}?execute=true&asset_scope=equities" \
+              --http-method POST \
+              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
+              --oidc-token-audience "${SERVICE_URL}" \
+              --message-body "{}" \
+              --attempt-deadline 120s
+          fi
+
+      - name: Configure Alpaca crypto risk monitor scheduler
+        run: |
+          SERVICE_URL="$(gcloud run services describe papertraderiskmonitor --platform managed --region us-east1 --format='value(status.url)')"
+          SERVICE_ACCOUNT="stock-alert-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
+          if gcloud scheduler jobs describe paper-trade-risk-crypto --location us-east1 >/dev/null 2>&1; then
+            gcloud scheduler jobs update http paper-trade-risk-crypto \
+              --location us-east1 \
+              --schedule "*/30 * * * *" \
+              --time-zone "UTC" \
+              --uri "${SERVICE_URL}?execute=true&asset_scope=crypto" \
+              --http-method POST \
+              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
+              --oidc-token-audience "${SERVICE_URL}" \
+              --message-body "{}" \
+              --attempt-deadline 120s
+          else
+            gcloud scheduler jobs create http paper-trade-risk-crypto \
+              --location us-east1 \
+              --schedule "*/30 * * * *" \
+              --time-zone "UTC" \
+              --uri "${SERVICE_URL}?execute=true&asset_scope=crypto" \
+              --http-method POST \
+              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
+              --oidc-token-audience "${SERVICE_URL}" \
+              --message-body "{}" \
+              --attempt-deadline 120s
+          fi
+
       - name: Configure daily AI candidate scheduler
         run: |
           SERVICE_URL="$(gcloud run services describe stockaianalysis --platform managed --region us-east1 --format='value(status.url)')"

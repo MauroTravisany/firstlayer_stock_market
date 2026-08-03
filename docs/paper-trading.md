@@ -46,7 +46,16 @@ Flujo:
 
 Por defecto usa orden simple de mercado con notional pequeno (`ALPACA_EQUITY_ORDER_CLASS=simple`) para ser compatible con cuentas demo chicas y acciones caras. Los niveles de stop y take profit quedan registrados desde el sistema para comparacion. Si se quiere que el broker deje una salida automaticada para acciones, se puede cambiar `ALPACA_EQUITY_ORDER_CLASS=bracket`; cripto en Alpaca no soporta bracket, por eso usa orden simple.
 
-El scheduler corre cada 4 horas a los `:55`, despues de precios, macro y Dataform. El resumen de Discord sigue siendo una sola vez al dia.
+El scheduler de entradas corre cada 4 horas a los `:55`, despues de precios, macro y Dataform. El resumen de Discord sigue siendo una sola vez al dia.
+
+## Guardian de posiciones
+
+El servicio `papertraderiskmonitor` no busca nuevas entradas. Lee las posiciones abiertas en Alpaca Paper y sus niveles registrados en `trading_alpaca_paper_executions`.
+
+- Acciones: se revisan cada 15 minutos en dias habiles, en `America/New_York`. El servicio consulta el reloj de Alpaca y no envia una orden de mercado si la bolsa esta cerrada.
+- BTC y ETH: se revisan cada 30 minutos, todos los dias.
+- Si el precio llega a `stop_loss` o `take_profit_1`, envia una salida de mercado y guarda una fila `EXIT` idempotente. Una salida ya enviada no vuelve a enviarse.
+- Las posiciones abiertas manualmente no se cierran automaticamente porque no tienen una entrada y niveles trazables en el sistema.
 
 Prueba manual segura:
 
