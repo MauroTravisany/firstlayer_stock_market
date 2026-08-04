@@ -46,7 +46,14 @@ def main(request):
     try:
         from conf.conf import load_config
         from custom_function.alpaca_client import AlpacaPaperClient, is_crypto_position, normalize_symbol
-        from custom_function.bq_operations import fetch_open_entries, save_exit
+        from custom_function.bq_operations import (
+            ensure_positions_table,
+            fetch_open_entries,
+            fetch_unfinalized_orders,
+            save_exit,
+            save_position_snapshot,
+            sync_order_status,
+        )
 
         config = load_config()
         if config["execution_mode"] != "paper":
@@ -55,6 +62,11 @@ def main(request):
         account_status, _, account = client.get_account()
         if account_status >= 400:
             return json.dumps({"status": "error", "message": "Alpaca account check failed", "response": account}), 502, {"Content-Type": "application/json"}
+
+        ensure_positions_table(config)
+        for order in fetch_unfinalized_orders(config):
+            status_code, request_id, response = client.get_order(order["alpaca_order_id"])
+            sync_order_status(config, order["client_order_id"], status_code, request_id, response)
 
         entries = {normalize_symbol(row["alpaca_symbol"]): row for row in fetch_open_entries(config)}
         positions_status, _, positions = client.get_positions()
@@ -77,6 +89,7 @@ def main(request):
             if not entry:
                 results.append({"symbol": position.get("symbol"), "status": "SKIPPED_UNMANAGED_POSITION"})
                 continue
+            save_position_snapshot(config, entry, position)
             if not crypto and not clock.get("is_open"):
                 results.append({"symbol": position.get("symbol"), "status": "SKIPPED_MARKET_CLOSED"})
                 continue

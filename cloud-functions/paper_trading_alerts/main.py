@@ -42,6 +42,7 @@ def main(request):
         config = load_config()
         from custom_function.bq_operations import (
             already_sent,
+            ensure_alpaca_positions_table,
             ensure_alerts_table,
             ensure_feedback_table,
             ensure_weekly_review_table,
@@ -65,6 +66,7 @@ def main(request):
         from custom_function.notifier import send_alert, send_weekly_alert
 
         ensure_alerts_table(config)
+        ensure_alpaca_positions_table(config)
         ensure_feedback_table(config)
         ensure_weekly_review_table(config)
 

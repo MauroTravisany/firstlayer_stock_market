@@ -27,6 +27,33 @@ def ensure_alerts_table(config):
     client.query(query).result()
 
 
+def ensure_alpaca_positions_table(config):
+    client = bigquery.Client(project=config["project_id"])
+    query = f"""
+    CREATE TABLE IF NOT EXISTS {_table_ref(config['alpaca_positions_table'])} (
+      snapshot_date DATE NOT NULL,
+      snapshot_at TIMESTAMP NOT NULL,
+      paper_trade_id STRING NOT NULL,
+      ticker STRING NOT NULL,
+      alpaca_symbol STRING NOT NULL,
+      asset_type STRING,
+      strategy_version STRING,
+      side STRING,
+      quantity FLOAT64,
+      avg_entry_price FLOAT64,
+      current_price FLOAT64,
+      market_value_usd FLOAT64,
+      cost_basis_usd FLOAT64,
+      unrealized_pl_usd FLOAT64,
+      unrealized_plpc FLOAT64,
+      position_status STRING NOT NULL
+    )
+    PARTITION BY snapshot_date
+    CLUSTER BY ticker, paper_trade_id
+    """
+    client.query(query).result()
+
+
 def ensure_feedback_table(config):
     client = bigquery.Client(project=config["project_id"])
     query = f"""
@@ -254,6 +281,27 @@ def fetch_alpaca_execution_summary(config, summary_date, limit=8):
         created_at
       FROM {_table_ref(config["alpaca_executions_table"])}
       WHERE analysis_date = @summary_date
+    ), latest_positions AS (
+      SELECT * EXCEPT (rn)
+      FROM (
+        SELECT
+          p.*,
+          ROW_NUMBER() OVER (PARTITION BY p.paper_trade_id ORDER BY p.snapshot_at DESC) AS rn
+        FROM {_table_ref(config["alpaca_positions_table"])} p
+        WHERE p.position_status = "OPEN"
+          AND p.snapshot_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 2 HOUR)
+      )
+      WHERE rn = 1
+    ), confirmed_open_positions AS (
+      SELECT p.*
+      FROM latest_positions p
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM {_table_ref(config["alpaca_executions_table"])} e
+        WHERE e.paper_trade_id = p.paper_trade_id
+          AND e.order_intent = "EXIT"
+          AND e.execution_status = "FILLED"
+      )
     )
     SELECT
       COUNTIF(order_intent = "ENTRY") AS entry_attempt_count,
@@ -275,7 +323,15 @@ def fetch_alpaca_execution_summary(config, summary_date, limit=8):
         )
         ORDER BY created_at DESC
         LIMIT @limit
-      ) AS executions
+      ) AS executions,
+      (SELECT COUNT(*) FROM confirmed_open_positions) AS open_position_count,
+      (SELECT COALESCE(SUM(unrealized_pl_usd), 0) FROM confirmed_open_positions) AS unrealized_pl_usd,
+      (SELECT ARRAY_AGG(
+        STRUCT(ticker, alpaca_symbol, asset_type, side, quantity, avg_entry_price, current_price,
+               market_value_usd, unrealized_pl_usd, unrealized_plpc, snapshot_at)
+        ORDER BY unrealized_pl_usd ASC
+        LIMIT @limit
+      ) FROM confirmed_open_positions) AS open_positions
     FROM executions
     """
     job_config = bigquery.QueryJobConfig(
@@ -286,10 +342,11 @@ def fetch_alpaca_execution_summary(config, summary_date, limit=8):
     )
     rows = list(client.query(query, job_config=job_config).result())
     if not rows:
-        return {"entry_attempt_count": 0, "entry_submitted_count": 0, "exit_submitted_count": 0, "error_count": 0, "executions": []}
+        return {"entry_attempt_count": 0, "entry_submitted_count": 0, "exit_submitted_count": 0, "error_count": 0, "executions": [], "open_position_count": 0, "unrealized_pl_usd": 0, "open_positions": []}
 
     result = dict(rows[0])
     result["executions"] = [dict(row) for row in (result.get("executions") or [])]
+    result["open_positions"] = [dict(row) for row in (result.get("open_positions") or [])]
     return result
 
 

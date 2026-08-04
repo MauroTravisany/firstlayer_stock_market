@@ -192,7 +192,7 @@ jobs:
               --timeout 300 \
               --concurrency 1 \
               --max-instances 1 \
-              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},OPENAI_MODEL=gpt-5-mini,ALERT_WEBHOOK_TYPE=auto,TRADING_SUMMARY_TABLE_ID=trading_directional_daily_summary,TRADING_SIGNALS_TABLE_ID=trading_directional_signals,TRADING_RESULTS_TABLE_ID=trading_directional_trade_results,ALPACA_EXECUTIONS_TABLE_ID=trading_alpaca_paper_executions,TRADING_ALERTS_TABLE_ID=trading_alerts_sent,TRADING_FEEDBACK_TABLE_ID=trading_ai_feedback_daily,TRADING_WEEKLY_REVIEW_TABLE_ID=trading_weekly_ai_strategy_review,TRADING_AI_FEEDBACK=true,TRADING_PROMPT_VERSION=paper-trading-feedback-v2"
+              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},OPENAI_MODEL=gpt-5-mini,ALERT_WEBHOOK_TYPE=auto,TRADING_SUMMARY_TABLE_ID=trading_directional_daily_summary,TRADING_SIGNALS_TABLE_ID=trading_directional_signals,TRADING_RESULTS_TABLE_ID=trading_directional_trade_results,ALPACA_EXECUTIONS_TABLE_ID=trading_alpaca_paper_executions,ALPACA_POSITIONS_TABLE_ID=trading_alpaca_paper_positions,TRADING_ALERTS_TABLE_ID=trading_alerts_sent,TRADING_FEEDBACK_TABLE_ID=trading_ai_feedback_daily,TRADING_WEEKLY_REVIEW_TABLE_ID=trading_weekly_ai_strategy_review,TRADING_AI_FEEDBACK=true,TRADING_PROMPT_VERSION=paper-trading-feedback-v2"
 
       - name: Deploy strategy brain in backtest-only mode
         run: |
@@ -332,7 +332,7 @@ jobs:
               --timeout 120 \
               --concurrency 1 \
               --max-instances 1 \
-              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PAPER_EXECUTION_MODE=paper,ALPACA_EXECUTIONS_TABLE_ID=trading_alpaca_paper_executions,ALPACA_MAX_EXITS_PER_RUN=3,ALPACA_REQUEST_TIMEOUT_SECONDS=20"
+              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PAPER_EXECUTION_MODE=paper,ALPACA_EXECUTIONS_TABLE_ID=trading_alpaca_paper_executions,ALPACA_POSITIONS_TABLE_ID=trading_alpaca_paper_positions,ALPACA_MAX_EXITS_PER_RUN=3,ALPACA_REQUEST_TIMEOUT_SECONDS=20"
 
       - name: Configure Alpaca equity risk monitor scheduler
         run: |

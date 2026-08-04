@@ -34,6 +34,7 @@ def load_config():
         "signals_table": f"{project_id}.{dataset_id}.{os.environ.get('TRADING_SIGNALS_TABLE_ID', 'trading_paper_signals')}",
         "results_table": f"{project_id}.{dataset_id}.{os.environ.get('TRADING_RESULTS_TABLE_ID', 'trading_paper_trade_results')}",
         "alpaca_executions_table": f"{project_id}.{dataset_id}.{os.environ.get('ALPACA_EXECUTIONS_TABLE_ID', 'trading_alpaca_paper_executions')}",
+        "alpaca_positions_table": f"{project_id}.{dataset_id}.{os.environ.get('ALPACA_POSITIONS_TABLE_ID', 'trading_alpaca_paper_positions')}",
         "alerts_table": f"{project_id}.{dataset_id}.{os.environ.get('TRADING_ALERTS_TABLE_ID', 'trading_alerts_sent')}",
         "feedback_table": f"{project_id}.{dataset_id}.{os.environ.get('TRADING_FEEDBACK_TABLE_ID', 'trading_ai_feedback_daily')}",
         "weekly_review_table": f"{project_id}.{dataset_id}.{os.environ.get('TRADING_WEEKLY_REVIEW_TABLE_ID', 'trading_weekly_ai_strategy_review')}",

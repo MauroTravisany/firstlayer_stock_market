@@ -25,6 +25,9 @@ class AlpacaPaperClient:
     def get_positions(self):
         return self._request("GET", "/v2/positions")
 
+    def get_order(self, order_id):
+        return self._request("GET", f"/v2/orders/{order_id}")
+
     def create_order(self, payload):
         return self._request("POST", "/v2/orders", json=payload)
 

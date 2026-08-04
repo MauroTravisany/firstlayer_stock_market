@@ -32,6 +32,7 @@ def load_config():
     return {
         "project_id": project_id,
         "executions_table": f"{project_id}.{dataset_id}.{os.environ.get('ALPACA_EXECUTIONS_TABLE_ID', 'trading_alpaca_paper_executions')}",
+        "positions_table": f"{project_id}.{dataset_id}.{os.environ.get('ALPACA_POSITIONS_TABLE_ID', 'trading_alpaca_paper_positions')}",
         "alpaca_base_url": base_url,
         "alpaca_api_key": access_secret_version(os.environ.get("ALPACA_API_KEY_SECRET", "ALPACA_API_KEY")),
         "alpaca_secret_key": access_secret_version(os.environ.get("ALPACA_SECRET_KEY_SECRET", "ALPACA_SECRET_KEY")),

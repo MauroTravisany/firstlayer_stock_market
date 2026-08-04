@@ -94,6 +94,16 @@ def _alpaca_execution_line(row):
     return detail
 
 
+def _alpaca_position_line(row):
+    pnl = float(row.get("unrealized_pl_usd") or 0)
+    pnl_prefix = "+" if pnl > 0 else ""
+    return (
+        f"{row.get('ticker')} | entrada USD {_number(row.get('avg_entry_price'), 2)} | "
+        f"actual USD {_number(row.get('current_price'), 2)} | "
+        f"PnL flotante {pnl_prefix}USD {pnl:,.2f} ({_number(float(row.get('unrealized_plpc') or 0) * 100, 2)}%)"
+    )
+
+
 def _alpaca_summary_text(alpaca_summary):
     alpaca_summary = alpaca_summary or {}
     entry_attempts = int(alpaca_summary.get("entry_attempt_count") or 0)
@@ -109,6 +119,15 @@ def _alpaca_summary_text(alpaca_summary):
     execution_lines = "\n".join(_alpaca_execution_line(row) for row in alpaca_summary.get("executions", []))
     if execution_lines:
         lines.append(execution_lines)
+    open_positions = alpaca_summary.get("open_positions") or []
+    if open_positions:
+        unrealized = float(alpaca_summary.get("unrealized_pl_usd") or 0)
+        prefix = "+" if unrealized > 0 else ""
+        lines.append(
+            f"Posiciones abiertas confirmadas: {alpaca_summary.get('open_position_count', len(open_positions))} | "
+            f"PnL flotante total: {prefix}USD {unrealized:,.2f}"
+        )
+        lines.extend(_alpaca_position_line(row) for row in open_positions)
     return "\n".join(lines)
 
 
