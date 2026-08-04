@@ -150,7 +150,16 @@ def _review(client, config, payload):
     run_id = payload.get("run_id")
     if not run_id:
         latest = list(client.query(
-            f"SELECT run_id FROM `{config['runs_table']}` WHERE status = 'CANDIDATES_READY' ORDER BY created_at DESC LIMIT 1"
+            f"""
+            SELECT r.run_id
+            FROM `{config['runs_table']}` r
+            WHERE r.status = 'CANDIDATES_READY'
+              AND NOT EXISTS (
+                SELECT 1 FROM `{config['audits_table']}` a WHERE a.run_id = r.run_id
+              )
+            ORDER BY r.created_at DESC
+            LIMIT 1
+            """
         ).result())
         if not latest:
             raise ValueError("run_id is required when no candidate run exists")
@@ -183,12 +192,6 @@ def _review(client, config, payload):
     }])
     if errors:
         raise RuntimeError(f"Could not save audit: {errors}")
-    client.query(
-        f"UPDATE `{config['runs_table']}` SET status = 'REVIEWED' WHERE run_id = @run_id",
-        job_config=bigquery.QueryJobConfig(
-            query_parameters=[bigquery.ScalarQueryParameter("run_id", "STRING", run_id)]
-        ),
-    ).result()
     return {"run_id": run_id, "status": "REVIEW_SAVED", "eligible_count": len(eligible), "production_change_allowed": False, "results": rows}
 
 
