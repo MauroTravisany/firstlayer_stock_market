@@ -104,25 +104,25 @@ first_event AS (
 evaluated AS (
   SELECT
     t.*, fe.future_days_seen,
-    CASE WHEN fe.first_hit.event_type IS NOT NULL THEN fe.first_hit.path_date WHEN fe.future_days_seen >= t.adaptive_max_holding_days THEN fe.latest_seen.path_date ELSE NULL END AS outcome_date,
-    CASE WHEN fe.first_hit.event_type IS NOT NULL THEN fe.first_hit.event_type WHEN fe.future_days_seen >= t.adaptive_max_holding_days THEN "TIME_EXIT" ELSE "OPEN" END AS trade_status,
-    CASE WHEN fe.first_hit.event_price IS NOT NULL THEN fe.first_hit.event_price WHEN fe.future_days_seen >= t.adaptive_max_holding_days THEN fe.latest_seen.day_close ELSE NULL END AS exit_price
+    CASE WHEN fe.first_hit.event_type IS NOT NULL THEN fe.first_hit.path_date WHEN fe.future_days_seen >= t.adaptive_max_holding_days THEN fe.latest_seen.path_date ELSE NULL END AS structural_outcome_date,
+    CASE WHEN fe.first_hit.event_type IS NOT NULL THEN fe.first_hit.event_type WHEN fe.future_days_seen >= t.adaptive_max_holding_days THEN "TIME_EXIT" ELSE "OPEN" END AS structural_trade_status,
+    CASE WHEN fe.first_hit.event_price IS NOT NULL THEN fe.first_hit.event_price WHEN fe.future_days_seen >= t.adaptive_max_holding_days THEN fe.latest_seen.day_close ELSE NULL END AS structural_exit_price
   FROM trades t
   LEFT JOIN first_event fe USING (structural_trade_id)
 )
 
 SELECT
-  analysis_date, signal_hour, signal_timestamp, outcome_date, ticker, asset_type, trading_group, sector_profile, cycle_profile,
+  analysis_date, signal_hour, signal_timestamp, structural_outcome_date AS outcome_date, ticker, asset_type, trading_group, sector_profile, cycle_profile,
   strategy_version, strategy_name, variant_id AS benchmark_candidate_id, structural_trade_id, contextual_trade_id,
   contextual_setup_score, contextual_technical_score, trend_score, momentum_score, volume_score, volatility_score, regime_score,
   macro_alignment_score, factor_alignment_score, earnings_event_score, historical_fear_regime, monetary_regime_proxy, political_regime_proxy,
   crypto_context_regime, earnings_event_status, company_lifecycle_context, rule_rationale, min_score_add, min_technical_score, min_trend_score,
   theoretical_entry_price, adaptive_stop_loss, adaptive_take_profit_1, adaptive_take_profit_2, adaptive_max_holding_days,
-  estimated_roundtrip_cost_pct, adaptive_position_notional_clp, trade_status, exit_price, future_days_seen,
-  ROUND(SAFE_DIVIDE(exit_price - theoretical_entry_price, theoretical_entry_price), 4) AS gross_return_pct,
-  ROUND(SAFE_DIVIDE(exit_price - theoretical_entry_price, theoretical_entry_price) - estimated_roundtrip_cost_pct / 100, 4) AS net_return_pct,
-  ROUND(adaptive_position_notional_clp * (SAFE_DIVIDE(exit_price - theoretical_entry_price, theoretical_entry_price) - estimated_roundtrip_cost_pct / 100), 0) AS net_pnl_clp,
-  CASE WHEN trade_status IN ("TAKE_PROFIT_1", "TAKE_PROFIT_2") THEN TRUE WHEN trade_status = "TIME_EXIT" AND exit_price > theoretical_entry_price THEN TRUE ELSE FALSE END AS is_win,
-  CASE WHEN trade_status = "OPEN" THEN "ABIERTO" WHEN trade_status = "STOP_LOSS" THEN "PERDIDA" WHEN trade_status IN ("TAKE_PROFIT_1", "TAKE_PROFIT_2") THEN "GANANCIA" WHEN exit_price > theoretical_entry_price THEN "GANANCIA_TIEMPO" ELSE "PERDIDA_TIEMPO" END AS result_label,
+  estimated_roundtrip_cost_pct, adaptive_position_notional_clp, structural_trade_status AS trade_status, structural_exit_price AS exit_price, future_days_seen,
+  ROUND(SAFE_DIVIDE(structural_exit_price - theoretical_entry_price, theoretical_entry_price), 4) AS gross_return_pct,
+  ROUND(SAFE_DIVIDE(structural_exit_price - theoretical_entry_price, theoretical_entry_price) - estimated_roundtrip_cost_pct / 100, 4) AS net_return_pct,
+  ROUND(adaptive_position_notional_clp * (SAFE_DIVIDE(structural_exit_price - theoretical_entry_price, theoretical_entry_price) - estimated_roundtrip_cost_pct / 100), 0) AS net_pnl_clp,
+  CASE WHEN structural_trade_status IN ("TAKE_PROFIT_1", "TAKE_PROFIT_2") THEN TRUE WHEN structural_trade_status = "TIME_EXIT" AND structural_exit_price > theoretical_entry_price THEN TRUE ELSE FALSE END AS is_win,
+  CASE WHEN structural_trade_status = "OPEN" THEN "ABIERTO" WHEN structural_trade_status = "STOP_LOSS" THEN "PERDIDA" WHEN structural_trade_status IN ("TAKE_PROFIT_1", "TAKE_PROFIT_2") THEN "GANANCIA" WHEN structural_exit_price > theoretical_entry_price THEN "GANANCIA_TIEMPO" ELSE "PERDIDA_TIEMPO" END AS result_label,
   CURRENT_TIMESTAMP() AS calculated_at
 FROM evaluated
