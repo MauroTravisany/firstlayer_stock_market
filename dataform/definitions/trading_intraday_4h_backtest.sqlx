@@ -142,7 +142,7 @@ outcomes AS (
     ARRAY_AGG(
       IF(bar_low <= stop_loss OR bar_high >= take_profit OR future_bar_number = 12,
         STRUCT(outcome_timestamp, bar_close, bar_low, bar_high, stop_loss, take_profit,
-          CASE WHEN bar_low <= stop_loss THEN "STOP_LOSS" WHEN bar_high >= take_profit THEN "TAKE_PROFIT" ELSE "TIME_EXIT" END),
+          CASE WHEN bar_low <= stop_loss THEN "STOP_LOSS" WHEN bar_high >= take_profit THEN "TAKE_PROFIT" ELSE "TIME_EXIT" END AS outcome),
         NULL) IGNORE NULLS ORDER BY outcome_timestamp LIMIT 1
     )[SAFE_OFFSET(0)] AS first_outcome
   FROM evaluated
