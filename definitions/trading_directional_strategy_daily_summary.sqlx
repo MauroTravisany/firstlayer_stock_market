@@ -1,0 +1,82 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_directional_strategy_daily_summary",
+  description: "Curva diaria independiente de cada estrategia v1-v4 del backtest secuencial. Los resultados no se suman entre estrategias.",
+  tags: ["trading", "paper", "directional", "backtest", "summary"],
+  bigquery: { partitionBy: "summary_date", clusterBy: ["strategy_version"] },
+  assertions: {
+    nonNull: ["summary_date", "strategy_version"],
+    uniqueKey: ["summary_date", "strategy_version"]
+  },
+  dependencies: ["trading_price_features", "trading_strategy_versions", "trading_directional_strategy_backtest"]
+}
+
+WITH dates AS (
+  SELECT DISTINCT analysis_date AS summary_date
+  FROM ${ref("trading_price_features")}
+),
+daily_results AS (
+  SELECT
+    outcome_date AS summary_date,
+    strategy_version,
+    COUNT(*) AS closed_trade_count,
+    COUNTIF(is_win) AS winning_trade_count,
+    COUNTIF(NOT is_win) AS losing_trade_count,
+    ROUND(SUM(net_pnl_clp), 0) AS realized_pnl_clp
+  FROM ${ref("trading_directional_strategy_backtest")}
+  GROUP BY summary_date, strategy_version
+),
+spine AS (
+  SELECT
+    d.summary_date,
+    s.strategy_version,
+    s.strategy_name,
+    s.paper_capital_clp,
+    COALESCE(r.closed_trade_count, 0) AS closed_trade_count,
+    COALESCE(r.winning_trade_count, 0) AS winning_trade_count,
+    COALESCE(r.losing_trade_count, 0) AS losing_trade_count,
+    COALESCE(r.realized_pnl_clp, 0) AS realized_pnl_clp
+  FROM dates d
+  CROSS JOIN ${ref("trading_strategy_versions")} s
+  LEFT JOIN daily_results r
+    ON r.summary_date = d.summary_date
+   AND r.strategy_version = s.strategy_version
+),
+equity AS (
+  SELECT
+    *,
+    ROUND(SUM(realized_pnl_clp) OVER (
+      PARTITION BY strategy_version
+      ORDER BY summary_date
+      ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+    ), 0) AS cumulative_pnl_before_day,
+    ROUND(SUM(realized_pnl_clp) OVER (
+      PARTITION BY strategy_version
+      ORDER BY summary_date
+    ), 0) AS cumulative_pnl_clp,
+    SUM(closed_trade_count) OVER (PARTITION BY strategy_version ORDER BY summary_date) AS all_closed_trades,
+    SUM(winning_trade_count) OVER (PARTITION BY strategy_version ORDER BY summary_date) AS all_wins,
+    SUM(losing_trade_count) OVER (PARTITION BY strategy_version ORDER BY summary_date) AS all_losses
+  FROM spine
+)
+
+SELECT
+  summary_date,
+  strategy_version,
+  strategy_name,
+  paper_capital_clp,
+  ROUND(paper_capital_clp + COALESCE(cumulative_pnl_before_day, 0), 0) AS day_start_equity_clp,
+  ROUND(paper_capital_clp + COALESCE(cumulative_pnl_clp, 0), 0) AS day_end_equity_clp,
+  cumulative_pnl_clp,
+  closed_trade_count,
+  winning_trade_count,
+  losing_trade_count,
+  realized_pnl_clp,
+  all_closed_trades,
+  all_wins,
+  all_losses,
+  ROUND(SAFE_DIVIDE(all_wins, all_closed_trades) * 100, 2) AS all_win_rate_pct,
+  "SEQUENTIAL_ONE_SLOT_LONG" AS portfolio_model,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM equity

@@ -1,0 +1,98 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_paper_signals_active",
+  description: "Senales diarias activas ajustadas por backtesting contextual. Mantiene fallback a la senal base si no hay evidencia suficiente.",
+  tags: ["trading", "paper", "daily", "signal", "active"],
+  bigquery: {
+    partitionBy: "analysis_date",
+    clusterBy: ["paper_signal", "ticker"]
+  },
+  assertions: {
+    nonNull: ["analysis_date", "ticker", "paper_signal"],
+    uniqueKey: ["analysis_date", "signal_hour", "ticker", "strategy_version"]
+  },
+  dependencies: ["trading_paper_signals", "trading_historical_context", "trading_active_strategy_config", "trading_contextual_backtest_results"]
+}
+
+WITH joined AS (
+  SELECT
+    s.*,
+    c.context_similarity_key AS active_context_similarity_key,
+    cfg.variant_id AS active_variant_id,
+    cfg.variant_name AS active_variant_name,
+    cfg.activation_status,
+    cfg.closed_trades AS active_backtest_closed_trades,
+    cfg.win_rate_pct AS active_backtest_win_rate_pct,
+    cfg.total_pnl_clp AS active_backtest_total_pnl_clp,
+    cfg.pnl_p05_clp AS active_backtest_p05_clp,
+    cfg.recommendation AS active_backtest_recommendation,
+    cfg.recommendation_reason AS active_backtest_reason,
+    br.contextual_signal,
+    br.contextual_setup_score,
+    br.contextual_min_trade_score,
+    br.contextual_position_notional_clp,
+    br.backtest_reason AS contextual_backtest_reason
+  FROM ${ref("trading_paper_signals")} s
+  LEFT JOIN ${ref("trading_historical_context")} c
+    ON c.analysis_date = s.analysis_date
+   AND c.signal_hour = s.signal_hour
+   AND c.ticker = s.ticker
+  LEFT JOIN ${ref("trading_active_strategy_config")} cfg
+    ON cfg.ticker = s.ticker
+   AND cfg.strategy_version = s.strategy_version
+   AND cfg.context_similarity_key = c.context_similarity_key
+  LEFT JOIN ${ref("trading_contextual_backtest_results")} br
+    ON br.paper_trade_id = s.paper_trade_id
+   AND br.variant_id = cfg.variant_id
+)
+
+SELECT
+  * EXCEPT (
+    active_context_similarity_key,
+    active_variant_id,
+    active_variant_name,
+    activation_status,
+    active_backtest_closed_trades,
+    active_backtest_win_rate_pct,
+    active_backtest_total_pnl_clp,
+    active_backtest_p05_clp,
+    active_backtest_recommendation,
+    active_backtest_reason,
+    contextual_signal,
+    contextual_setup_score,
+    contextual_min_trade_score,
+    contextual_position_notional_clp,
+    contextual_backtest_reason
+  ) REPLACE (
+    COALESCE(contextual_signal, paper_signal) AS paper_signal,
+    COALESCE(contextual_setup_score, setup_score) AS setup_score,
+    COALESCE(contextual_min_trade_score, min_trade_score) AS min_trade_score,
+    COALESCE(contextual_position_notional_clp, position_notional_clp) AS position_notional_clp,
+    ROUND(
+      SAFE_DIVIDE(COALESCE(contextual_position_notional_clp, position_notional_clp), theoretical_entry_price * usd_clp_assumption),
+      6
+    ) AS theoretical_quantity,
+    CONCAT(
+      signal_reason,
+      "; config_activa=", COALESCE(activation_status, "BASE_SIN_AJUSTE_BACKTEST"),
+      "; variante_activa=", COALESCE(active_variant_id, "BASE"),
+      "; contexto_activo=", COALESCE(active_context_similarity_key, "SIN_CONTEXTO"),
+      "; backtest_trades=", CAST(COALESCE(active_backtest_closed_trades, 0) AS STRING),
+      "; backtest_win=", CAST(COALESCE(active_backtest_win_rate_pct, 0) AS STRING),
+      "%; backtest_pnl=", CAST(COALESCE(active_backtest_total_pnl_clp, 0) AS STRING),
+      "; razon_backtest=", COALESCE(active_backtest_reason, "Sin ajuste activo")
+    ) AS signal_reason
+  ),
+  COALESCE(activation_status, "BASE_SIN_AJUSTE_BACKTEST") AS active_config_status,
+  COALESCE(active_variant_id, "BASE") AS active_variant_id_final,
+  active_variant_name,
+  active_context_similarity_key,
+  active_backtest_closed_trades,
+  active_backtest_win_rate_pct,
+  active_backtest_total_pnl_clp,
+  active_backtest_p05_clp,
+  active_backtest_recommendation,
+  active_backtest_reason,
+  contextual_backtest_reason
+FROM joined

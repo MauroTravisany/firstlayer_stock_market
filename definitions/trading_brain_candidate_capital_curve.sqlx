@@ -1,0 +1,107 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_brain_candidate_capital_curve",
+  description: "Curva de capital secuencial de $10.000.000 CLP por candidato y estrategia. Mantiene una sola posicion a la vez y no suma estrategias entre si.",
+  tags: ["trading", "backtest", "brain", "audit", "daily"],
+  bigquery: { partitionBy: "outcome_date", clusterBy: ["run_id", "candidate_id", "strategy_version"] },
+  dependencies: ["trading_contextual_backtest_results"]
+}
+
+-- Cada candidato tiene una cartera independiente de $10 MM. El notional sigue
+-- siendo fijo y acotado por ese capital: no se reinvierte ni se solapan trades.
+WITH RECURSIVE labeled AS (
+  SELECT
+    c.run_id,
+    c.candidate_id,
+    r.strategy_version,
+    r.ticker,
+    r.analysis_date,
+    r.outcome_date,
+    r.contextual_trade_id,
+    r.contextual_setup_score,
+    r.contextual_position_notional_clp,
+    r.net_return_pct,
+    r.is_win,
+    CASE
+      WHEN r.analysis_date BETWEEN c.training_start AND c.training_end THEN "TRAIN"
+      WHEN r.analysis_date BETWEEN c.validation_start AND c.validation_end THEN "VALIDATION"
+    END AS evaluation_split
+  FROM ${ref("trading_contextual_backtest_results")} r
+  JOIN `stocks-437902.acciones_dataset.trading_brain_weight_candidates` c
+    ON c.candidate_id = r.variant_id
+  WHERE r.contextual_signal = "TRADE_LONG"
+    AND r.trade_status != "OPEN"
+    AND r.outcome_date IS NOT NULL
+),
+ranked_daily AS (
+  SELECT
+    *,
+    ROW_NUMBER() OVER (
+      PARTITION BY run_id, candidate_id, strategy_version, evaluation_split, analysis_date
+      ORDER BY contextual_setup_score DESC, ticker
+    ) AS daily_rank
+  FROM labeled
+  WHERE evaluation_split IS NOT NULL
+),
+daily_candidates AS (
+  SELECT * EXCEPT(daily_rank)
+  FROM ranked_daily
+  WHERE daily_rank = 1
+),
+seed AS (
+  SELECT
+    *,
+    ROW_NUMBER() OVER (
+      PARTITION BY run_id, candidate_id, strategy_version, evaluation_split
+      ORDER BY analysis_date, ticker
+    ) AS seed_rank
+  FROM daily_candidates
+),
+sequential_trades AS (
+  (
+    SELECT * EXCEPT(seed_rank)
+    FROM seed
+    WHERE seed_rank = 1
+  )
+  UNION ALL
+  (
+    SELECT next_trade.*
+    FROM sequential_trades previous_trade
+    JOIN daily_candidates next_trade
+      ON next_trade.run_id = previous_trade.run_id
+     AND next_trade.candidate_id = previous_trade.candidate_id
+     AND next_trade.strategy_version = previous_trade.strategy_version
+     AND next_trade.evaluation_split = previous_trade.evaluation_split
+     AND next_trade.analysis_date > previous_trade.outcome_date
+    LEFT JOIN daily_candidates earlier_trade
+      ON earlier_trade.run_id = previous_trade.run_id
+     AND earlier_trade.candidate_id = previous_trade.candidate_id
+     AND earlier_trade.strategy_version = previous_trade.strategy_version
+     AND earlier_trade.evaluation_split = previous_trade.evaluation_split
+     AND earlier_trade.analysis_date > previous_trade.outcome_date
+     AND earlier_trade.analysis_date < next_trade.analysis_date
+    WHERE earlier_trade.contextual_trade_id IS NULL
+  )
+),
+trade_pnl AS (
+  SELECT
+    *,
+    10000000.0 AS initial_capital_clp,
+    LEAST(10000000.0, contextual_position_notional_clp) AS effective_notional_clp,
+    ROUND(LEAST(10000000.0, contextual_position_notional_clp) * net_return_pct, 0) AS realized_pnl_clp
+  FROM sequential_trades
+)
+
+SELECT
+  *,
+  ROUND(SUM(realized_pnl_clp) OVER (
+    PARTITION BY run_id, candidate_id, strategy_version, evaluation_split
+    ORDER BY outcome_date, analysis_date, ticker
+  ), 0) AS cumulative_pnl_clp,
+  ROUND(initial_capital_clp + SUM(realized_pnl_clp) OVER (
+    PARTITION BY run_id, candidate_id, strategy_version, evaluation_split
+    ORDER BY outcome_date, analysis_date, ticker
+  ), 0) AS equity_clp,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM trade_pnl

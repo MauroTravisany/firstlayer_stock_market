@@ -1,0 +1,118 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_price_features",
+  description: "Features diarios homogeneos para paper trading y backtesting historico. Cada activo tiene una sola vela OHLCV por fecha, incluso si ese dia llegaron velas intradia.",
+  tags: ["trading", "paper", "daily"],
+  bigquery: {
+    partitionBy: "analysis_date",
+    clusterBy: ["ticker"]
+  },
+  assertions: {
+    nonNull: ["analysis_date", "ticker", "signal_hour"],
+    uniqueKey: ["analysis_date", "ticker", "signal_hour"]
+  }
+}
+
+-- Historical rows and recent 15-minute rows must not share a technical series.
+-- This canonical layer turns both into one comparable daily OHLCV candle.
+WITH daily_prices AS (
+  SELECT
+    p.ticker,
+    p.fecha AS analysis_date,
+    TIME "00:00:00" AS signal_hour,
+    DATETIME(p.fecha, TIME "00:00:00") AS signal_timestamp,
+    ANY_VALUE(w.asset_type) AS asset_type,
+    ANY_VALUE(w.trading_group) AS trading_group,
+    ANY_VALUE(w.spread_bps) AS spread_bps,
+    ANY_VALUE(w.slippage_bps) AS slippage_bps,
+    ARRAY_AGG(p.open ORDER BY p.hora ASC LIMIT 1)[SAFE_OFFSET(0)] AS day_open,
+    ARRAY_AGG(p.close ORDER BY p.hora DESC LIMIT 1)[SAFE_OFFSET(0)] AS day_close,
+    MIN(p.low) AS day_low,
+    MAX(p.high) AS day_high,
+    SUM(p.volumen) AS day_volume
+  FROM `stocks-437902.acciones_dataset.valores_acciones_recientes` p
+  JOIN ${ref("trading_watchlist")} w
+    ON w.ticker = p.ticker
+   AND w.enabled
+  GROUP BY p.ticker, p.fecha
+),
+returns AS (
+  SELECT
+    *,
+    LAG(day_close) OVER ticker_window AS previous_close,
+    SAFE_DIVIDE(day_close, LAG(day_close, 1) OVER ticker_window) - 1 AS return_1d,
+    SAFE_DIVIDE(day_close, LAG(day_close, 5) OVER ticker_window) - 1 AS return_5d,
+    SAFE_DIVIDE(day_close, LAG(day_close, 20) OVER ticker_window) - 1 AS return_20d,
+    SAFE_DIVIDE(day_close, LAG(day_close, 60) OVER ticker_window) - 1 AS return_60d
+  FROM daily_prices
+  WINDOW ticker_window AS (PARTITION BY ticker ORDER BY analysis_date)
+),
+features AS (
+  SELECT
+    *,
+    GREATEST(
+      day_high - day_low,
+      ABS(day_high - previous_close),
+      ABS(day_low - previous_close)
+    ) AS true_range,
+    AVG(day_close) OVER ticker_10 AS sma_10,
+    AVG(day_close) OVER ticker_20 AS sma_20,
+    AVG(day_close) OVER ticker_50 AS sma_50,
+    AVG(day_close) OVER ticker_200 AS sma_200,
+    MAX(day_high) OVER ticker_20_prev AS previous_high_20d,
+    MIN(day_low) OVER ticker_20_prev AS previous_low_20d,
+    AVG(day_volume) OVER ticker_20 AS avg_volume_20d,
+    STDDEV_POP(return_1d) OVER ticker_20 AS volatility_20d,
+    AVG(GREATEST(
+      day_high - day_low,
+      ABS(day_high - previous_close),
+      ABS(day_low - previous_close)
+    )) OVER ticker_14 AS atr_14
+  FROM returns
+  WINDOW
+    ticker_10 AS (PARTITION BY ticker ORDER BY analysis_date ROWS BETWEEN 9 PRECEDING AND CURRENT ROW),
+    ticker_14 AS (PARTITION BY ticker ORDER BY analysis_date ROWS BETWEEN 13 PRECEDING AND CURRENT ROW),
+    ticker_20 AS (PARTITION BY ticker ORDER BY analysis_date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW),
+    ticker_50 AS (PARTITION BY ticker ORDER BY analysis_date ROWS BETWEEN 49 PRECEDING AND CURRENT ROW),
+    ticker_200 AS (PARTITION BY ticker ORDER BY analysis_date ROWS BETWEEN 199 PRECEDING AND CURRENT ROW),
+    ticker_20_prev AS (PARTITION BY ticker ORDER BY analysis_date ROWS BETWEEN 20 PRECEDING AND 1 PRECEDING)
+),
+crypto_context AS (
+  SELECT
+    analysis_date,
+    MAX(IF(ticker = "BTC-USD", day_close, NULL)) AS btc_close,
+    MAX(IF(ticker = "ETH-USD", day_close, NULL)) AS eth_close,
+    MAX(IF(ticker = "BTC-USD", return_20d, NULL)) AS btc_return_20d,
+    MAX(IF(ticker = "BTC-USD", return_60d, NULL)) AS btc_return_60d,
+    MAX(IF(ticker = "ETH-USD", return_20d, NULL)) AS eth_return_20d,
+    MAX(IF(ticker = "ETH-USD", return_60d, NULL)) AS eth_return_60d,
+    SAFE_DIVIDE(MAX(IF(ticker = "ETH-USD", day_close, NULL)), MAX(IF(ticker = "BTC-USD", day_close, NULL))) AS eth_btc_ratio,
+    MAX(IF(ticker = "ETH-USD", return_60d, NULL)) - MAX(IF(ticker = "BTC-USD", return_60d, NULL)) AS eth_vs_btc_60d,
+    CASE
+      WHEN MAX(IF(ticker = "BTC-USD", return_60d, NULL)) > 0.08
+       AND MAX(IF(ticker = "ETH-USD", return_60d, NULL)) - MAX(IF(ticker = "BTC-USD", return_60d, NULL)) > 0.08 THEN "ALTCOIN_ROTATION"
+      WHEN MAX(IF(ticker = "BTC-USD", return_60d, NULL)) > 0.08 THEN "BTC_DOMINANTE"
+      WHEN MAX(IF(ticker = "BTC-USD", return_60d, NULL)) < -0.12
+       AND MAX(IF(ticker = "ETH-USD", return_60d, NULL)) < -0.12 THEN "CRYPTO_DEBIL"
+      ELSE "CRYPTO_NEUTRAL"
+    END AS crypto_regime
+  FROM features
+  WHERE ticker IN ("BTC-USD", "ETH-USD")
+  GROUP BY analysis_date
+)
+
+SELECT
+  f.*,
+  SAFE_DIVIDE(f.day_volume, f.avg_volume_20d) AS volume_vs_20d_avg,
+  SAFE_DIVIDE(f.atr_14, f.day_close) AS atr_pct,
+  c.btc_return_20d,
+  c.btc_return_60d,
+  c.eth_return_20d,
+  c.eth_return_60d,
+  c.eth_btc_ratio,
+  c.eth_vs_btc_60d,
+  c.crypto_regime
+FROM features f
+LEFT JOIN crypto_context c
+  ON c.analysis_date = f.analysis_date

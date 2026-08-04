@@ -1,0 +1,170 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_intraday_4h_backtest",
+  description: "Backtest intradia aislado. Solo usa velas reales, exige cobertura reciente continua y nunca rellena ni mezcla el historico diario.",
+  tags: ["trading", "paper", "backtest", "intraday"],
+  bigquery: { partitionBy: "analysis_date", clusterBy: ["ticker"] },
+  assertions: { nonNull: ["analysis_date", "ticker", "bar_timestamp"], uniqueKey: ["ticker", "bar_timestamp"] }
+}
+
+-- A day needs genuine 15-minute coverage before it can be used intraday.
+-- Sparse daily observations are deliberately excluded instead of being treated as 4h bars.
+WITH raw_eligible_sessions AS (
+  SELECT
+    p.ticker,
+    p.fecha AS analysis_date
+  FROM `stocks-437902.acciones_dataset.valores_acciones_recientes` p
+  JOIN ${ref("trading_watchlist")} w ON w.ticker = p.ticker AND w.enabled
+  GROUP BY p.ticker, p.fecha, w.asset_type
+  HAVING (w.asset_type = "STOCK" AND COUNT(*) >= 12 AND COUNTIF(EXTRACT(MINUTE FROM p.hora) IN (0, 15, 30, 45)) >= 12)
+      OR (w.asset_type = "CRYPTO" AND COUNT(*) >= 4 AND COUNTIF(MOD(EXTRACT(HOUR FROM p.hora), 4) = 0 AND EXTRACT(MINUTE FROM p.hora) = 0) >= 4)
+),
+coverage_base AS (
+  SELECT
+    ticker,
+    MAX(analysis_date) AS latest_session_date
+  FROM raw_eligible_sessions
+  GROUP BY ticker
+),
+coverage AS (
+  SELECT
+    s.ticker,
+    COUNT(*) AS eligible_session_count,
+    COUNTIF(s.analysis_date >= DATE_SUB(b.latest_session_date, INTERVAL 90 DAY)) AS recent_session_count
+  FROM raw_eligible_sessions s
+  JOIN coverage_base b USING (ticker)
+  GROUP BY s.ticker
+),
+eligible_sessions AS (
+  SELECT s.*
+  FROM raw_eligible_sessions s
+  JOIN coverage c USING (ticker)
+  -- Si la cobertura es fragmentada o corta, un backtest solo aparentaria precision.
+  WHERE c.eligible_session_count >= 60
+    AND c.recent_session_count >= 50
+),
+bars AS (
+  SELECT
+    p.ticker,
+    p.fecha AS analysis_date,
+    DATETIME(p.fecha, TIME(DIV(EXTRACT(HOUR FROM p.hora), 4) * 4, 0, 0)) AS bar_timestamp,
+    ARRAY_AGG(p.open ORDER BY p.hora ASC LIMIT 1)[SAFE_OFFSET(0)] AS bar_open,
+    ARRAY_AGG(p.close ORDER BY p.hora DESC LIMIT 1)[SAFE_OFFSET(0)] AS bar_close,
+    MIN(p.low) AS bar_low,
+    MAX(p.high) AS bar_high,
+    SUM(p.volumen) AS bar_volume
+  FROM `stocks-437902.acciones_dataset.valores_acciones_recientes` p
+  JOIN eligible_sessions e
+    ON e.ticker = p.ticker
+   AND e.analysis_date = p.fecha
+  JOIN ${ref("trading_watchlist")} w
+    ON w.ticker = p.ticker
+   AND w.enabled
+  GROUP BY p.ticker, p.fecha, bar_timestamp
+),
+returns AS (
+  SELECT
+    *,
+    LAG(bar_close) OVER ticker_window AS previous_close,
+    SAFE_DIVIDE(bar_close, LAG(bar_close) OVER ticker_window) - 1 AS return_4h,
+    SAFE_DIVIDE(bar_close, LAG(bar_close, 5) OVER ticker_window) - 1 AS return_20h
+  FROM bars
+  WINDOW ticker_window AS (PARTITION BY ticker ORDER BY bar_timestamp)
+),
+features AS (
+  SELECT
+    *,
+    AVG(bar_close) OVER bars_6 AS sma_24h,
+    AVG(bar_close) OVER bars_20 AS sma_80h,
+    AVG(bar_volume) OVER bars_20 AS avg_volume_80h,
+    AVG(GREATEST(bar_high - bar_low, ABS(bar_high - previous_close), ABS(bar_low - previous_close))) OVER bars_14 AS atr_56h
+  FROM returns
+  WINDOW
+    bars_6 AS (PARTITION BY ticker ORDER BY bar_timestamp ROWS BETWEEN 5 PRECEDING AND CURRENT ROW),
+    bars_14 AS (PARTITION BY ticker ORDER BY bar_timestamp ROWS BETWEEN 13 PRECEDING AND CURRENT ROW),
+    bars_20 AS (PARTITION BY ticker ORDER BY bar_timestamp ROWS BETWEEN 19 PRECEDING AND CURRENT ROW)
+),
+signals AS (
+  SELECT
+    *,
+    CASE
+      WHEN sma_24h > sma_80h
+       AND return_20h > 0
+       AND SAFE_DIVIDE(bar_volume, avg_volume_80h) >= 1.05
+       AND SAFE_DIVIDE(atr_56h, bar_close) BETWEEN 0.002 AND 0.12 THEN "LONG_4H"
+      ELSE "NO_TRADE"
+    END AS intraday_signal,
+    ROUND(SAFE_DIVIDE(atr_56h, bar_close), 4) AS atr_pct
+  FROM features
+),
+future_bars AS (
+  SELECT
+    s.ticker,
+    s.bar_timestamp AS entry_timestamp,
+    s.analysis_date,
+    s.bar_close AS entry_price,
+    s.intraday_signal,
+    s.atr_pct,
+    p.bar_timestamp AS outcome_timestamp,
+    p.bar_low,
+    p.bar_high,
+    p.bar_close,
+    ROW_NUMBER() OVER (PARTITION BY s.ticker, s.bar_timestamp ORDER BY p.bar_timestamp) AS future_bar_number
+  FROM signals s
+  JOIN bars p
+    ON p.ticker = s.ticker
+   AND p.bar_timestamp > s.bar_timestamp
+   AND p.bar_timestamp <= DATETIME_ADD(s.bar_timestamp, INTERVAL 10 DAY)
+  WHERE s.intraday_signal = "LONG_4H"
+),
+evaluated AS (
+  SELECT
+    *,
+    entry_price * (1 - GREATEST(atr_pct * 1.2, 0.006)) AS stop_loss,
+    entry_price * (1 + GREATEST(atr_pct * 1.8, 0.010)) AS take_profit
+  FROM future_bars
+),
+outcomes AS (
+  SELECT
+    ticker,
+    analysis_date,
+    entry_timestamp AS bar_timestamp,
+    entry_price,
+    intraday_signal,
+    atr_pct,
+    ARRAY_AGG(
+      STRUCT(outcome_timestamp, bar_close, bar_low, bar_high, stop_loss, take_profit,
+        CASE WHEN bar_low <= stop_loss THEN "STOP_LOSS" WHEN bar_high >= take_profit THEN "TAKE_PROFIT" WHEN future_bar_number = 12 THEN "TIME_EXIT" END AS outcome)
+      ORDER BY outcome_timestamp
+      LIMIT 12
+    )[SAFE_OFFSET(0)] AS first_future_bar,
+    ARRAY_AGG(
+      IF(bar_low <= stop_loss OR bar_high >= take_profit OR future_bar_number = 12,
+        STRUCT(outcome_timestamp, bar_close, bar_low, bar_high, stop_loss, take_profit,
+          CASE WHEN bar_low <= stop_loss THEN "STOP_LOSS" WHEN bar_high >= take_profit THEN "TAKE_PROFIT" ELSE "TIME_EXIT" END AS outcome),
+        NULL) IGNORE NULLS ORDER BY outcome_timestamp LIMIT 1
+    )[SAFE_OFFSET(0)] AS first_outcome
+  FROM evaluated
+  GROUP BY ticker, analysis_date, entry_timestamp, entry_price, intraday_signal, atr_pct
+)
+
+SELECT
+  ticker,
+  analysis_date,
+  bar_timestamp,
+  entry_price,
+  intraday_signal,
+  atr_pct,
+  COALESCE(first_outcome.outcome_timestamp, first_future_bar.outcome_timestamp) AS outcome_timestamp,
+  COALESCE(first_outcome.outcome, "OPEN") AS outcome,
+  COALESCE(first_outcome.bar_close, first_future_bar.bar_close) AS exit_price,
+  ROUND(SAFE_DIVIDE(COALESCE(first_outcome.bar_close, first_future_bar.bar_close) - entry_price, entry_price), 4) AS gross_return_pct,
+  CASE
+    WHEN COALESCE(first_outcome.outcome, "OPEN") = "TAKE_PROFIT" THEN TRUE
+    WHEN COALESCE(first_outcome.outcome, "OPEN") = "TIME_EXIT" AND COALESCE(first_outcome.bar_close, first_future_bar.bar_close) > entry_price THEN TRUE
+    ELSE FALSE
+  END AS is_win,
+  "REAL_15M_TO_4H" AS data_granularity,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM outcomes

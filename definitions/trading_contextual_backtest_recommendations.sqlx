@@ -1,0 +1,125 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_contextual_backtest_recommendations",
+  description: "Mejores variantes de backtest por activo, estrategia y contexto similar.",
+  tags: ["trading", "paper", "backtest", "context", "recommendation", "daily", "portfolio", "valuation"],
+  bigquery: {
+    clusterBy: ["ticker", "strategy_version", "recommendation"]
+  },
+  assertions: {
+    nonNull: ["ticker", "strategy_version", "variant_id", "context_similarity_key"]
+  },
+  dependencies: ["trading_contextual_backtest_results"]
+}
+
+WITH closed AS (
+  SELECT *
+  FROM ${ref("trading_contextual_backtest_results")}
+  WHERE contextual_signal = "TRADE_LONG"
+    AND trade_status != "OPEN"
+    AND outcome_date IS NOT NULL
+),
+grouped AS (
+  SELECT
+    ticker,
+    asset_type,
+    trading_group,
+    strategy_version,
+    ANY_VALUE(strategy_name) AS strategy_name,
+    variant_id,
+    ANY_VALUE(variant_name) AS variant_name,
+    context_similarity_key,
+    ANY_VALUE(historical_fear_regime) AS historical_fear_regime,
+    ANY_VALUE(monetary_regime_proxy) AS monetary_regime_proxy,
+    ANY_VALUE(company_lifecycle_context) AS company_lifecycle_context,
+    ANY_VALUE(earnings_event_status) AS earnings_event_status,
+    ANY_VALUE(crypto_context_regime) AS crypto_context_regime,
+    COUNT(*) AS closed_trades,
+    COUNTIF(is_win) AS wins,
+    COUNTIF(NOT is_win) AS losses,
+    ROUND(SAFE_DIVIDE(COUNTIF(is_win), COUNT(*)) * 100, 2) AS win_rate_pct,
+    ROUND(SUM(net_pnl_clp), 0) AS total_pnl_clp,
+    ROUND(AVG(net_pnl_clp), 0) AS avg_pnl_clp,
+    ROUND(AVG(IF(is_win, net_pnl_clp, NULL)), 0) AS avg_win_pnl_clp,
+    ROUND(AVG(IF(NOT is_win, net_pnl_clp, NULL)), 0) AS avg_loss_pnl_clp,
+    ROUND(SUM(IF(is_win, net_pnl_clp, 0)), 0) AS gross_profit_clp,
+    ROUND(ABS(SUM(IF(NOT is_win, net_pnl_clp, 0))), 0) AS gross_loss_clp,
+    ROUND(SAFE_DIVIDE(SUM(IF(is_win, net_pnl_clp, 0)), ABS(SUM(IF(NOT is_win, net_pnl_clp, 0)))), 2) AS profit_factor,
+    ROUND(AVG(net_return_pct) * 100, 2) AS avg_net_return_pct,
+    ROUND(APPROX_QUANTILES(net_pnl_clp, 100)[OFFSET(5)], 0) AS pnl_p05_clp,
+    ROUND(APPROX_QUANTILES(net_pnl_clp, 100)[OFFSET(25)], 0) AS pnl_p25_clp,
+    ROUND(APPROX_QUANTILES(net_pnl_clp, 100)[OFFSET(50)], 0) AS pnl_median_clp,
+    ROUND(SAFE_DIVIDE(COUNTIF(trade_status = "STOP_LOSS"), COUNT(*)) * 100, 2) AS stop_loss_rate_pct,
+    COUNTIF(trade_status = "STOP_LOSS") AS stop_loss_count,
+    COUNTIF(trade_status IN ("TAKE_PROFIT_1", "TAKE_PROFIT_2")) AS take_profit_count,
+    ROUND(SAFE_DIVIDE(COUNTIF(trade_status IN ("TAKE_PROFIT_1", "TAKE_PROFIT_2")), NULLIF(COUNTIF(trade_status = "STOP_LOSS"), 0)), 2) AS take_profit_to_stop_ratio
+  FROM closed
+  GROUP BY ticker, asset_type, trading_group, strategy_version, variant_id, context_similarity_key
+),
+scored AS (
+  SELECT
+    *,
+    ROUND(
+      GREATEST(-3, LEAST(3, SAFE_DIVIDE(pnl_p05_clp, 150000))) * 0.40 +
+      GREATEST(-2, LEAST(3, COALESCE(profit_factor, 0) - 1)) * 0.25 +
+      GREATEST(-2, LEAST(2, SAFE_DIVIDE(avg_pnl_clp, 50000))) * 0.20 +
+      GREATEST(-2, LEAST(2, SAFE_DIVIDE(win_rate_pct - 50, 10))) * 0.15 -
+      GREATEST(0, LEAST(2, SAFE_DIVIDE(stop_loss_rate_pct - 45, 20))) * 0.35,
+      4
+    ) AS stability_score,
+    CASE
+      WHEN pnl_p05_clp <= -250000 THEN "RIESGO_COLA_ALTO"
+      WHEN COALESCE(profit_factor, 0) < 1.05 THEN "PROFIT_FACTOR_DEBIL"
+      WHEN stop_loss_rate_pct >= 55 THEN "MUCHOS_STOP_LOSS"
+      WHEN avg_pnl_clp <= 0 THEN "EXPECTATIVA_PROMEDIO_DEBIL"
+      ELSE "RIESGO_CONTROLADO"
+    END AS risk_quality_flag
+  FROM grouped
+),
+ranked AS (
+  SELECT
+    *,
+    RANK() OVER (
+      PARTITION BY ticker, strategy_version, context_similarity_key
+      ORDER BY stability_score DESC, pnl_p05_clp DESC, profit_factor DESC, stop_loss_rate_pct ASC, avg_pnl_clp DESC, closed_trades DESC
+    ) AS rank_for_ticker_context
+  FROM scored
+)
+
+SELECT
+  *,
+  CASE
+    WHEN closed_trades < 4 THEN "MUESTRA_INSUFICIENTE"
+    WHEN pnl_p05_clp <= -250000 THEN "EVITAR"
+    WHEN COALESCE(profit_factor, 0) < 1.05 THEN "EVITAR"
+    WHEN stop_loss_rate_pct >= 60 THEN "EVITAR"
+    WHEN rank_for_ticker_context = 1 AND total_pnl_clp > 0 AND avg_pnl_clp > 0 AND COALESCE(profit_factor, 0) >= 1.15 THEN "MEJOR_CONTEXTO_ACTIVO"
+    WHEN total_pnl_clp > 0 AND avg_pnl_clp > 0 AND COALESCE(profit_factor, 0) >= 1.05 THEN "USABLE"
+    WHEN total_pnl_clp < 0 AND win_rate_pct < 45 THEN "EVITAR"
+    ELSE "NEUTRAL"
+  END AS recommendation,
+  CONCAT(
+    ticker,
+    " usa mejor ",
+    variant_id,
+    " con ",
+    strategy_version,
+    " en contexto ",
+    context_similarity_key,
+    ". Trades=",
+    CAST(closed_trades AS STRING),
+    ", win=",
+    CAST(win_rate_pct AS STRING),
+    "%, pnl=",
+    CAST(total_pnl_clp AS STRING),
+    ", profit_factor=",
+    CAST(COALESCE(profit_factor, 0) AS STRING),
+    ", p05=",
+    CAST(pnl_p05_clp AS STRING),
+    ", stop_rate=",
+    CAST(stop_loss_rate_pct AS STRING),
+    "%"
+  ) AS recommendation_reason,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM ranked

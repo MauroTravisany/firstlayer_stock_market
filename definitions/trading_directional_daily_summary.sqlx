@@ -1,0 +1,113 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_directional_daily_summary",
+  description: "Resumen diario de backtests separados. v2 es solo referencia visual; v1-v4 nunca se suman. Los shorts simulados se reportan aparte y no afectan esta curva LONG.",
+  tags: ["trading", "paper", "directional", "summary"],
+  bigquery: { partitionBy: "summary_date" },
+  assertions: { nonNull: ["summary_date"], uniqueKey: ["summary_date"] },
+  dependencies: ["trading_price_features", "trading_directional_signals", "trading_directional_trade_results", "trading_directional_strategy_daily_summary"]
+}
+
+WITH dates AS (
+  SELECT DISTINCT analysis_date AS summary_date FROM ${ref("trading_price_features")}
+),
+new_trades AS (
+  SELECT
+    s.analysis_date AS summary_date,
+    COUNTIF(s.direction = "LONG" AND w.enabled) AS new_trade_count,
+    COUNTIF(s.direction = "SHORT_SIMULATED") AS short_simulated_count,
+    COUNTIF(s.paper_signal = "VIGILAR") AS watch_count
+  FROM ${ref("trading_directional_signals")} s
+  LEFT JOIN ${ref("trading_watchlist")} w
+    ON w.ticker = s.ticker
+   AND w.asset_type = s.asset_type
+  GROUP BY summary_date
+),
+short_diagnostics AS (
+  SELECT
+    outcome_date AS summary_date,
+    COUNT(*) AS short_closed_trade_count,
+    ROUND(SUM(net_pnl_clp), 0) AS short_simulated_pnl_clp
+  FROM ${ref("trading_directional_trade_results")}
+  WHERE direction = "SHORT_SIMULATED"
+    AND outcome_date IS NOT NULL
+  GROUP BY summary_date
+),
+reference AS (
+  SELECT *
+  FROM ${ref("trading_directional_strategy_daily_summary")}
+  WHERE strategy_version = "v2"
+),
+strategy_summary AS (
+  SELECT
+    summary_date,
+    STRING_AGG(
+      CONCAT(
+        strategy_version,
+        ": capital ", CAST(ROUND(day_end_equity_clp, 0) AS STRING),
+        " CLP | acumulado ", CAST(ROUND(cumulative_pnl_clp, 0) AS STRING),
+        " CLP | win ", CAST(all_win_rate_pct AS STRING),
+        "% | cierres ", CAST(all_closed_trades AS STRING)
+      ),
+      " || " ORDER BY strategy_version
+    ) AS strategy_performance_summary
+  FROM ${ref("trading_directional_strategy_daily_summary")}
+  GROUP BY summary_date
+),
+week AS (
+  SELECT
+    r.*,
+    DATE_TRUNC(summary_date, WEEK(MONDAY)) AS week_start,
+    DATE_ADD(DATE_TRUNC(summary_date, WEEK(MONDAY)), INTERVAL 6 DAY) AS week_end,
+    ROUND(SUM(realized_pnl_clp) OVER (PARTITION BY DATE_TRUNC(summary_date, WEEK(MONDAY)) ORDER BY summary_date), 0) AS week_to_date_pnl_clp,
+    SUM(closed_trade_count) OVER (PARTITION BY DATE_TRUNC(summary_date, WEEK(MONDAY)) ORDER BY summary_date) AS week_to_date_closed_trades,
+    SUM(winning_trade_count) OVER (PARTITION BY DATE_TRUNC(summary_date, WEEK(MONDAY)) ORDER BY summary_date) AS week_to_date_winning_trades,
+    SUM(losing_trade_count) OVER (PARTITION BY DATE_TRUNC(summary_date, WEEK(MONDAY)) ORDER BY summary_date) AS week_to_date_losing_trades
+  FROM reference r
+)
+
+SELECT
+  w.summary_date,
+  w.paper_capital_clp,
+  w.day_start_equity_clp,
+  w.day_end_equity_clp,
+  w.cumulative_pnl_clp,
+  w.week_start,
+  w.week_end,
+  w.week_to_date_pnl_clp,
+  w.week_to_date_closed_trades,
+  w.week_to_date_winning_trades,
+  w.week_to_date_losing_trades,
+  ROUND(SAFE_DIVIDE(w.week_to_date_winning_trades, w.week_to_date_closed_trades) * 100, 2) AS week_to_date_win_rate_pct,
+  COALESCE(n.new_trade_count, 0) AS new_trade_count,
+  COALESCE(n.short_simulated_count, 0) AS short_simulated_count,
+  COALESCE(n.watch_count, 0) AS watch_count,
+  w.closed_trade_count,
+  w.winning_trade_count,
+  w.losing_trade_count,
+  w.realized_pnl_clp,
+  0 AS open_trade_count,
+  0.0 AS open_notional_clp,
+  w.all_closed_trades,
+  w.all_wins,
+  w.all_losses,
+  w.cumulative_pnl_clp AS all_realized_pnl_clp,
+  w.all_win_rate_pct,
+  "v2" AS reference_strategy_version,
+  "SEQUENTIAL_ONE_SLOT_LONG" AS portfolio_model,
+  COALESCE(s.strategy_performance_summary, "Sin resultados separados") AS strategy_performance_summary,
+  COALESCE(sd.short_closed_trade_count, 0) AS short_simulated_closed_trade_count,
+  COALESCE(sd.short_simulated_pnl_clp, 0) AS short_simulated_daily_pnl_clp,
+  25000.0 AS daily_target_min_clp,
+  100000.0 AS daily_target_max_clp,
+  CASE WHEN w.realized_pnl_clp >= 100000 THEN "SOBRE_OBJETIVO" WHEN w.realized_pnl_clp >= 25000 THEN "OBJETIVO_CUMPLIDO" WHEN w.realized_pnl_clp > 0 THEN "POSITIVO_BAJO_OBJETIVO" WHEN w.realized_pnl_clp = 0 THEN "SIN_CIERRES" ELSE "NEGATIVO" END AS daily_result_status,
+  CASE WHEN w.week_to_date_pnl_clp > 0 THEN "SEMANA_POSITIVA" WHEN w.week_to_date_pnl_clp < 0 THEN "SEMANA_NEGATIVA" ELSE "SEMANA_SIN_RESULTADO" END AS week_to_date_status,
+  CASE WHEN w.realized_pnl_clp > 0 THEN "v2 cerro positivo; las otras variantes se muestran por separado." WHEN w.realized_pnl_clp < 0 THEN "v2 cerro negativo; las otras variantes se muestran por separado." ELSE "v2 no tuvo cierres relevantes." END AS daily_plain_read,
+  CASE WHEN w.week_to_date_pnl_clp > 0 THEN "La semana de v2 va positiva; revisar comparativa independiente." WHEN w.week_to_date_pnl_clp < 0 THEN "La semana de v2 va negativa; revisar comparativa independiente." ELSE "La semana de v2 va plana." END AS weekly_plain_read,
+  CONCAT("Backtest secuencial separado: v2 PnL diario=", CAST(w.realized_pnl_clp AS STRING), " CLP; shorts simulados aparte=", CAST(COALESCE(sd.short_simulated_pnl_clp, 0) AS STRING), " CLP") AS discord_summary,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM week w
+LEFT JOIN new_trades n ON n.summary_date = w.summary_date
+LEFT JOIN short_diagnostics sd ON sd.summary_date = w.summary_date
+LEFT JOIN strategy_summary s ON s.summary_date = w.summary_date

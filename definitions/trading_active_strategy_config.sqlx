@@ -1,0 +1,94 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_active_strategy_config",
+  description: "Configuracion activa derivada del backtesting contextual. Aplica solo variantes con evidencia suficiente y cae a base si no hay muestra.",
+  tags: ["trading", "paper", "daily", "active", "backtest"],
+  bigquery: {
+    clusterBy: ["ticker", "strategy_version", "activation_status"]
+  },
+  assertions: {
+    nonNull: ["ticker", "strategy_version", "context_similarity_key", "variant_id"],
+    uniqueKey: ["ticker", "strategy_version", "context_similarity_key"]
+  },
+  dependencies: ["trading_contextual_backtest_recommendations", "trading_backtest_context_variants"]
+}
+
+WITH eligible AS (
+  SELECT
+    r.*,
+    v.min_trade_score_add,
+    v.position_size_multiplier,
+    v.variant_description,
+    ROW_NUMBER() OVER (
+      PARTITION BY r.ticker, r.strategy_version, r.context_similarity_key
+      ORDER BY
+        r.stability_score DESC,
+        r.pnl_p05_clp DESC,
+        r.profit_factor DESC,
+        r.stop_loss_rate_pct ASC,
+        r.avg_pnl_clp DESC,
+        r.closed_trades DESC
+    ) AS rn
+  FROM ${ref("trading_contextual_backtest_recommendations")} r
+  JOIN ${ref("trading_backtest_context_variants")} v
+    ON v.variant_id = r.variant_id
+  WHERE r.recommendation IN ("MEJOR_CONTEXTO_ACTIVO", "USABLE")
+    -- Los candidatos del cerebro nunca se infiltran al motor diario: requieren
+    -- una promocion explicita despues de validacion y paper trading.
+    AND NOT STARTS_WITH(r.variant_id, "brain_")
+    AND r.total_pnl_clp > 0
+    AND r.avg_pnl_clp > 0
+    AND r.profit_factor >= 1.05
+    AND r.stop_loss_rate_pct < 60
+    AND (
+      (r.asset_type = "CRYPTO" AND r.closed_trades >= 30)
+      OR (r.asset_type != "CRYPTO" AND r.closed_trades >= 8)
+    )
+    AND r.pnl_p05_clp > -250000
+)
+
+SELECT
+  ticker,
+  asset_type,
+  trading_group,
+  strategy_version,
+  strategy_name,
+  variant_id,
+  variant_name,
+  variant_description,
+  context_similarity_key,
+  historical_fear_regime,
+  monetary_regime_proxy,
+  company_lifecycle_context,
+  earnings_event_status,
+  crypto_context_regime,
+  closed_trades,
+  wins,
+  losses,
+  win_rate_pct,
+  total_pnl_clp,
+  avg_pnl_clp,
+  avg_win_pnl_clp,
+  avg_loss_pnl_clp,
+  gross_profit_clp,
+  gross_loss_clp,
+  profit_factor,
+  avg_net_return_pct,
+  pnl_p05_clp,
+  pnl_p25_clp,
+  pnl_median_clp,
+  stop_loss_rate_pct,
+  stop_loss_count,
+  take_profit_count,
+  take_profit_to_stop_ratio,
+  stability_score,
+  risk_quality_flag,
+  min_trade_score_add,
+  position_size_multiplier,
+  recommendation,
+  recommendation_reason,
+  "ACTIVE_FROM_BACKTEST" AS activation_status,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM eligible
+WHERE rn = 1

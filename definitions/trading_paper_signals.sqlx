@@ -1,0 +1,502 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_paper_signals",
+  description: "Senales de paper trading con entrada, stop, objetivos, costos estimados y tamano ficticio. No ejecuta dinero real.",
+  tags: ["trading", "paper", "daily", "signal"],
+  bigquery: {
+    partitionBy: "analysis_date",
+    clusterBy: ["paper_signal", "ticker"]
+  },
+  assertions: {
+    nonNull: ["analysis_date", "ticker", "paper_signal"],
+    uniqueKey: ["analysis_date", "signal_hour", "ticker", "strategy_version"]
+  },
+  dependencies: ["trading_strategy_versions", "trading_asset_macro_profile", "trading_asset_factor_profile", "trading_macro_context", "trading_earnings_context", "trading_weekly_strategy_adjustments", "trading_weekly_profile_adjustments"]
+}
+
+WITH profile_adjustments AS (
+  SELECT *
+  FROM ${ref("trading_weekly_profile_adjustments")}
+),
+earnings_context AS (
+  SELECT * EXCEPT (rn)
+  FROM (
+    SELECT
+      *,
+      ROW_NUMBER() OVER (
+        PARTITION BY analysis_date, ticker
+        ORDER BY signal_hour DESC
+      ) AS rn
+    FROM ${ref("trading_earnings_context")}
+  )
+  WHERE rn = 1
+),
+base AS (
+  SELECT
+    f.*,
+    COALESCE(mp.trading_style, f.trading_group) AS trading_style,
+    COALESCE(mp.macro_rationale, "Perfil macro no definido; usa sensibilidad neutral.") AS macro_rationale,
+    COALESCE(mp.demand_geography, "No especificado") AS demand_geography,
+    COALESCE(mp.holder_base, "No especificado") AS holder_base,
+    COALESCE(pa_ticker.trend_weight, pa_all.trend_weight, mp.trend_weight, 1.0) AS trend_weight,
+    COALESCE(pa_ticker.momentum_weight, pa_all.momentum_weight, mp.momentum_weight, 1.0) AS momentum_weight,
+    COALESCE(pa_ticker.volume_weight, pa_all.volume_weight, mp.volume_weight, 1.0) AS volume_weight,
+    COALESCE(pa_ticker.volatility_weight, pa_all.volatility_weight, mp.volatility_weight, 1.0) AS volatility_weight,
+    COALESCE(pa_ticker.regime_weight, pa_all.regime_weight, mp.regime_weight, 1.0) AS regime_weight,
+    COALESCE(pa_ticker.growth_sensitivity, pa_all.growth_sensitivity, mp.growth_sensitivity, 0.0) AS growth_sensitivity,
+    COALESCE(pa_ticker.defensive_sensitivity, pa_all.defensive_sensitivity, mp.defensive_sensitivity, 0.0) AS defensive_sensitivity,
+    COALESCE(pa_ticker.energy_sensitivity, pa_all.energy_sensitivity, mp.energy_sensitivity, 0.0) AS energy_sensitivity,
+    COALESCE(pa_ticker.crypto_sensitivity, pa_all.crypto_sensitivity, mp.crypto_sensitivity, 0.0) AS crypto_sensitivity,
+    COALESCE(pa_ticker.usd_sensitivity, pa_all.usd_sensitivity, mp.usd_sensitivity, 0.0) AS usd_sensitivity,
+    COALESCE(pa_ticker.rates_sensitivity, pa_all.rates_sensitivity, mp.rates_sensitivity, 0.0) AS rates_sensitivity,
+    COALESCE(pa_ticker.geopolitical_sensitivity, pa_all.geopolitical_sensitivity, mp.geopolitical_sensitivity, 0.0) AS geopolitical_sensitivity,
+    COALESCE(pa_ticker.risk_appetite_sensitivity, pa_all.risk_appetite_sensitivity, mp.risk_appetite_sensitivity, 0.0) AS risk_appetite_sensitivity,
+    COALESCE(fp.sector_profile, "Perfil sectorial no definido") AS sector_profile,
+    COALESCE(fp.cycle_profile, "CYCLE_NEUTRAL") AS cycle_profile,
+    COALESCE(fp.factor_rationale, "Sin perfil de factores especifico; usa score neutral.") AS factor_rationale,
+    COALESCE(fp.primary_demand_driver, "No especificado") AS primary_demand_driver,
+    COALESCE(fp.primary_risk_driver, "No especificado") AS primary_risk_driver,
+    COALESCE(pa_ticker.semiconductor_cycle_sensitivity, pa_all.semiconductor_cycle_sensitivity, fp.semiconductor_cycle_sensitivity, 0.0) AS semiconductor_cycle_sensitivity,
+    COALESCE(pa_ticker.ai_capex_sensitivity, pa_all.ai_capex_sensitivity, fp.ai_capex_sensitivity, 0.0) AS ai_capex_sensitivity,
+    COALESCE(pa_ticker.consumer_cycle_sensitivity, pa_all.consumer_cycle_sensitivity, fp.consumer_cycle_sensitivity, 0.0) AS consumer_cycle_sensitivity,
+    COALESCE(pa_ticker.advertising_cycle_sensitivity, pa_all.advertising_cycle_sensitivity, fp.advertising_cycle_sensitivity, 0.0) AS advertising_cycle_sensitivity,
+    COALESCE(pa_ticker.energy_input_sensitivity, pa_all.energy_input_sensitivity, fp.energy_input_sensitivity, 0.0) AS energy_input_sensitivity,
+    COALESCE(pa_ticker.electricity_cost_sensitivity, pa_all.electricity_cost_sensitivity, fp.electricity_cost_sensitivity, 0.0) AS electricity_cost_sensitivity,
+    COALESCE(pa_ticker.rates_duration_sensitivity, pa_all.rates_duration_sensitivity, fp.rates_duration_sensitivity, 0.0) AS rates_duration_sensitivity,
+    COALESCE(pa_ticker.usd_revenue_sensitivity, pa_all.usd_revenue_sensitivity, fp.usd_revenue_sensitivity, 0.0) AS usd_revenue_sensitivity,
+    COALESCE(pa_ticker.geopolitical_supply_sensitivity, pa_all.geopolitical_supply_sensitivity, fp.geopolitical_supply_sensitivity, 0.0) AS geopolitical_supply_sensitivity,
+    COALESCE(pa_ticker.liquidity_risk_sensitivity, pa_all.liquidity_risk_sensitivity, fp.liquidity_risk_sensitivity, 0.0) AS liquidity_risk_sensitivity,
+    COALESCE(pa_ticker.crypto_flow_sensitivity, pa_all.crypto_flow_sensitivity, fp.crypto_flow_sensitivity, 0.0) AS crypto_flow_sensitivity,
+    COALESCE(pa_ticker.btc_dominance_sensitivity, pa_all.btc_dominance_sensitivity, fp.btc_dominance_sensitivity, 0.0) AS btc_dominance_sensitivity,
+    COALESCE(pa_ticker.regulatory_sensitivity, pa_all.regulatory_sensitivity, fp.regulatory_sensitivity, 0.0) AS regulatory_sensitivity,
+    COALESCE(pa_ticker.breakout_preference, pa_all.breakout_preference, fp.breakout_preference, 1.0) AS breakout_preference,
+    COALESCE(pa_ticker.pullback_preference, pa_all.pullback_preference, fp.pullback_preference, 1.0) AS pullback_preference,
+    COALESCE(pa_ticker.support_rebound_preference, pa_all.support_rebound_preference, fp.support_rebound_preference, 1.0) AS support_rebound_preference,
+    COALESCE(pa_ticker.volume_confirmation_importance, pa_all.volume_confirmation_importance, fp.volume_confirmation_importance, 1.0) AS volume_confirmation_importance,
+    COALESCE(pa_ticker.profile_adjustment_summary, pa_all.profile_adjustment_summary, "NO_PROFILE_ADJUSTMENT") AS profile_adjustment_summary,
+    COALESCE(mc.macro_regime, "SIN_CONTEXTO_MACRO") AS macro_regime,
+    COALESCE(mc.external_macro_data_status, "SIN_CONTEXTO_MACRO") AS external_macro_data_status,
+    COALESCE(mc.qqq_return_5d, 0.0) AS qqq_return_5d,
+    COALESCE(mc.vix_return_5d, 0.0) AS vix_return_5d,
+    COALESCE(mc.oil_return_5d, 0.0) AS oil_return_5d,
+    COALESCE(mc.xle_return_5d, 0.0) AS xle_return_5d,
+    COALESCE(mc.btc_return_5d, 0.0) AS btc_return_5d,
+    COALESCE(mc.eth_return_5d, 0.0) AS eth_return_5d,
+    COALESCE(mc.semiconductor_articles, 0) AS semiconductor_articles,
+    COALESCE(mc.energy_articles, 0) AS energy_articles,
+    COALESCE(mc.crypto_articles, 0) AS crypto_articles,
+    COALESCE(mc.growth_cycle_score, 0.0) AS growth_cycle_score,
+    COALESCE(mc.defensive_cycle_score, 0.0) AS defensive_cycle_score,
+    COALESCE(mc.commodity_cycle_score, 0.0) AS commodity_cycle_score,
+    COALESCE(mc.crypto_cycle_score, 0.0) AS crypto_cycle_score,
+    COALESCE(mc.rates_pressure_score, 0.0) AS rates_pressure_score,
+    COALESCE(mc.usd_pressure_score, 0.0) AS usd_pressure_score,
+    COALESCE(mc.eur_pressure_score, 0.0) AS eur_pressure_score,
+    COALESCE(mc.geopolitical_risk_score, 0.0) AS geopolitical_risk_score,
+    COALESCE(mc.risk_appetite_score, 0.0) AS risk_appetite_score,
+    COALESCE(mc.market_fear_score, 50.0) AS market_fear_score,
+    COALESCE(mc.market_fear_regime, "NEUTRAL") AS market_fear_regime,
+    ec.earnings_date,
+    ec.days_to_earnings,
+    COALESCE(ec.earnings_event_status, "NO_EARNINGS_DATA") AS earnings_event_status,
+    COALESCE(ec.earnings_event_score, 0.0) AS earnings_event_score,
+    COALESCE(ec.earnings_context_note, "Sin contexto de resultados.") AS earnings_context_note,
+    s.strategy_version,
+    s.strategy_name,
+    s.paper_capital_clp,
+    s.risk_per_trade_pct AS base_risk_per_trade_pct,
+    s.max_position_pct AS base_max_position_pct,
+    s.usd_clp_assumption,
+    s.daily_target_min_clp,
+    s.daily_target_max_clp,
+    s.min_trade_score,
+    s.min_watch_score,
+    s.min_risk_reward AS base_min_risk_reward,
+    s.stop_atr_multiple AS base_stop_atr_multiple,
+    s.min_stock_stop_pct,
+    s.min_crypto_stop_pct,
+    s.take_profit_1_r,
+    s.take_profit_2_r,
+    s.max_holding_days,
+    s.require_strong_trend,
+    s.require_volume_confirmation,
+    s.require_positive_regime,
+    COALESCE(wa.adjustment_status, "NO_WEEKLY_ADJUSTMENT") AS weekly_adjustment_status,
+    wa.recommendation_type AS weekly_adjustment_type,
+    wa.suggested_change AS weekly_adjustment_summary,
+    wa.week_end AS weekly_adjustment_week_end,
+    ROUND(s.risk_per_trade_pct * COALESCE(wa.risk_per_trade_multiplier, 1.0), 5) AS risk_per_trade_pct,
+    ROUND(s.max_position_pct * COALESCE(wa.max_position_multiplier, 1.0), 5) AS max_position_pct,
+    ROUND(s.min_risk_reward + COALESCE(wa.min_risk_reward_add, 0.0), 2) AS min_risk_reward,
+    ROUND(s.stop_atr_multiple * COALESCE(wa.stop_atr_multiplier, 1.0), 2) AS stop_atr_multiple,
+    CASE WHEN f.asset_type = "CRYPTO" THEN COALESCE(f.crypto_regime, "CRYPTO_NEUTRAL") ELSE "NO_APLICA" END AS market_regime,
+    (
+      CASE WHEN f.day_close > f.sma_20 THEN 1 ELSE 0 END +
+      CASE WHEN f.day_close > f.sma_50 THEN 1 ELSE 0 END +
+      CASE WHEN f.sma_20 > f.sma_50 THEN 1 ELSE 0 END +
+      CASE WHEN f.sma_200 IS NULL OR f.day_close > f.sma_200 THEN 1 ELSE 0 END
+    ) AS trend_score,
+    (
+      CASE WHEN f.return_5d > 0 THEN 1 ELSE 0 END +
+      CASE WHEN f.return_20d > 0.02 THEN 1 ELSE 0 END +
+      CASE WHEN f.return_60d > 0.04 THEN 1 ELSE 0 END
+    ) AS momentum_score,
+    (
+      CASE WHEN f.volume_vs_20d_avg >= 1.15 THEN 1 ELSE 0 END +
+      CASE WHEN f.day_volume > 0 THEN 1 ELSE 0 END
+    ) AS volume_score,
+    CASE
+      WHEN f.atr_pct IS NULL THEN 0
+      WHEN f.asset_type = "CRYPTO" AND f.atr_pct BETWEEN 0.015 AND 0.08 THEN 1
+      WHEN f.asset_type != "CRYPTO" AND f.atr_pct BETWEEN 0.008 AND 0.05 THEN 1
+      ELSE -1
+    END AS volatility_score,
+    CASE
+      WHEN f.asset_type = "CRYPTO" AND f.crypto_regime = "CRYPTO_DEBIL" THEN -2
+      WHEN f.ticker = "ETH-USD" AND f.eth_vs_btc_60d < -0.05 THEN -1
+      WHEN f.ticker = "COIN" AND COALESCE(f.btc_return_20d, 0) < -0.08 THEN -1
+      ELSE 0
+    END AS regime_score
+  FROM ${ref("trading_price_features")} f
+  LEFT JOIN ${ref("trading_asset_macro_profile")} mp
+    ON mp.ticker = f.ticker
+  LEFT JOIN ${ref("trading_asset_factor_profile")} fp
+    ON fp.ticker = f.ticker
+  LEFT JOIN profile_adjustments pa_ticker
+    ON pa_ticker.affected_ticker = f.ticker
+   AND f.analysis_date BETWEEN pa_ticker.effective_from AND pa_ticker.effective_to
+  LEFT JOIN profile_adjustments pa_all
+    ON UPPER(pa_all.affected_ticker) = "ALL"
+   AND f.analysis_date BETWEEN pa_all.effective_from AND pa_all.effective_to
+  LEFT JOIN ${ref("trading_macro_context")} mc
+    ON mc.analysis_date = f.analysis_date
+   AND mc.signal_hour = f.signal_hour
+  LEFT JOIN earnings_context ec
+    ON ec.analysis_date = f.analysis_date
+   AND ec.ticker = f.ticker
+  CROSS JOIN ${ref("trading_strategy_versions")} s
+  LEFT JOIN ${ref("trading_weekly_strategy_adjustments")} wa
+    ON wa.adjustment_status = "ACTIVE_BACKTEST"
+   AND f.analysis_date BETWEEN wa.effective_from AND wa.effective_to
+   AND REGEXP_CONTAINS(wa.affected_strategy, s.strategy_version)
+   AND (
+     REGEXP_CONTAINS(UPPER(wa.affected_ticker), "ALL")
+     OR REGEXP_CONTAINS(wa.affected_ticker, f.ticker)
+   )
+),
+scored AS (
+  SELECT
+    *,
+    CASE
+      WHEN semiconductor_articles >= 30 AND geopolitical_risk_score <= -1 THEN -1.5
+      WHEN semiconductor_articles >= 20 AND growth_cycle_score >= 0 AND risk_appetite_score >= 0 THEN 1.0
+      WHEN qqq_return_5d >= 0.02 THEN 0.75
+      WHEN qqq_return_5d <= -0.02 THEN -0.75
+      ELSE growth_cycle_score * 0.35
+    END AS semiconductor_factor_score,
+    CASE
+      WHEN semiconductor_articles >= 20 AND growth_cycle_score >= 0 AND rates_pressure_score > -1 THEN 1.0
+      WHEN rates_pressure_score <= -1 OR risk_appetite_score <= -1 THEN -0.75
+      ELSE growth_cycle_score * 0.40
+    END AS ai_capex_factor_score,
+    CASE
+      WHEN risk_appetite_score >= 1 AND growth_cycle_score >= 0 THEN 1.0
+      WHEN risk_appetite_score <= -1 OR growth_cycle_score <= -1 THEN -1.0
+      ELSE growth_cycle_score * 0.35
+    END AS consumer_factor_score,
+    CASE
+      WHEN growth_cycle_score >= 1 AND risk_appetite_score >= 0 THEN 1.0
+      WHEN growth_cycle_score <= -1 OR risk_appetite_score <= -1 THEN -1.0
+      ELSE growth_cycle_score * 0.50
+    END AS advertising_factor_score,
+    CASE
+      WHEN COALESCE(oil_return_5d, xle_return_5d, 0) >= 0.04 OR energy_articles >= 40 THEN -1.0
+      WHEN COALESCE(oil_return_5d, xle_return_5d, 0) <= -0.04 THEN 0.50
+      ELSE -0.25 * commodity_cycle_score
+    END AS energy_input_factor_score,
+    CASE
+      WHEN energy_articles >= 40 OR commodity_cycle_score >= 1 THEN -0.75
+      WHEN commodity_cycle_score <= -1 THEN 0.35
+      ELSE 0
+    END AS electricity_factor_score,
+    CASE
+      WHEN vix_return_5d >= 0.15 THEN -1.25
+      WHEN risk_appetite_score >= 1 THEN 1.0
+      WHEN risk_appetite_score <= -1 THEN -1.0
+      ELSE risk_appetite_score * 0.50
+    END AS liquidity_factor_score,
+    CASE
+      WHEN asset_type = "CRYPTO" AND crypto_regime = "CRYPTO_DEBIL" THEN -1.50
+      WHEN asset_type = "CRYPTO" AND volume_vs_20d_avg >= 1.20 AND crypto_cycle_score >= 0.75 THEN 1.25
+      WHEN asset_type = "CRYPTO" AND volume_vs_20d_avg < 0.70 THEN -0.75
+      WHEN ticker = "COIN" AND crypto_cycle_score >= 0.75 AND volume_vs_20d_avg >= 1.10 THEN 1.0
+      WHEN ticker = "COIN" AND crypto_cycle_score <= -0.75 THEN -1.0
+      ELSE crypto_cycle_score * 0.50
+    END AS crypto_flow_factor_score,
+    CASE
+      WHEN ticker = "BTC-USD" AND crypto_regime = "BTC_DOMINANTE" THEN 1.0
+      WHEN ticker = "BTC-USD" AND crypto_regime = "ALTCOIN_ROTATION" THEN 0.35
+      WHEN ticker = "ETH-USD" AND crypto_regime = "ALTCOIN_ROTATION" THEN 1.0
+      WHEN ticker = "ETH-USD" AND crypto_regime = "BTC_DOMINANTE" THEN -0.75
+      WHEN ticker = "COIN" AND crypto_regime IN ("BTC_DOMINANTE", "ALTCOIN_ROTATION") THEN 0.75
+      ELSE 0
+    END AS btc_dominance_factor_score,
+    CASE
+      WHEN crypto_articles >= 50 AND (asset_type = "CRYPTO" OR ticker = "COIN") THEN -1.0
+      WHEN semiconductor_articles >= 40 AND semiconductor_cycle_sensitivity >= 0.5 AND geopolitical_risk_score <= -0.75 THEN -0.75
+      WHEN geopolitical_risk_score <= -1 AND regulatory_sensitivity >= 0.4 THEN -0.75
+      ELSE 0
+    END AS regulatory_factor_score,
+    ROUND(
+      COALESCE(growth_cycle_score, 0) * growth_sensitivity +
+      COALESCE(defensive_cycle_score, 0) * defensive_sensitivity +
+      COALESCE(commodity_cycle_score, 0) * energy_sensitivity +
+      COALESCE(crypto_cycle_score, 0) * crypto_sensitivity +
+      COALESCE(usd_pressure_score, 0) * usd_sensitivity +
+      COALESCE(rates_pressure_score, 0) * rates_sensitivity +
+      COALESCE(geopolitical_risk_score, 0) * geopolitical_sensitivity +
+      COALESCE(risk_appetite_score, 0) * risk_appetite_sensitivity,
+      2
+    ) AS macro_alignment_score,
+    ROUND(
+      trend_score * trend_weight +
+      momentum_score * momentum_weight +
+      volume_score * volume_weight * volume_confirmation_importance +
+      volatility_score * volatility_weight +
+      regime_score * regime_weight,
+      2
+    ) AS weighted_technical_score
+  FROM base
+),
+factor_scored AS (
+  SELECT
+    *,
+    ROUND(
+      GREATEST(
+        -2.50,
+        LEAST(
+          2.50,
+          semiconductor_factor_score * semiconductor_cycle_sensitivity +
+          ai_capex_factor_score * ai_capex_sensitivity +
+          consumer_factor_score * consumer_cycle_sensitivity +
+          advertising_factor_score * advertising_cycle_sensitivity +
+          energy_input_factor_score * energy_input_sensitivity +
+          electricity_factor_score * electricity_cost_sensitivity +
+          rates_pressure_score * rates_duration_sensitivity +
+          usd_pressure_score * usd_revenue_sensitivity +
+          geopolitical_risk_score * geopolitical_supply_sensitivity +
+          liquidity_factor_score * liquidity_risk_sensitivity +
+          crypto_flow_factor_score * crypto_flow_sensitivity +
+          btc_dominance_factor_score * btc_dominance_sensitivity +
+          regulatory_factor_score * regulatory_sensitivity
+        )
+      ),
+      2
+    ) AS factor_alignment_score,
+    CONCAT(
+      "perfil=", cycle_profile,
+      "; sector=", sector_profile,
+      "; demanda=", primary_demand_driver,
+      "; riesgo=", primary_risk_driver,
+      "; semis=", CAST(ROUND(semiconductor_factor_score * semiconductor_cycle_sensitivity, 2) AS STRING),
+      "; ia_capex=", CAST(ROUND(ai_capex_factor_score * ai_capex_sensitivity, 2) AS STRING),
+      "; consumo=", CAST(ROUND(consumer_factor_score * consumer_cycle_sensitivity, 2) AS STRING),
+      "; energia=", CAST(ROUND((energy_input_factor_score * energy_input_sensitivity) + (electricity_factor_score * electricity_cost_sensitivity), 2) AS STRING),
+      "; liquidez=", CAST(ROUND(liquidity_factor_score * liquidity_risk_sensitivity, 2) AS STRING),
+      "; cripto_flujo=", CAST(ROUND(crypto_flow_factor_score * crypto_flow_sensitivity, 2) AS STRING),
+      "; btc_dom=", CAST(ROUND(btc_dominance_factor_score * btc_dominance_sensitivity, 2) AS STRING),
+      "; regulacion=", CAST(ROUND(regulatory_factor_score * regulatory_sensitivity, 2) AS STRING)
+    ) AS factor_risk_notes
+  FROM scored
+),
+levels AS (
+  SELECT
+    *,
+    ROUND(day_close * (1 + SAFE_DIVIDE(spread_bps + slippage_bps, 10000)), 4) AS theoretical_entry_price,
+    GREATEST(
+      COALESCE(atr_pct * stop_atr_multiple, 0),
+      CASE
+        WHEN asset_type = "CRYPTO" THEN min_crypto_stop_pct
+        WHEN ticker = "COIN" THEN GREATEST(min_stock_stop_pct, 0.05)
+        ELSE min_stock_stop_pct
+      END
+    ) AS stop_distance_pct,
+    SAFE_DIVIDE((spread_bps + slippage_bps) * 2, 10000) AS estimated_roundtrip_cost_pct,
+    ROUND(weighted_technical_score + macro_alignment_score + factor_alignment_score + earnings_event_score, 2) AS setup_score,
+    (
+      (NOT require_strong_trend OR (day_close > sma_50 AND sma_20 > sma_50)) AND
+      (NOT require_volume_confirmation OR volume_vs_20d_avg >= 1.10) AND
+      (macro_alignment_score >= -1.50) AND
+      (
+        NOT require_positive_regime OR
+        asset_type != "CRYPTO" OR
+        COALESCE(crypto_regime, "CRYPTO_NEUTRAL") IN ("BTC_DOMINANTE", "ALTCOIN_ROTATION", "CRYPTO_NEUTRAL")
+      )
+    ) AS strategy_filters_pass,
+    CASE
+      WHEN previous_high_20d IS NOT NULL
+        AND day_close >= previous_high_20d
+        AND volume_vs_20d_avg >= 1.10
+        AND return_20d > 0
+        THEN "BREAKOUT"
+      WHEN day_close > sma_50
+        AND ABS(SAFE_DIVIDE(day_close - sma_20, sma_20)) <= 0.025
+        AND return_60d > 0
+        THEN "PULLBACK_TENDENCIA"
+      WHEN previous_low_20d IS NOT NULL
+        AND day_close > sma_20
+        AND return_5d > 0
+        AND SAFE_DIVIDE(day_close - previous_low_20d, previous_low_20d) <= 0.08
+        THEN "REBOTE_SOPORTE"
+      ELSE "SIN_SETUP"
+    END AS setup_type
+  FROM factor_scored
+),
+positioning AS (
+  SELECT
+    *,
+    ROUND(theoretical_entry_price * (1 - stop_distance_pct), 4) AS stop_loss,
+    ROUND(theoretical_entry_price * (1 + stop_distance_pct * take_profit_1_r + estimated_roundtrip_cost_pct), 4) AS take_profit_1,
+    ROUND(theoretical_entry_price * (1 + stop_distance_pct * take_profit_2_r + estimated_roundtrip_cost_pct), 4) AS take_profit_2,
+    ROUND(
+      LEAST(
+        paper_capital_clp * max_position_pct,
+        SAFE_DIVIDE(paper_capital_clp * risk_per_trade_pct, stop_distance_pct)
+      ),
+      0
+    ) AS position_notional_clp
+  FROM levels
+)
+
+SELECT
+  analysis_date,
+  signal_hour,
+  signal_timestamp,
+  ticker,
+  asset_type,
+  trading_group,
+  trading_style,
+  sector_profile,
+  cycle_profile,
+  macro_rationale,
+  factor_rationale,
+  demand_geography,
+  holder_base,
+  primary_demand_driver,
+  primary_risk_driver,
+  strategy_version,
+  strategy_name,
+  TO_HEX(SHA256(CONCAT(CAST(signal_timestamp AS STRING), "|", ticker, "|", strategy_version))) AS paper_trade_id,
+  setup_type,
+  CASE
+    WHEN setup_type != "SIN_SETUP"
+      AND setup_score >= min_trade_score
+      AND strategy_filters_pass
+      AND SAFE_DIVIDE(take_profit_1 - theoretical_entry_price, theoretical_entry_price - stop_loss) >= min_risk_reward
+      THEN "TRADE_LONG"
+    WHEN setup_type != "SIN_SETUP" AND setup_score >= min_watch_score THEN "VIGILAR"
+    ELSE "SIN_TRADE"
+  END AS paper_signal,
+  setup_score,
+  trend_score,
+  momentum_score,
+  volume_score,
+  volatility_score,
+  regime_score,
+  market_regime,
+  macro_regime,
+  external_macro_data_status,
+  market_fear_score,
+  market_fear_regime,
+  earnings_date,
+  days_to_earnings,
+  earnings_event_status,
+  earnings_event_score,
+  earnings_context_note,
+  weekly_adjustment_status,
+  weekly_adjustment_type,
+  weekly_adjustment_summary,
+  weekly_adjustment_week_end,
+  profile_adjustment_summary,
+  weighted_technical_score,
+  macro_alignment_score,
+  factor_alignment_score,
+  factor_risk_notes,
+  growth_cycle_score,
+  defensive_cycle_score,
+  commodity_cycle_score,
+  crypto_cycle_score,
+  rates_pressure_score,
+  usd_pressure_score,
+  eur_pressure_score,
+  geopolitical_risk_score,
+  risk_appetite_score,
+  ROUND(day_close, 4) AS close_price,
+  theoretical_entry_price,
+  stop_loss,
+  take_profit_1,
+  take_profit_2,
+  ROUND(SAFE_DIVIDE(take_profit_1 - theoretical_entry_price, theoretical_entry_price - stop_loss), 2) AS risk_reward_1,
+  ROUND(SAFE_DIVIDE(take_profit_2 - theoretical_entry_price, theoretical_entry_price - stop_loss), 2) AS risk_reward_2,
+  min_trade_score,
+  min_watch_score,
+  min_risk_reward,
+  base_min_risk_reward,
+  max_holding_days,
+  strategy_filters_pass,
+  spread_bps,
+  slippage_bps,
+  ROUND(estimated_roundtrip_cost_pct * 100, 3) AS estimated_roundtrip_cost_pct,
+  ROUND(stop_distance_pct * 100, 2) AS stop_distance_pct,
+  position_notional_clp,
+  base_risk_per_trade_pct,
+  risk_per_trade_pct,
+  base_max_position_pct,
+  max_position_pct,
+  base_stop_atr_multiple,
+  stop_atr_multiple,
+  ROUND(SAFE_DIVIDE(position_notional_clp, theoretical_entry_price * usd_clp_assumption), 6) AS theoretical_quantity,
+  paper_capital_clp,
+  usd_clp_assumption,
+  daily_target_min_clp,
+  daily_target_max_clp,
+  return_5d,
+  return_20d,
+  return_60d,
+  volume_vs_20d_avg,
+  atr_pct,
+  btc_return_20d,
+  btc_return_60d,
+  eth_return_20d,
+  eth_return_60d,
+  eth_btc_ratio,
+  eth_vs_btc_60d,
+  crypto_regime,
+  CONCAT(
+    "setup=", setup_type,
+    "; estrategia=", strategy_version,
+    "; score=", CAST(setup_score AS STRING),
+    "; tecnico=", CAST(weighted_technical_score AS STRING),
+    "; macro=", CAST(macro_alignment_score AS STRING),
+    "; factor=", CAST(factor_alignment_score AS STRING),
+    "; earnings=", CAST(earnings_event_score AS STRING),
+    "; miedo=", CAST(market_fear_score AS STRING),
+    "; miedo_regimen=", market_fear_regime,
+    "; macro_regimen=", macro_regime,
+    "; earnings_estado=", earnings_event_status,
+    "; earnings_nota=", earnings_context_note,
+    "; ajuste_semanal=", weekly_adjustment_status,
+    "; ajuste_perfil=", profile_adjustment_summary,
+    "; perfil=", trading_style,
+    "; perfil_factor=", cycle_profile,
+    "; motivo_factor=", factor_risk_notes,
+    "; entrada=", CAST(theoretical_entry_price AS STRING),
+    "; stop=", CAST(ROUND(theoretical_entry_price * (1 - stop_distance_pct), 4) AS STRING),
+    "; tp1=", CAST(ROUND(theoretical_entry_price * (1 + stop_distance_pct * take_profit_1_r + estimated_roundtrip_cost_pct), 4) AS STRING),
+    "; costo_roundtrip_pct=", CAST(ROUND(estimated_roundtrip_cost_pct * 100, 3) AS STRING),
+    "; filtros=", CAST(strategy_filters_pass AS STRING),
+    "; regimen=", CASE WHEN asset_type = "CRYPTO" THEN COALESCE(crypto_regime, "NA") ELSE "NO_APLICA" END
+  ) AS signal_reason,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM positioning

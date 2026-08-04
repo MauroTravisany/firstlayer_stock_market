@@ -1,0 +1,103 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_weekly_strategy_adjustments",
+  description: "Ajustes semanales automaticos para paper trading derivados de revisiones IA. Solo afectan simulacion, no dinero real.",
+  tags: ["trading", "paper", "strategy", "weekly", "daily", "ai"],
+  bigquery: {
+    partitionBy: "week_end"
+  },
+  assertions: {
+    nonNull: ["week_end", "adjustment_status", "recommendation_type"]
+  }
+}
+
+WITH latest_review AS (
+  SELECT *
+  FROM `stocks-437902.acciones_dataset.trading_weekly_ai_strategy_review`
+  QUALIFY ROW_NUMBER() OVER (ORDER BY week_end DESC, created_at DESC) = 1
+),
+recommendations AS (
+  SELECT
+    week_start,
+    week_end,
+    prompt_version,
+    JSON_VALUE(item, "$.recommendation_type") AS recommendation_type,
+    JSON_VALUE(item, "$.affected_ticker") AS affected_ticker,
+    JSON_VALUE(item, "$.affected_strategy") AS affected_strategy,
+    JSON_VALUE(item, "$.affected_profile_field") AS affected_profile_field,
+    SAFE_CAST(JSON_VALUE(item, "$.current_value") AS FLOAT64) AS current_value,
+    SAFE_CAST(JSON_VALUE(item, "$.suggested_value") AS FLOAT64) AS suggested_value,
+    JSON_VALUE(item, "$.suggested_change") AS suggested_change,
+    JSON_VALUE(item, "$.evidence") AS evidence,
+    SAFE_CAST(JSON_VALUE(item, "$.times_repeated") AS INT64) AS times_repeated,
+    JSON_VALUE(item, "$.expected_impact") AS expected_impact,
+    JSON_VALUE(item, "$.risk_level") AS risk_level,
+    SAFE_CAST(JSON_VALUE(item, "$.confidence_score") AS FLOAT64) AS confidence_score,
+    JSON_VALUE(item, "$.approval_status") AS recommendation_approval_status
+  FROM latest_review,
+  UNNEST(JSON_QUERY_ARRAY(recommendations_json)) AS item
+),
+eligible AS (
+  SELECT
+    *,
+    CASE
+      WHEN recommendation_approval_status = "APLICAR_EN_BACKTEST"
+        AND COALESCE(confidence_score, 0) >= 0.75
+        AND COALESCE(times_repeated, 0) >= 2
+        THEN "ACTIVE_BACKTEST"
+      WHEN recommendation_approval_status = "APLICAR_EN_BACKTEST" THEN "PENDING_MORE_EVIDENCE"
+      ELSE "OBSERVE_ONLY"
+    END AS adjustment_status
+  FROM recommendations
+)
+
+SELECT
+  week_start,
+  week_end,
+  DATE_ADD(week_end, INTERVAL 1 DAY) AS effective_from,
+  DATE_ADD(week_end, INTERVAL 8 DAY) AS effective_to,
+  prompt_version,
+  recommendation_type,
+  affected_ticker,
+  affected_strategy,
+  affected_profile_field,
+  current_value,
+  suggested_value,
+  suggested_change,
+  evidence,
+  times_repeated,
+  expected_impact,
+  risk_level,
+  confidence_score,
+  recommendation_approval_status,
+  adjustment_status,
+  CASE
+    WHEN adjustment_status = "ACTIVE_BACKTEST"
+      AND REGEXP_CONTAINS(LOWER(recommendation_type), r"(rebalanceo|capital|track record)")
+      AND REGEXP_CONTAINS(affected_strategy, r"v3|v4")
+      THEN 1.20
+    ELSE 1.00
+  END AS risk_per_trade_multiplier,
+  CASE
+    WHEN adjustment_status = "ACTIVE_BACKTEST"
+      AND REGEXP_CONTAINS(LOWER(recommendation_type), r"(rebalanceo|capital|track record)")
+      AND REGEXP_CONTAINS(affected_strategy, r"v3|v4")
+      THEN 1.20
+    ELSE 1.00
+  END AS max_position_multiplier,
+  CASE
+    WHEN adjustment_status = "ACTIVE_BACKTEST"
+      AND REGEXP_CONTAINS(LOWER(recommendation_type), r"(costo|slippage|roundtrip)")
+      THEN 0.10
+    ELSE 0.00
+  END AS min_risk_reward_add,
+  CASE
+    WHEN adjustment_status = "ACTIVE_BACKTEST"
+      AND REGEXP_CONTAINS(LOWER(recommendation_type), r"(stop|tp|salida)")
+      AND REGEXP_CONTAINS(affected_strategy, r"v3|v4")
+      THEN 1.10
+    ELSE 1.00
+  END AS stop_atr_multiplier,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM eligible

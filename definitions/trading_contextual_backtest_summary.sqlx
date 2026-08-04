@@ -1,0 +1,106 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_contextual_backtest_summary",
+  description: "Resumen del backtest contextual por variante, estrategia y contexto similar.",
+  tags: ["trading", "paper", "backtest", "context", "summary", "daily", "portfolio", "valuation"],
+  bigquery: {
+    clusterBy: ["variant_id", "strategy_version", "recommendation"]
+  },
+  assertions: {
+    nonNull: ["variant_id", "strategy_version", "context_similarity_key"],
+    uniqueKey: ["variant_id", "strategy_version", "context_similarity_key"]
+  },
+  dependencies: ["trading_contextual_backtest_results"]
+}
+
+WITH closed AS (
+  SELECT *
+  FROM ${ref("trading_contextual_backtest_results")}
+  WHERE contextual_signal = "TRADE_LONG"
+    AND trade_status != "OPEN"
+    AND outcome_date IS NOT NULL
+),
+grouped AS (
+  SELECT
+    variant_id,
+    ANY_VALUE(variant_name) AS variant_name,
+    strategy_version,
+    ANY_VALUE(strategy_name) AS strategy_name,
+    context_similarity_key,
+    ANY_VALUE(historical_fear_regime) AS historical_fear_regime,
+    ANY_VALUE(monetary_regime_proxy) AS monetary_regime_proxy,
+    ANY_VALUE(political_regime_proxy) AS political_regime_proxy,
+    ANY_VALUE(company_lifecycle_context) AS company_lifecycle_context,
+    ANY_VALUE(earnings_event_status) AS earnings_event_status,
+    ANY_VALUE(crypto_context_regime) AS crypto_context_regime,
+    ANY_VALUE(status_group) AS status_group,
+    MIN(analysis_date) AS first_signal_date,
+    MAX(analysis_date) AS last_signal_date,
+    COUNT(*) AS closed_trades,
+    COUNT(DISTINCT ticker) AS ticker_count,
+    COUNTIF(is_win) AS wins,
+    COUNTIF(NOT is_win) AS losses,
+    ROUND(SAFE_DIVIDE(COUNTIF(is_win), COUNT(*)) * 100, 2) AS win_rate_pct,
+    ROUND(SUM(net_pnl_clp), 0) AS total_pnl_clp,
+    ROUND(AVG(net_pnl_clp), 0) AS avg_pnl_clp,
+    ROUND(APPROX_QUANTILES(net_pnl_clp, 100)[OFFSET(5)], 0) AS pnl_p05_clp,
+    ROUND(APPROX_QUANTILES(net_pnl_clp, 100)[OFFSET(50)], 0) AS pnl_median_clp,
+    ROUND(AVG(net_return_pct) * 100, 2) AS avg_net_return_pct,
+    ROUND(AVG(contextual_setup_score), 2) AS avg_contextual_setup_score,
+    ROUND(AVG(original_setup_score), 2) AS avg_original_setup_score,
+    ROUND(AVG(historical_fear_score), 2) AS avg_historical_fear_score,
+    ROUND(AVG(earnings_event_score), 2) AS avg_earnings_event_score,
+    COUNTIF(trade_status = "STOP_LOSS") AS stop_loss_count,
+    COUNTIF(trade_status IN ("TAKE_PROFIT_1", "TAKE_PROFIT_2")) AS take_profit_count,
+    ARRAY_AGG(
+      STRUCT(
+        ticker,
+        analysis_date,
+        outcome_date,
+        result_label,
+        net_pnl_clp,
+        net_return_pct,
+        contextual_setup_score
+      )
+      ORDER BY ABS(net_pnl_clp) DESC
+      LIMIT 5
+    ) AS top_impact_trades
+  FROM closed
+  GROUP BY variant_id, strategy_version, context_similarity_key
+),
+ranked AS (
+  SELECT
+    *,
+    RANK() OVER (
+      PARTITION BY strategy_version, context_similarity_key
+      ORDER BY total_pnl_clp DESC, win_rate_pct DESC, closed_trades DESC
+    ) AS rank_in_context,
+    RANK() OVER (
+      PARTITION BY strategy_version
+      ORDER BY total_pnl_clp DESC, win_rate_pct DESC, closed_trades DESC
+    ) AS rank_in_strategy
+  FROM grouped
+)
+
+SELECT
+  *,
+  CASE
+    WHEN closed_trades < 8 THEN "MUESTRA_INSUFICIENTE"
+    WHEN total_pnl_clp > 0 AND win_rate_pct >= 55 AND pnl_p05_clp > -150000 THEN "PROMOVER_A_BACKTEST_EXTENDIDO"
+    WHEN total_pnl_clp > 0 AND win_rate_pct >= 50 THEN "OBSERVAR"
+    WHEN total_pnl_clp < 0 AND win_rate_pct < 45 THEN "DESCARTAR_O_REDUCIR_PESO"
+    ELSE "NEUTRAL"
+  END AS recommendation,
+  CONCAT(
+    "variante=", variant_id,
+    "; estrategia=", strategy_version,
+    "; contexto=", context_similarity_key,
+    "; trades=", CAST(closed_trades AS STRING),
+    "; win=", CAST(win_rate_pct AS STRING), "%",
+    "; pnl=", CAST(total_pnl_clp AS STRING),
+    "; p05=", CAST(pnl_p05_clp AS STRING),
+    "; ranking_contexto=", CAST(rank_in_context AS STRING)
+  ) AS summary_reason,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM ranked
