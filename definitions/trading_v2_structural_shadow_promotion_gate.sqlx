@@ -1,0 +1,47 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v2_structural_shadow_promotion_gate",
+  description: "Estado de promocion del piloto V2. Nunca activa Alpaca automaticamente; requiere aprobacion manual explicita.",
+  tags: ["trading", "shadow", "daily", "audit"],
+  dependencies: ["trading_v2_structural_shadow_config", "trading_v2_structural_shadow_signals", "trading_v2_structural_shadow_portfolio"]
+}
+
+WITH config AS (SELECT * FROM ${ref("trading_v2_structural_shadow_config")}),
+signals AS (
+  SELECT COUNTIF(shadow_signal = "SHADOW_TRADE_LONG") AS shadow_signal_count,
+    COUNTIF(shadow_signal = "SHADOW_REJECTED") AS rejected_signal_count
+  FROM ${ref("trading_v2_structural_shadow_signals")}
+),
+portfolio AS (
+  SELECT
+    COUNT(*) AS closed_trades,
+    ROUND(SUM(net_pnl_clp), 0) AS net_pnl_clp,
+    ROUND(SAFE_DIVIDE(SUM(IF(net_pnl_clp > 0, net_pnl_clp, 0)), ABS(SUM(IF(net_pnl_clp < 0, net_pnl_clp, 0)))), 3) AS profit_factor,
+    ROUND(SAFE_DIVIDE(COUNTIF(is_win), COUNT(*)) * 100, 2) AS win_rate_pct,
+    ROUND(MAX(SAFE_DIVIDE(running_peak - equity_clp, running_peak)) * 100, 2) AS max_drawdown_pct
+  FROM (
+    SELECT *, MAX(equity_clp) OVER (ORDER BY outcome_date, analysis_date, ticker) AS running_peak
+    FROM ${ref("trading_v2_structural_shadow_portfolio")}
+  )
+)
+SELECT
+  c.*,
+  DATE_DIFF(CURRENT_DATE("America/Santiago"), c.pilot_start_date, DAY) AS shadow_age_days,
+  s.shadow_signal_count,
+  s.rejected_signal_count,
+  COALESCE(p.closed_trades, 0) AS closed_trades,
+  COALESCE(p.net_pnl_clp, 0) AS net_pnl_clp,
+  p.profit_factor,
+  p.win_rate_pct,
+  p.max_drawdown_pct,
+  CASE
+    WHEN c.pilot_status != "SHADOW_ONLY" THEN "BLOQUEADO_POR_CONFIGURACION"
+    WHEN DATE_DIFF(CURRENT_DATE("America/Santiago"), c.pilot_start_date, DAY) < c.minimum_shadow_days THEN "SEGUIR_EN_SOMBRA_TIEMPO_INSUFICIENTE"
+    WHEN COALESCE(p.closed_trades, 0) < c.minimum_closed_trades THEN "SEGUIR_EN_SOMBRA_MUESTRA_INSUFICIENTE"
+    WHEN COALESCE(p.net_pnl_clp, 0) <= c.minimum_net_pnl_clp OR COALESCE(p.profit_factor, 0) < c.minimum_profit_factor OR COALESCE(p.max_drawdown_pct, 100) > c.maximum_drawdown_pct THEN "SEGUIR_EN_SOMBRA_GUARDRAILS_NO_CUMPLIDOS"
+    ELSE "LISTO_PARA_REVISION_MANUAL_PAPER"
+  END AS promotion_status,
+  "No se activa Alpaca sin un cambio manual y una aprobacion explicita." AS promotion_policy,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM config c CROSS JOIN signals s LEFT JOIN portfolio p ON TRUE

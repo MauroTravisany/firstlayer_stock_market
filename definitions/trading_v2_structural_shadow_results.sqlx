@@ -1,0 +1,59 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v2_structural_shadow_results",
+  description: "Resultados diarios del piloto V2 estructural. Es simulacion aislada, sin ordenes de broker.",
+  tags: ["trading", "shadow", "daily", "results"],
+  bigquery: { partitionBy: "analysis_date", clusterBy: ["trade_status", "ticker"] },
+  assertions: { nonNull: ["analysis_date", "ticker", "shadow_trade_id"], uniqueKey: ["shadow_trade_id"] },
+  dependencies: ["trading_v2_structural_shadow_signals", "trading_price_features"]
+}
+
+WITH trades AS (
+  SELECT * FROM ${ref("trading_v2_structural_shadow_signals")}
+  WHERE shadow_signal = "SHADOW_TRADE_LONG"
+),
+future_candidates AS (
+  SELECT
+    t.shadow_trade_id, t.shadow_max_holding_days, p.analysis_date AS path_date, p.day_low, p.day_high, p.day_close,
+    CASE WHEN p.day_low <= t.shadow_stop_loss THEN "STOP_LOSS" WHEN p.day_high >= t.shadow_take_profit_2 THEN "TAKE_PROFIT_2" WHEN p.day_high >= t.shadow_take_profit_1 THEN "TAKE_PROFIT_1" END AS event_type,
+    CASE WHEN p.day_low <= t.shadow_stop_loss THEN t.shadow_stop_loss WHEN p.day_high >= t.shadow_take_profit_2 THEN t.shadow_take_profit_2 WHEN p.day_high >= t.shadow_take_profit_1 THEN t.shadow_take_profit_1 END AS event_price,
+    CASE WHEN p.day_low <= t.shadow_stop_loss THEN 1 WHEN p.day_high >= t.shadow_take_profit_2 THEN 2 WHEN p.day_high >= t.shadow_take_profit_1 THEN 3 ELSE 9 END AS event_priority
+  FROM trades t
+  JOIN ${ref("trading_price_features")} p
+    ON p.ticker = t.ticker
+   AND p.signal_timestamp > t.signal_timestamp
+   AND p.signal_timestamp <= DATETIME_ADD(t.signal_timestamp, INTERVAL 135 DAY)
+),
+future_path AS (
+  SELECT * EXCEPT(future_bar_number)
+  FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY shadow_trade_id ORDER BY path_date) AS future_bar_number FROM future_candidates)
+  WHERE future_bar_number <= shadow_max_holding_days
+),
+first_event AS (
+  SELECT
+    shadow_trade_id,
+    ARRAY_AGG(IF(event_type IS NOT NULL, STRUCT(path_date, event_type, event_price, event_priority), NULL) IGNORE NULLS ORDER BY path_date, event_priority LIMIT 1)[SAFE_OFFSET(0)] AS first_hit,
+    ARRAY_AGG(STRUCT(path_date, day_close) ORDER BY path_date DESC LIMIT 1)[SAFE_OFFSET(0)] AS latest_seen,
+    COUNT(*) AS future_days_seen
+  FROM future_path GROUP BY shadow_trade_id
+),
+evaluated AS (
+  SELECT
+    t.*,
+    fe.future_days_seen,
+    CASE WHEN fe.first_hit.event_type IS NOT NULL THEN fe.first_hit.path_date WHEN fe.future_days_seen >= t.shadow_max_holding_days THEN fe.latest_seen.path_date END AS outcome_date,
+    CASE WHEN fe.first_hit.event_type IS NOT NULL THEN fe.first_hit.event_type WHEN fe.future_days_seen >= t.shadow_max_holding_days THEN "TIME_EXIT" ELSE "OPEN" END AS trade_status,
+    CASE WHEN fe.first_hit.event_price IS NOT NULL THEN fe.first_hit.event_price WHEN fe.future_days_seen >= t.shadow_max_holding_days THEN fe.latest_seen.day_close END AS exit_price
+  FROM trades t LEFT JOIN first_event fe USING (shadow_trade_id)
+)
+
+SELECT
+  * EXCEPT(calculated_at),
+  ROUND(SAFE_DIVIDE(exit_price - theoretical_entry_price, theoretical_entry_price), 4) AS gross_return_pct,
+  ROUND(SAFE_DIVIDE(exit_price - theoretical_entry_price, theoretical_entry_price) - estimated_roundtrip_cost_pct / 100, 4) AS net_return_pct,
+  ROUND(shadow_position_notional_clp * (SAFE_DIVIDE(exit_price - theoretical_entry_price, theoretical_entry_price) - estimated_roundtrip_cost_pct / 100), 0) AS net_pnl_clp,
+  CASE WHEN trade_status IN ("TAKE_PROFIT_1", "TAKE_PROFIT_2") THEN TRUE WHEN trade_status = "TIME_EXIT" AND exit_price > theoretical_entry_price THEN TRUE ELSE FALSE END AS is_win,
+  CASE WHEN trade_status = "OPEN" THEN "ABIERTO" WHEN trade_status = "STOP_LOSS" THEN "PERDIDA" WHEN trade_status IN ("TAKE_PROFIT_1", "TAKE_PROFIT_2") THEN "GANANCIA" WHEN exit_price > theoretical_entry_price THEN "GANANCIA_TIEMPO" ELSE "PERDIDA_TIEMPO" END AS result_label,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM evaluated

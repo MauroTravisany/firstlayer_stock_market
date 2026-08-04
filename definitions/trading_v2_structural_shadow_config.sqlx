@@ -1,0 +1,19 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v2_structural_shadow_config",
+  description: "Contrato del piloto paralelo V2. SHADOW_ONLY impide que sus senales lleguen al executor de Alpaca.",
+  tags: ["trading", "shadow", "daily"]
+}
+
+SELECT
+  "structural-v2-shadow" AS pilot_id,
+  DATE "2026-08-04" AS pilot_start_date,
+  "SHADOW_ONLY" AS pilot_status,
+  28 AS minimum_shadow_days,
+  30 AS minimum_closed_trades,
+  1.10 AS minimum_profit_factor,
+  0.00 AS minimum_net_pnl_clp,
+  8.00 AS maximum_drawdown_pct,
+  TRUE AS requires_manual_approval,
+  "No envia ordenes. Solo comparar resultados nuevos con el flujo vigente antes de habilitar Alpaca Paper." AS policy_note

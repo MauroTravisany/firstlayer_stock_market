@@ -1,0 +1,86 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v2_structural_shadow_signals",
+  description: "Senales V2 estructurales en modo sombra. No son leidas por el executor de Alpaca.",
+  tags: ["trading", "shadow", "daily", "signal"],
+  bigquery: { partitionBy: "analysis_date", clusterBy: ["shadow_signal", "ticker"] },
+  assertions: { nonNull: ["analysis_date", "ticker", "shadow_trade_id", "shadow_signal"], uniqueKey: ["shadow_trade_id"] },
+  dependencies: ["trading_paper_signals_active", "trading_backtest_asset_rules", "trading_v2_structural_shadow_config"]
+}
+
+WITH base AS (
+  SELECT
+    s.*,
+    c.pilot_id,
+    c.pilot_start_date,
+    c.pilot_status,
+    COALESCE(r.min_score_add, fallback.min_score_add) AS rule_min_score_add,
+    COALESCE(r.min_trend_score, fallback.min_trend_score) AS rule_min_trend_score,
+    COALESCE(r.stop_multiplier, fallback.stop_multiplier) AS rule_stop_multiplier,
+    COALESCE(r.take_profit_1_r, fallback.take_profit_1_r) AS rule_take_profit_1_r,
+    COALESCE(r.take_profit_2_r, fallback.take_profit_2_r) AS rule_take_profit_2_r,
+    COALESCE(r.max_holding_days, fallback.max_holding_days) AS rule_max_holding_days,
+    COALESCE(r.position_size_multiplier, fallback.position_size_multiplier) AS rule_position_size_multiplier,
+    COALESCE(r.rule_rationale, fallback.rule_rationale) AS rule_rationale
+  FROM ${ref("trading_paper_signals_active")} s
+  CROSS JOIN ${ref("trading_v2_structural_shadow_config")} c
+  LEFT JOIN ${ref("trading_backtest_asset_rules")} r ON r.trading_group = s.trading_group
+  JOIN ${ref("trading_backtest_asset_rules")} fallback ON fallback.trading_group = "default"
+  WHERE s.strategy_version = "v2"
+    AND s.analysis_date >= c.pilot_start_date
+),
+scored AS (
+  SELECT
+    *,
+    GREATEST(stop_distance_pct * rule_stop_multiplier, IF(asset_type = "CRYPTO", 4.0, 2.5)) AS adaptive_stop_distance_pct,
+    paper_signal = "TRADE_LONG"
+      AND setup_score >= min_trade_score + rule_min_score_add
+      AND trend_score >= rule_min_trend_score
+      AND macro_alignment_score >= -1.0
+      AND NOT (market_fear_regime = "EXTREME_FEAR" AND factor_alignment_score < 0)
+      AND NOT (earnings_event_status = "EARNINGS_RISK" AND earnings_event_score < 0)
+      AND NOT (asset_type = "CRYPTO" AND crypto_regime = "CRYPTO_DEBIL") AS structural_filters_pass
+  FROM base
+)
+
+SELECT
+  analysis_date,
+  signal_hour,
+  signal_timestamp,
+  ticker,
+  asset_type,
+  trading_group,
+  strategy_version,
+  strategy_name,
+  pilot_id,
+  pilot_status,
+  TO_HEX(SHA256(CONCAT(paper_trade_id, "|", pilot_id))) AS shadow_trade_id,
+  paper_trade_id AS baseline_trade_id,
+  CASE WHEN structural_filters_pass THEN "SHADOW_TRADE_LONG" WHEN paper_signal = "TRADE_LONG" THEN "SHADOW_REJECTED" ELSE "SHADOW_NO_SETUP" END AS shadow_signal,
+  structural_filters_pass,
+  setup_type,
+  setup_score,
+  trend_score,
+  momentum_score,
+  volume_score,
+  volatility_score,
+  regime_score,
+  weighted_technical_score,
+  macro_alignment_score,
+  factor_alignment_score,
+  earnings_event_status,
+  earnings_event_score,
+  market_fear_regime,
+  crypto_regime,
+  theoretical_entry_price,
+  ROUND(theoretical_entry_price * (1 - adaptive_stop_distance_pct / 100), 4) AS shadow_stop_loss,
+  ROUND(theoretical_entry_price * (1 + adaptive_stop_distance_pct / 100 * rule_take_profit_1_r + estimated_roundtrip_cost_pct / 100), 4) AS shadow_take_profit_1,
+  ROUND(theoretical_entry_price * (1 + adaptive_stop_distance_pct / 100 * rule_take_profit_2_r + estimated_roundtrip_cost_pct / 100), 4) AS shadow_take_profit_2,
+  LEAST(max_holding_days, rule_max_holding_days) AS shadow_max_holding_days,
+  ROUND(position_notional_clp * rule_position_size_multiplier, 0) AS shadow_position_notional_clp,
+  estimated_roundtrip_cost_pct,
+  rule_rationale,
+  CONCAT("pilot=", pilot_id, "; modo=SHADOW_ONLY; regla=", rule_rationale, "; filtro=", CAST(structural_filters_pass AS STRING)) AS shadow_reason,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM scored
