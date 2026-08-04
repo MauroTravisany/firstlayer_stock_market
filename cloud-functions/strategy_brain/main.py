@@ -19,6 +19,11 @@ MAX_GENERATIONS = 6
 MAX_CONSECUTIVE_NON_IMPROVING_GENERATIONS = 2
 MIN_MATERIAL_RETURN_IMPROVEMENT_PCT = 2.0
 WEIGHT_FIELDS = (
+    "trend_weight",
+    "momentum_weight",
+    "volume_weight",
+    "volatility_weight",
+    "regime_weight",
     "fear_weight",
     "monetary_weight",
     "earnings_weight",
@@ -54,6 +59,7 @@ def _table_ddl(config):
           formula_version STRING NOT NULL, candidate_label STRING NOT NULL, candidate_reason STRING NOT NULL,
           training_start DATE NOT NULL, training_end DATE NOT NULL, validation_start DATE NOT NULL, validation_end DATE NOT NULL,
           fear_weight FLOAT64 NOT NULL, monetary_weight FLOAT64 NOT NULL, earnings_weight FLOAT64 NOT NULL,
+          trend_weight FLOAT64, momentum_weight FLOAT64, volume_weight FLOAT64, volatility_weight FLOAT64, regime_weight FLOAT64,
           company_lifecycle_weight FLOAT64 NOT NULL, quality_weight FLOAT64 NOT NULL,
           valuation_state_weight FLOAT64 NOT NULL, political_risk_weight FLOAT64 NOT NULL,
           crypto_cycle_weight FLOAT64 NOT NULL, min_trade_score_add FLOAT64 NOT NULL,
@@ -75,6 +81,11 @@ def _table_ddl(config):
         f"ALTER TABLE `{config['runs_table']}` ADD COLUMN IF NOT EXISTS generation_policy STRING",
         f"ALTER TABLE `{config['candidates_table']}` ADD COLUMN IF NOT EXISTS generation INT64",
         f"ALTER TABLE `{config['candidates_table']}` ADD COLUMN IF NOT EXISTS parent_candidate_id STRING",
+        f"ALTER TABLE `{config['candidates_table']}` ADD COLUMN IF NOT EXISTS trend_weight FLOAT64",
+        f"ALTER TABLE `{config['candidates_table']}` ADD COLUMN IF NOT EXISTS momentum_weight FLOAT64",
+        f"ALTER TABLE `{config['candidates_table']}` ADD COLUMN IF NOT EXISTS volume_weight FLOAT64",
+        f"ALTER TABLE `{config['candidates_table']}` ADD COLUMN IF NOT EXISTS volatility_weight FLOAT64",
+        f"ALTER TABLE `{config['candidates_table']}` ADD COLUMN IF NOT EXISTS regime_weight FLOAT64",
         f"ALTER TABLE `{config['audits_table']}` ADD COLUMN IF NOT EXISTS generation INT64",
         f"ALTER TABLE `{config['audits_table']}` ADD COLUMN IF NOT EXISTS generation_outcome STRING",
         f"ALTER TABLE `{config['audits_table']}` ADD COLUMN IF NOT EXISTS material_improvement BOOL",
@@ -98,10 +109,15 @@ def _baseline(client, config):
 
 
 def _formula_expression(weights):
-    terms = " + ".join(f"{field}*{field.replace('_weight', '_component')}" for field in WEIGHT_FIELDS)
+    technical_terms = " + ".join(
+        f"{field}*{field.replace('_weight', '_score')}" for field in WEIGHT_FIELDS[:5]
+    )
+    context_terms = " + ".join(
+        f"{field}*{field.replace('_weight', '_component')}" for field in WEIGHT_FIELDS[5:]
+    )
     return (
-        "contextual_setup_score = setup_score + "
-        f"{terms}; threshold = min_trade_score + {weights['min_trade_score_add']}; "
+        "contextual_setup_score = technical(" + technical_terms + ") + macro + factors + earnings + "
+        f"context({context_terms}); threshold = min_trade_score + {weights['min_trade_score_add']}; "
         f"position_notional = base_position_notional * {weights['position_size_multiplier']}; "
         "net_pnl = position_notional * (gross_return - estimated_roundtrip_cost_pct / 100)"
     )
@@ -143,7 +159,9 @@ def _candidate_rows(run_id, baseline, windows, generation=1, parent_candidate_id
 
 def _clamp_weights(weights):
     bounded = dict(weights)
-    for field in WEIGHT_FIELDS:
+    for field in WEIGHT_FIELDS[:5]:
+        bounded[field] = round(max(0.25, min(2.0, float(bounded[field]))), 2)
+    for field in WEIGHT_FIELDS[5:]:
         bounded[field] = round(max(-1.5, min(1.5, float(bounded[field]))), 2)
     bounded["min_trade_score_add"] = round(max(-0.5, min(1.0, float(bounded["min_trade_score_add"]))), 2)
     bounded["position_size_multiplier"] = round(max(0.5, min(1.1, float(bounded["position_size_multiplier"]))), 2)
@@ -175,7 +193,8 @@ def _parent_candidates(client, config):
         GROUP BY c.run_id, c.candidate_id, c.candidate_status, c.formula_version,
           c.candidate_label, c.candidate_reason, c.training_start, c.training_end,
           c.validation_start, c.validation_end, c.fear_weight, c.monetary_weight,
-          c.earnings_weight, c.company_lifecycle_weight, c.quality_weight,
+          c.earnings_weight, c.trend_weight, c.momentum_weight, c.volume_weight,
+          c.volatility_weight, c.regime_weight, c.company_lifecycle_weight, c.quality_weight,
           c.valuation_state_weight, c.political_risk_weight, c.crypto_cycle_weight,
           c.min_trade_score_add, c.position_size_multiplier, c.formula_expression,
           c.created_at, c.generation, c.parent_candidate_id
@@ -232,9 +251,14 @@ def _iterative_candidate_rows(run_id, parents, windows, generation):
         ("threshold_down", "Filtro moderadamente flexible", "Explora mas oportunidades con exposicion prudente.", {"min_trade_score_add": -0.10, "position_size_multiplier": -0.10}),
         ("quality_defensive", "Calidad defensiva", "Refuerza calidad, valoracion y proteccion ante miedo o riesgo politico.", {"quality_weight": 0.15, "valuation_state_weight": 0.15, "fear_weight": 0.15, "political_risk_weight": 0.15, "position_size_multiplier": -0.10}),
         ("event_careful", "Cautela ante eventos", "Aumenta sensibilidad a earnings y condiciones monetarias.", {"earnings_weight": 0.15, "monetary_weight": 0.15, "position_size_multiplier": -0.05}),
+        ("trend_confirmed", "Tendencia confirmada", "Da mayor importancia a tendencia, momentum y volumen, manteniendo riesgo prudente.", {"trend_weight": 0.15, "momentum_weight": 0.15, "volume_weight": 0.10, "position_size_multiplier": -0.05}),
+        ("trend_defensive", "Tendencia defensiva", "Reduce entradas por volatilidad y exige una tendencia mas limpia.", {"trend_weight": 0.15, "volatility_weight": -0.10, "regime_weight": 0.10, "min_trade_score_add": 0.10, "position_size_multiplier": -0.05}),
     )
     for parent in parents:
-        seed = {field: float(parent[field]) for field in WEIGHT_FIELDS}
+        seed = {
+            field: float(parent.get(field) if parent.get(field) is not None else (1.0 if field in WEIGHT_FIELDS[:5] else 0.0))
+            for field in WEIGHT_FIELDS
+        }
         seed["min_trade_score_add"] = float(parent["min_trade_score_add"])
         seed["position_size_multiplier"] = float(parent["position_size_multiplier"])
         for suffix, label, reason, deltas in templates:
