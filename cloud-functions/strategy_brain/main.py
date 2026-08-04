@@ -14,6 +14,10 @@ from conf.conf import load_config
 logging.basicConfig(level=logging.INFO)
 
 FORMULA_VERSION = "brain-context-v1"
+INITIAL_CAPITAL_CLP = 10_000_000
+MAX_GENERATIONS = 6
+MAX_CONSECUTIVE_NON_IMPROVING_GENERATIONS = 2
+MIN_MATERIAL_RETURN_IMPROVEMENT_PCT = 2.0
 WEIGHT_FIELDS = (
     "fear_weight",
     "monetary_weight",
@@ -61,7 +65,9 @@ def _table_ddl(config):
         CREATE TABLE IF NOT EXISTS `{config['audits_table']}` (
           run_id STRING NOT NULL, created_at TIMESTAMP NOT NULL, audit_status STRING NOT NULL,
           selected_candidates_json STRING NOT NULL, evidence_json STRING NOT NULL,
-          ai_interpretation STRING, model_name STRING, production_change_allowed BOOL NOT NULL
+          ai_interpretation STRING, model_name STRING, production_change_allowed BOOL NOT NULL,
+          generation INT64, generation_outcome STRING, material_improvement BOOL,
+          best_validation_score FLOAT64, convergence_reason STRING, promotion_recommendation STRING
         ) CLUSTER BY run_id, audit_status
         """,
         f"ALTER TABLE `{config['runs_table']}` ADD COLUMN IF NOT EXISTS generation INT64",
@@ -69,6 +75,12 @@ def _table_ddl(config):
         f"ALTER TABLE `{config['runs_table']}` ADD COLUMN IF NOT EXISTS generation_policy STRING",
         f"ALTER TABLE `{config['candidates_table']}` ADD COLUMN IF NOT EXISTS generation INT64",
         f"ALTER TABLE `{config['candidates_table']}` ADD COLUMN IF NOT EXISTS parent_candidate_id STRING",
+        f"ALTER TABLE `{config['audits_table']}` ADD COLUMN IF NOT EXISTS generation INT64",
+        f"ALTER TABLE `{config['audits_table']}` ADD COLUMN IF NOT EXISTS generation_outcome STRING",
+        f"ALTER TABLE `{config['audits_table']}` ADD COLUMN IF NOT EXISTS material_improvement BOOL",
+        f"ALTER TABLE `{config['audits_table']}` ADD COLUMN IF NOT EXISTS best_validation_score FLOAT64",
+        f"ALTER TABLE `{config['audits_table']}` ADD COLUMN IF NOT EXISTS convergence_reason STRING",
+        f"ALTER TABLE `{config['audits_table']}` ADD COLUMN IF NOT EXISTS promotion_recommendation STRING",
     ]
 
 
@@ -151,7 +163,10 @@ def _parent_candidates(client, config):
           AVG(s.win_rate_pct) AS avg_win_rate_pct,
           AVG(s.pnl_p05_clp) AS avg_pnl_p05_clp,
           SUM(s.net_pnl_clp) AS total_net_pnl_clp,
-          SUM(s.closed_trades) AS total_closed_trades
+          SUM(s.closed_trades) AS total_closed_trades,
+          AVG(s.final_return_pct) AS avg_final_return_pct,
+          AVG(s.final_capital_clp) AS avg_final_capital_clp,
+          MAX(s.max_drawdown_pct) AS worst_max_drawdown_pct
         FROM `{config['candidates_table']}` c
         JOIN `{config['summary_table']}` s
           USING (run_id, candidate_id)
@@ -169,6 +184,8 @@ def _parent_candidates(client, config):
       FROM scored
       WHERE total_closed_trades >= 80
       ORDER BY
+        avg_final_return_pct DESC,
+        worst_max_drawdown_pct ASC,
         avg_profit_factor DESC,
         avg_net_return_pct DESC,
         avg_pnl_p05_clp DESC,
@@ -177,6 +194,33 @@ def _parent_candidates(client, config):
       LIMIT 3
     """
     return [dict(row.items()) for row in client.query(query).result()]
+
+
+def _optimization_state(client, config):
+    """Read only completed audit rows; never infer convergence from an unfinished run."""
+    query = f"""
+      SELECT
+        MAX(generation) AS latest_generation,
+        COUNTIF(generation_outcome = 'NO_MATERIAL_IMPROVEMENT') AS non_improving_generations,
+        ARRAY_AGG(generation_outcome IGNORE NULLS ORDER BY generation DESC LIMIT 2) AS latest_outcomes
+      FROM `{config['audits_table']}`
+      WHERE generation IS NOT NULL
+    """
+    rows = list(client.query(query).result())
+    if not rows:
+        return {"latest_generation": 0, "consecutive_non_improving": 0}
+    row = dict(rows[0].items())
+    outcomes = row.get("latest_outcomes") or []
+    consecutive = 0
+    for outcome in outcomes:
+        if outcome == "NO_MATERIAL_IMPROVEMENT":
+            consecutive += 1
+        else:
+            break
+    return {
+        "latest_generation": int(row.get("latest_generation") or 0),
+        "consecutive_non_improving": consecutive,
+    }
 
 
 def _iterative_candidate_rows(run_id, parents, windows, generation):
@@ -226,6 +270,17 @@ def _generate(client, config, payload):
 
     run_id = payload.get("run_id") or f"brain-{datetime.utcnow():%Y%m%d%H%M%S}-{uuid.uuid4().hex[:6]}"
     windows = {"training_start": training_start, "training_end": training_end, "validation_start": validation_start, "validation_end": validation_end}
+    optimization = _optimization_state(client, config)
+    if not payload.get("force") and (
+        optimization["latest_generation"] >= MAX_GENERATIONS
+        or optimization["consecutive_non_improving"] >= MAX_CONSECUTIVE_NON_IMPROVING_GENERATIONS
+    ):
+        return {
+            "status": "CONVERGED",
+            "next_step": "Review the promotion recommendation; do not create more variants without new data or a changed hypothesis.",
+            "latest_generation": optimization["latest_generation"],
+            "consecutive_non_improving": optimization["consecutive_non_improving"],
+        }
     parents = _parent_candidates(client, config)
     if parents:
         generation = max(int(parent.get("generation") or 1) for parent in parents) + 1
@@ -238,11 +293,15 @@ def _generate(client, config, payload):
         parent_run_id = None
         generation_policy = "Initial bounded exploration around the current baseline."
         candidates = _candidate_rows(run_id, baseline, windows, generation=generation)
-    objective = "Rank validation candidates by profit factor, average net return after costs, p05 tail loss, win rate and net PnL. Never promote to production."
+    objective = (
+        "For each V1-V4 candidate, simulate a separate sequential one-slot CLP 10,000,000 portfolio. "
+        "Maximize validated final capital after costs while reducing maximum drawdown and tail loss. "
+        "Stop after two non-material generations or six total generations. Never auto-promote to production."
+    )
     run_errors = client.insert_rows_json(config["runs_table"], [{
         "run_id": run_id, "created_at": datetime.utcnow().isoformat(), "status": "CANDIDATES_READY",
         "formula_version": FORMULA_VERSION, **{key: value.isoformat() for key, value in windows.items()}, "objective_definition": objective,
-        "data_quality_notes": "Daily price history is broad; earnings/news/macro historical coverage must be audited before interpretation.",
+        "data_quality_notes": "Capital model uses CLP 10,000,000 per V1-V4 with one sequential position and fixed bounded notional. Daily price history is broad; earnings/news/macro historical coverage must be audited before interpretation.",
         "production_change_allowed": False, "generation": generation, "parent_run_id": parent_run_id,
         "generation_policy": generation_policy,
     }])
@@ -251,7 +310,76 @@ def _generate(client, config, payload):
     errors = client.insert_rows_json(config["candidates_table"], candidates)
     if errors:
         raise RuntimeError(f"Could not save candidates: {errors}")
-    return {"run_id": run_id, "generation": generation, "parent_run_id": parent_run_id, "candidate_count": len(candidates), "status": "CANDIDATES_READY", "next_step": "Run Dataform, then call phase=review with this run_id."}
+    return {"run_id": run_id, "generation": generation, "parent_run_id": parent_run_id, "candidate_count": len(candidates), "status": "CANDIDATES_READY", "capital_per_strategy_clp": INITIAL_CAPITAL_CLP, "next_step": "Run Dataform, then call phase=review with this run_id."}
+
+
+def _validation_candidate_scores(client, config, run_id):
+    """Aggregate V1-V4 as independent $10 MM portfolios, never as one summed portfolio."""
+    query = f"""
+      SELECT
+        s.run_id,
+        s.candidate_id,
+        ANY_VALUE(c.candidate_label) AS candidate_label,
+        ANY_VALUE(c.generation) AS generation,
+        COUNT(DISTINCT s.strategy_version) AS strategy_count,
+        SUM(s.closed_trades) AS total_closed_trades,
+        ROUND(AVG(s.final_return_pct), 2) AS avg_final_return_pct,
+        ROUND(AVG(s.final_capital_clp), 0) AS avg_final_capital_clp,
+        ROUND(SUM(s.net_pnl_clp), 0) AS total_net_pnl_clp,
+        ROUND(AVG(s.profit_factor), 3) AS avg_profit_factor,
+        ROUND(AVG(s.win_rate_pct), 2) AS avg_win_rate_pct,
+        ROUND(MAX(s.max_drawdown_pct), 2) AS worst_max_drawdown_pct,
+        ROUND(MIN(s.pnl_p05_clp), 0) AS worst_pnl_p05_clp,
+        ROUND(
+          AVG(s.final_return_pct)
+          - 0.75 * MAX(s.max_drawdown_pct)
+          + 5 * LEAST(AVG(s.profit_factor) - 1, 1)
+          + 0.05 * (AVG(s.win_rate_pct) - 45),
+          4
+        ) AS risk_adjusted_score
+      FROM `{config['summary_table']}` s
+      JOIN `{config['candidates_table']}` c USING (run_id, candidate_id)
+      WHERE s.run_id = @run_id
+        AND s.evaluation_split = "VALIDATION"
+      GROUP BY s.run_id, s.candidate_id
+      ORDER BY risk_adjusted_score DESC, avg_final_return_pct DESC, worst_max_drawdown_pct ASC
+    """
+    job_config = bigquery.QueryJobConfig(query_parameters=[
+        bigquery.ScalarQueryParameter("run_id", "STRING", run_id)
+    ])
+    return [dict(row.items()) for row in client.query(query, job_config=job_config).result()]
+
+
+def _previous_best_score(client, config, run_id):
+    query = f"""
+      WITH audited AS (
+        SELECT DISTINCT run_id FROM `{config['audits_table']}` WHERE run_id != @run_id
+      ), scored AS (
+        SELECT
+          s.run_id,
+          s.candidate_id,
+          AVG(s.final_return_pct) AS avg_final_return_pct,
+          AVG(s.profit_factor) AS avg_profit_factor,
+          AVG(s.win_rate_pct) AS avg_win_rate_pct,
+          MAX(s.max_drawdown_pct) AS worst_max_drawdown_pct,
+          AVG(s.final_return_pct)
+            - 0.75 * MAX(s.max_drawdown_pct)
+            + 5 * LEAST(AVG(s.profit_factor) - 1, 1)
+            + 0.05 * (AVG(s.win_rate_pct) - 45) AS risk_adjusted_score
+        FROM `{config['summary_table']}` s
+        JOIN audited a USING (run_id)
+        WHERE s.evaluation_split = "VALIDATION"
+        GROUP BY s.run_id, s.candidate_id
+      )
+      SELECT * FROM scored
+      ORDER BY risk_adjusted_score DESC
+      LIMIT 1
+    """
+    job_config = bigquery.QueryJobConfig(query_parameters=[
+        bigquery.ScalarQueryParameter("run_id", "STRING", run_id)
+    ])
+    rows = list(client.query(query, job_config=job_config).result())
+    return dict(rows[0].items()) if rows else None
 
 
 def _review(client, config, payload):
@@ -280,27 +408,73 @@ def _review(client, config, payload):
     rows = [dict(row.items()) for row in client.query(query, job_config=bigquery.QueryJobConfig(query_parameters=[bigquery.ScalarQueryParameter("run_id", "STRING", run_id)])).result()]
     if not rows:
         raise RuntimeError("No validation summary exists yet. Run Dataform after generating candidates.")
-    eligible = [row for row in rows if row["mechanical_verdict"] == "ELIGIBLE_FOR_REVIEW"]
+    candidates = _validation_candidate_scores(client, config, run_id)
+    if not candidates:
+        raise RuntimeError("No candidate capital curves exist yet. Run Dataform after generating candidates.")
+    best = candidates[0]
+    eligible = [candidate for candidate in candidates if (
+        candidate["strategy_count"] == 4
+        and candidate["total_closed_trades"] >= 80
+        and candidate["avg_final_return_pct"] > 0
+        and candidate["avg_profit_factor"] >= 1.10
+        and candidate["worst_max_drawdown_pct"] <= 12
+        and candidate["worst_pnl_p05_clp"] > -250000
+    )]
+    previous_best = _previous_best_score(client, config, run_id)
+    current_generation = int(best.get("generation") or 1)
+    reference = previous_best
+    if reference is None:
+        reference = next((item for item in candidates if item["candidate_id"].endswith("_baseline")), None)
+    material_improvement = bool(eligible) and (
+        reference is None or (
+            best["risk_adjusted_score"] >= reference["risk_adjusted_score"] + MIN_MATERIAL_RETURN_IMPROVEMENT_PCT
+            and best["worst_max_drawdown_pct"] <= reference["worst_max_drawdown_pct"] + 0.25
+        )
+    )
+    outcome = "MATERIAL_IMPROVEMENT" if material_improvement else "NO_MATERIAL_IMPROVEMENT"
+    state = _optimization_state(client, config)
+    converged = (
+        current_generation >= MAX_GENERATIONS
+        or (not material_improvement and state["consecutive_non_improving"] >= 1)
+    )
+    convergence_reason = None
+    if current_generation >= MAX_GENERATIONS:
+        convergence_reason = f"Se alcanzo el maximo de {MAX_GENERATIONS} generaciones."
+    elif converged:
+        convergence_reason = "Dos generaciones consecutivas no lograron una mejora material ajustada por riesgo."
+    promotion = (
+        "REQUIERE_VALIDACION_PAPER_Y_APROBACION_EXPLICITA"
+        if converged and material_improvement else "MANTENER_SOLO_BACKTEST"
+    )
     prompt = (
         "Eres auditor de backtesting. Responde en espanol y solo interpreta los datos. "
-        "No autorices cambios productivos ni prometas retornos. Prioriza PnL neto, costos, profit factor, cola de perdidas y muestra. "
+        "No autorices cambios productivos ni prometas retornos. Cada V1-V4 tiene una cartera independiente de CLP 10.000.000; no las sumes. "
+        "Prioriza capital final neto de costos, drawdown maximo, profit factor, cola de perdidas y muestra. "
         "Devuelve JSON con conclusion, risks, proposed_candidate_ids y evidence.\n"
-        + json.dumps(rows, default=str, ensure_ascii=True)
+        + json.dumps({"strategy_rows": rows, "candidate_scores": candidates, "previous_best": previous_best}, default=str, ensure_ascii=True)
     )
     ai_text = None
     if config.get("openai_api_key"):
         from openai import OpenAI
         ai_text = OpenAI(api_key=config["openai_api_key"], timeout=90).responses.create(model=config["openai_model"], input=prompt).output_text
-    selected = [{"candidate_id": row["candidate_id"], "strategy_version": row["strategy_version"]} for row in eligible]
+    selected = [{"candidate_id": row["candidate_id"], "promotion": promotion} for row in eligible]
     errors = client.insert_rows_json(config["audits_table"], [{
         "run_id": run_id, "created_at": datetime.utcnow().isoformat(),
         "audit_status": "PROPOSED_FOR_BACKTEST_REVIEW" if eligible else "NO_ELIGIBLE_CANDIDATE",
-        "selected_candidates_json": json.dumps(selected), "evidence_json": json.dumps(rows, default=str),
+        "selected_candidates_json": json.dumps(selected), "evidence_json": json.dumps({"strategy_rows": rows, "candidate_scores": candidates, "previous_best": previous_best}, default=str),
         "ai_interpretation": ai_text, "model_name": config.get("openai_model"), "production_change_allowed": False,
+        "generation": current_generation, "generation_outcome": outcome,
+        "material_improvement": material_improvement, "best_validation_score": best["risk_adjusted_score"],
+        "convergence_reason": convergence_reason, "promotion_recommendation": promotion,
     }])
     if errors:
         raise RuntimeError(f"Could not save audit: {errors}")
-    return {"run_id": run_id, "status": "REVIEW_SAVED", "eligible_count": len(eligible), "production_change_allowed": False, "results": rows}
+    return {
+        "run_id": run_id, "generation": current_generation, "status": "REVIEW_SAVED",
+        "eligible_count": len(eligible), "material_improvement": material_improvement,
+        "converged": converged, "promotion_recommendation": promotion,
+        "production_change_allowed": False, "best_candidate": best, "results": rows,
+    }
 
 
 def main(request):

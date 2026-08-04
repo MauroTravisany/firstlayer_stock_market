@@ -20,7 +20,17 @@ No se permite promover un peso al proceso diario desde este componente. Un candi
 
 La primera generacion explora alrededor del baseline. Cada generacion posterior toma los tres candidatos auditados con mejor evidencia de validacion y crea una exploracion local alrededor de ellos. El orden de seleccion prioriza profit factor, retorno neto despues de costos, cola de perdidas, tasa de acierto y PnL neto.
 
-Cada candidato conserva `generation`, `parent_run_id` y `parent_candidate_id`. Esto permite reconstruir por que un peso fue probado y evita que la IA modifique parametros sin evidencia cuantitativa. Si todos los candidatos fallan, la siguiente generacion sigue siendo exploratoria y conservadora; nunca se activa produccion.
+Cada candidato conserva `generation`, `parent_run_id` y `parent_candidate_id`. Esto permite reconstruir por que un peso fue probado y evita que la IA modifique parametros sin evidencia cuantitativa.
+
+El ciclo tiene un limite de seis generaciones. Se considera una mejora material solo si el mejor candidato de la nueva generacion mejora en al menos 2 puntos el puntaje ajustado por riesgo, sin empeorar el drawdown maximo en mas de 0.25 puntos porcentuales. Dos generaciones seguidas sin mejora material cierran la busqueda: agregar mas combinaciones en ese punto seria sobreajuste, no aprendizaje.
+
+## Capital y decision de promocion
+
+Cada candidato se evalua como cuatro carteras independientes: una para V1, una para V2, una para V3 y una para V4. Cada una inicia con **CLP 10.000.000**, mantiene solo una posicion a la vez y usa el notional definido por el candidato, acotado por el capital disponible. Por eso los resultados de V1-V4 nunca se suman.
+
+La comparacion de generaciones usa capital final neto de costos, retorno final, profit factor, drawdown maximo, p05 de perdida y tasa de acierto. Para siquiera recomendar paper trading, el candidato debe cubrir V1-V4, tener al menos 80 cierres totales, retorno promedio positivo, profit factor >= 1.10, drawdown maximo <= 12% y p05 mejor que -CLP 250.000.
+
+La convergencia no activa produccion automaticamente. El unico resultado posible del cerebro es `REQUIERE_VALIDACION_PAPER_Y_APROBACION_EXPLICITA`; las variantes `brain_*` estan bloqueadas del motor diario. Una promocion posterior requiere una aprobacion explicita y evidencia adicional de paper trading fuera del backtest.
 
 ## Formula evaluada
 

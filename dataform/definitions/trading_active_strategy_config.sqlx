@@ -34,6 +34,9 @@ WITH eligible AS (
   JOIN ${ref("trading_backtest_context_variants")} v
     ON v.variant_id = r.variant_id
   WHERE r.recommendation IN ("MEJOR_CONTEXTO_ACTIVO", "USABLE")
+    -- Los candidatos del cerebro nunca se infiltran al motor diario: requieren
+    -- una promocion explicita despues de validacion y paper trading.
+    AND NOT STARTS_WITH(r.variant_id, "brain_")
     AND r.total_pnl_clp > 0
     AND r.avg_pnl_clp > 0
     AND r.profit_factor >= 1.05

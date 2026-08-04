@@ -7,41 +7,13 @@ config {
   bigquery: {
     clusterBy: ["run_id", "strategy_version", "evaluation_split"]
   },
-  dependencies: ["trading_contextual_backtest_results"]
+  dependencies: ["trading_brain_candidate_capital_curve"]
 }
 
 WITH closed AS (
   SELECT
-    r.variant_id AS candidate_id,
-    c.run_id,
-    c.formula_version,
-    c.candidate_status,
-    c.training_start,
-    c.training_end,
-    c.validation_start,
-    c.validation_end,
-    r.strategy_version,
-    r.ticker,
-    r.analysis_date,
-    r.net_pnl_clp,
-    r.net_return_pct,
-    r.is_win
-  FROM ${ref("trading_contextual_backtest_results")} r
-  JOIN `stocks-437902.acciones_dataset.trading_brain_weight_candidates` c
-    ON r.variant_id = c.candidate_id
-  WHERE r.contextual_signal = "TRADE_LONG"
-    AND r.trade_status != "OPEN"
-    AND r.outcome_date IS NOT NULL
-),
-labeled AS (
-  SELECT
-    *,
-    CASE
-      WHEN analysis_date BETWEEN training_start AND training_end THEN "TRAIN"
-      WHEN analysis_date BETWEEN validation_start AND validation_end THEN "VALIDATION"
-      ELSE "OUTSIDE_WINDOW"
-    END AS evaluation_split
-  FROM closed
+    curve.*
+  FROM ${ref("trading_brain_candidate_capital_curve")} curve
 ),
 aggregated AS (
   SELECT
@@ -56,14 +28,30 @@ aggregated AS (
     COUNTIF(is_win) AS wins,
     COUNTIF(NOT is_win) AS losses,
     ROUND(SAFE_DIVIDE(COUNTIF(is_win), COUNT(*)) * 100, 2) AS win_rate_pct,
-    ROUND(SUM(net_pnl_clp), 0) AS net_pnl_clp,
-    ROUND(AVG(net_pnl_clp), 0) AS avg_net_pnl_clp,
-    ROUND(SAFE_DIVIDE(SUM(IF(net_pnl_clp > 0, net_pnl_clp, 0)), ABS(SUM(IF(net_pnl_clp < 0, net_pnl_clp, 0)))), 3) AS profit_factor,
-    ROUND(APPROX_QUANTILES(net_pnl_clp, 100)[OFFSET(5)], 0) AS pnl_p05_clp,
+    ROUND(SUM(realized_pnl_clp), 0) AS net_pnl_clp,
+    ROUND(AVG(realized_pnl_clp), 0) AS avg_net_pnl_clp,
+    ROUND(SAFE_DIVIDE(SUM(IF(realized_pnl_clp > 0, realized_pnl_clp, 0)), ABS(SUM(IF(realized_pnl_clp < 0, realized_pnl_clp, 0)))), 3) AS profit_factor,
+    ROUND(APPROX_QUANTILES(realized_pnl_clp, 100)[OFFSET(5)], 0) AS pnl_p05_clp,
     ROUND(AVG(net_return_pct) * 100, 2) AS avg_net_return_pct,
+    ROUND(ANY_VALUE(initial_capital_clp), 0) AS initial_capital_clp,
+    ROUND(ARRAY_AGG(equity_clp ORDER BY outcome_date DESC, analysis_date DESC, ticker DESC LIMIT 1)[SAFE_OFFSET(0)], 0) AS final_capital_clp,
+    ROUND(SAFE_DIVIDE(
+      ARRAY_AGG(equity_clp ORDER BY outcome_date DESC, analysis_date DESC, ticker DESC LIMIT 1)[SAFE_OFFSET(0)] - ANY_VALUE(initial_capital_clp),
+      ANY_VALUE(initial_capital_clp)
+    ) * 100, 2) AS final_return_pct,
+    ROUND(MAX(running_peak_equity_clp - equity_clp), 0) AS max_drawdown_clp,
+    ROUND(MAX(SAFE_DIVIDE(running_peak_equity_clp - equity_clp, running_peak_equity_clp)) * 100, 2) AS max_drawdown_pct,
     CURRENT_TIMESTAMP() AS calculated_at
-  FROM labeled
-  WHERE evaluation_split IN ("TRAIN", "VALIDATION")
+  FROM (
+    SELECT
+      *,
+      MAX(equity_clp) OVER (
+        PARTITION BY run_id, candidate_id, strategy_version, evaluation_split
+        ORDER BY outcome_date, analysis_date, ticker
+        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+      ) AS running_peak_equity_clp
+    FROM closed
+  )
   GROUP BY run_id, formula_version, candidate_id, candidate_status, strategy_version, evaluation_split
 )
 
@@ -71,7 +59,11 @@ SELECT
   *,
   CASE
     WHEN closed_trades < 20 THEN "INSUFFICIENT_DATA"
-    WHEN net_pnl_clp > 0 AND profit_factor >= 1.10 AND win_rate_pct >= 45 AND pnl_p05_clp > -250000 THEN "ELIGIBLE_FOR_REVIEW"
+    WHEN final_capital_clp > initial_capital_clp
+      AND profit_factor >= 1.10
+      AND win_rate_pct >= 45
+      AND pnl_p05_clp > -250000
+      AND max_drawdown_pct <= 12 THEN "ELIGIBLE_FOR_REVIEW"
     ELSE "REJECTED_BY_GUARDRAIL"
   END AS mechanical_verdict
 FROM aggregated
