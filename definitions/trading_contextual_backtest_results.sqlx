@@ -53,6 +53,11 @@ scored AS (
     v.valuation_state_weight,
     v.political_risk_weight,
     v.crypto_cycle_weight,
+    v.trend_weight AS variant_trend_weight,
+    v.momentum_weight AS variant_momentum_weight,
+    v.volume_weight AS variant_volume_weight,
+    v.volatility_weight AS variant_volatility_weight,
+    v.regime_weight AS variant_regime_weight,
     v.min_trade_score_add,
     v.position_size_multiplier,
     CASE
@@ -109,7 +114,24 @@ variant_signals AS (
   SELECT
     *,
     ROUND(
-      setup_score
+      trend_score * profile_trend_weight * variant_trend_weight +
+      momentum_score * profile_momentum_weight * variant_momentum_weight +
+      volume_score * profile_volume_weight * variant_volume_weight +
+      volatility_score * profile_volatility_weight * variant_volatility_weight +
+      regime_score * profile_regime_weight * variant_regime_weight,
+      2
+    ) AS contextual_technical_score,
+    ROUND(
+      (
+        trend_score * profile_trend_weight * variant_trend_weight +
+        momentum_score * profile_momentum_weight * variant_momentum_weight +
+        volume_score * profile_volume_weight * variant_volume_weight +
+        volatility_score * profile_volatility_weight * variant_volatility_weight +
+        regime_score * profile_regime_weight * variant_regime_weight
+      )
+      + macro_alignment_score
+      + factor_alignment_score
+      + earnings_event_score
       + fear_context_component * fear_weight
       + monetary_context_component * monetary_weight
       + earnings_event_score * earnings_weight
@@ -251,6 +273,22 @@ SELECT
   min_trade_score AS original_min_trade_score,
   contextual_min_trade_score,
   weighted_technical_score,
+  contextual_technical_score,
+  trend_score,
+  momentum_score,
+  volume_score,
+  volatility_score,
+  regime_score,
+  profile_trend_weight,
+  profile_momentum_weight,
+  profile_volume_weight,
+  profile_volatility_weight,
+  profile_regime_weight,
+  variant_trend_weight,
+  variant_momentum_weight,
+  variant_volume_weight,
+  variant_volatility_weight,
+  variant_regime_weight,
   macro_alignment_score,
   factor_alignment_score,
   earnings_event_score,
