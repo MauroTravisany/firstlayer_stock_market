@@ -141,12 +141,12 @@ def build_discord_payload(summary, new_trades, closed_trades, feedback=None, alp
                 "description": (
                     f"{day_read}\n"
                     f"{week_read}\n"
-                    "Lectura: se mide dinero ficticio; sirve para evaluar consistencia, no para operar dinero real."
+                    "Backtest secuencial: v1-v4 son carteras independientes y no se suman. Alpaca Paper se reporta por separado."
                 ),
                 "color": color,
                 "fields": [
                     {
-                        "name": "Capital simulado",
+                        "name": f"Backtest {summary.get('reference_strategy_version', 'v2')} (referencia separada)",
                         "value": (
                             f"Inicio del dia: {_money_clp(day_start)}\n"
                             f"Cierre del dia: {_money_clp(day_end)}\n"
@@ -186,7 +186,7 @@ def build_discord_payload(summary, new_trades, closed_trades, feedback=None, alp
                         "inline": False,
                     },
                     {
-                        "name": "Historico acumulado",
+                        "name": f"Historico {summary.get('reference_strategy_version', 'v2')} (no combinado)",
                         "value": (
                             f"Cerrados: {summary.get('all_closed_trades', 0)} | "
                             f"Win rate: {_number(summary.get('all_win_rate_pct'), 2)}% | "
@@ -195,7 +195,7 @@ def build_discord_payload(summary, new_trades, closed_trades, feedback=None, alp
                         "inline": False,
                     },
                     {
-                        "name": "Comparativa v1-v4",
+                        "name": "Comparativa v1-v4 (no se suman)",
                         "value": str(summary.get("strategy_performance_summary") or "Sin historico por estrategia")[:1024],
                         "inline": False,
                     },

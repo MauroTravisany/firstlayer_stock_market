@@ -1,0 +1,68 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_directional_strategy_backtest",
+  description: "Backtest conservador por estrategia. Cada v1-v4 usa su propia cartera, solo toma una posicion LONG a la vez y espera su cierre antes de reutilizar capital. Excluye activos deshabilitados para ejecucion.",
+  tags: ["trading", "paper", "directional", "backtest", "portfolio"],
+  bigquery: { partitionBy: "analysis_date", clusterBy: ["strategy_version", "ticker"] },
+  assertions: {
+    nonNull: ["analysis_date", "outcome_date", "strategy_version", "paper_trade_id"],
+    uniqueKey: ["paper_trade_id"]
+  },
+  dependencies: ["trading_directional_trade_results", "trading_watchlist"]
+}
+
+-- This is deliberately a one-slot baseline. It prevents the historical backtest
+-- from spending the same capital in dozens of overlapping signals.
+WITH RECURSIVE candidates AS (
+  SELECT
+    r.*,
+    ROW_NUMBER() OVER (
+      PARTITION BY r.strategy_version, r.analysis_date
+      ORDER BY r.setup_score DESC, r.ticker
+    ) AS daily_rank
+  FROM ${ref("trading_directional_trade_results")} r
+  JOIN ${ref("trading_watchlist")} w
+    ON w.ticker = r.ticker
+   AND w.asset_type = r.asset_type
+  WHERE r.direction = "LONG"
+    AND r.outcome_date IS NOT NULL
+    AND w.enabled
+),
+daily_candidates AS (
+  SELECT * EXCEPT (daily_rank)
+  FROM candidates
+  WHERE daily_rank = 1
+),
+seed AS (
+  SELECT
+    *,
+    ROW_NUMBER() OVER (PARTITION BY strategy_version ORDER BY analysis_date, ticker) AS seed_rank
+  FROM daily_candidates
+),
+sequential_trades AS (
+  (
+    SELECT * EXCEPT (seed_rank)
+    FROM seed
+    WHERE seed_rank = 1
+  )
+  UNION ALL
+  (
+    SELECT next_trade.*
+    FROM sequential_trades previous_trade
+    JOIN daily_candidates next_trade
+      ON next_trade.strategy_version = previous_trade.strategy_version
+     AND next_trade.analysis_date > previous_trade.outcome_date
+    LEFT JOIN daily_candidates earlier_trade
+      ON earlier_trade.strategy_version = previous_trade.strategy_version
+     AND earlier_trade.analysis_date > previous_trade.outcome_date
+     AND earlier_trade.analysis_date < next_trade.analysis_date
+    WHERE earlier_trade.paper_trade_id IS NULL
+  )
+)
+
+SELECT
+  *,
+  "SEQUENTIAL_ONE_SLOT_LONG" AS portfolio_model,
+  CURRENT_TIMESTAMP() AS backtest_calculated_at
+FROM sequential_trades

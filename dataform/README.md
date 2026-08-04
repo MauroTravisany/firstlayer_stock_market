@@ -82,7 +82,15 @@ SIN_DATOS
 - `SHORT_SIMULATED`: ventaja bajista clara. Se registra y se evalua en el backtest, pero no se envia al broker hasta que acumule evidencia suficiente.
 - `NO_TRADE`: no hay ventaja clara o el riesgo es elevado.
 
-`trading_directional_trade_results` mantiene el historial de ambos sentidos, aplicando spread, slippage, stop, objetivos y horizonte de la estrategia. `trading_directional_daily_summary` consolida largos reales de demo y cortos simulados.
+`trading_directional_trade_results` mantiene el historial bruto de ambos sentidos, aplicando spread, slippage, stop, objetivos y horizonte de la estrategia.
+
+Para evitar sumar capital ficticio en operaciones incompatibles, el reporte principal usa:
+
+- `trading_directional_strategy_backtest`: selecciona una sola posicion LONG a la vez por estrategia y espera su cierre antes de reutilizar capital.
+- `trading_directional_strategy_daily_summary`: curva de capital independiente para v1, v2, v3 y v4. Estas curvas no se suman entre si.
+- `trading_directional_daily_summary`: usa v2 solo como referencia diaria compatible con alertas y muestra la comparativa de las cuatro variantes por separado.
+
+Los `SHORT_SIMULATED` quedan como diagnostico historico separado: no llegan a Alpaca Paper y no afectan el PnL principal de los largos.
 
 ## Ejecucion local
 
