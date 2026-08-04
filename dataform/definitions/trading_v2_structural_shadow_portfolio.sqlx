@@ -1,0 +1,36 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v2_structural_shadow_portfolio",
+  description: "Cartera simulada de una posicion del piloto V2. No se conecta al executor ni al broker.",
+  tags: ["trading", "shadow", "daily", "portfolio"],
+  bigquery: { partitionBy: "outcome_date", clusterBy: ["ticker"] },
+  assertions: { nonNull: ["shadow_trade_id", "outcome_date"], uniqueKey: ["shadow_trade_id"] },
+  dependencies: ["trading_v2_structural_shadow_results"]
+}
+
+WITH RECURSIVE ranked AS (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY analysis_date ORDER BY setup_score DESC, ticker) AS daily_rank
+  FROM ${ref("trading_v2_structural_shadow_results")}
+  WHERE trade_status != "OPEN" AND outcome_date IS NOT NULL
+),
+daily_candidates AS (SELECT * EXCEPT(daily_rank) FROM ranked WHERE daily_rank = 1),
+seed AS (SELECT *, ROW_NUMBER() OVER (ORDER BY analysis_date, ticker) AS seed_rank FROM daily_candidates),
+sequential_trades AS (
+  (SELECT * EXCEPT(seed_rank) FROM seed WHERE seed_rank = 1)
+  UNION ALL
+  (
+    SELECT next_trade.*
+    FROM sequential_trades previous_trade
+    JOIN daily_candidates next_trade ON next_trade.analysis_date > previous_trade.outcome_date
+    LEFT JOIN daily_candidates earlier_trade ON earlier_trade.analysis_date > previous_trade.outcome_date AND earlier_trade.analysis_date < next_trade.analysis_date
+    WHERE earlier_trade.shadow_trade_id IS NULL
+  )
+),
+capital AS (
+  SELECT * EXCEPT(calculated_at), 10000000.0 AS initial_capital_clp,
+    ROUND(SUM(net_pnl_clp) OVER (ORDER BY outcome_date, analysis_date, ticker), 0) AS cumulative_pnl_clp
+  FROM sequential_trades
+)
+SELECT *, ROUND(initial_capital_clp + cumulative_pnl_clp, 0) AS equity_clp, "SHADOW_ONLY_ONE_SLOT" AS portfolio_model, CURRENT_TIMESTAMP() AS calculated_at
+FROM capital
