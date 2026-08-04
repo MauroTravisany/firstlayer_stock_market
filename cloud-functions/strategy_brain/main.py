@@ -40,7 +40,8 @@ def _table_ddl(config):
           run_id STRING NOT NULL, created_at TIMESTAMP NOT NULL, status STRING NOT NULL,
           formula_version STRING NOT NULL, training_start DATE NOT NULL, training_end DATE NOT NULL,
           validation_start DATE NOT NULL, validation_end DATE NOT NULL, objective_definition STRING NOT NULL,
-          data_quality_notes STRING, production_change_allowed BOOL NOT NULL
+          data_quality_notes STRING, production_change_allowed BOOL NOT NULL,
+          generation INT64, parent_run_id STRING, generation_policy STRING
         ) CLUSTER BY status, formula_version
         """,
         f"""
@@ -53,7 +54,7 @@ def _table_ddl(config):
           valuation_state_weight FLOAT64 NOT NULL, political_risk_weight FLOAT64 NOT NULL,
           crypto_cycle_weight FLOAT64 NOT NULL, min_trade_score_add FLOAT64 NOT NULL,
           position_size_multiplier FLOAT64 NOT NULL, formula_expression STRING NOT NULL,
-          created_at TIMESTAMP NOT NULL
+          created_at TIMESTAMP NOT NULL, generation INT64, parent_candidate_id STRING
         ) CLUSTER BY run_id, candidate_status
         """,
         f"""
@@ -63,6 +64,11 @@ def _table_ddl(config):
           ai_interpretation STRING, model_name STRING, production_change_allowed BOOL NOT NULL
         ) CLUSTER BY run_id, audit_status
         """,
+        f"ALTER TABLE `{config['runs_table']}` ADD COLUMN IF NOT EXISTS generation INT64",
+        f"ALTER TABLE `{config['runs_table']}` ADD COLUMN IF NOT EXISTS parent_run_id STRING",
+        f"ALTER TABLE `{config['runs_table']}` ADD COLUMN IF NOT EXISTS generation_policy STRING",
+        f"ALTER TABLE `{config['candidates_table']}` ADD COLUMN IF NOT EXISTS generation INT64",
+        f"ALTER TABLE `{config['candidates_table']}` ADD COLUMN IF NOT EXISTS parent_candidate_id STRING",
     ]
 
 
@@ -89,7 +95,7 @@ def _formula_expression(weights):
     )
 
 
-def _candidate_rows(run_id, baseline, windows):
+def _candidate_rows(run_id, baseline, windows, generation=1, parent_candidate_id=None):
     candidates = [("baseline", "Control sin cambio", "Control para comparar cambios de pesos.", {})]
     for field in WEIGHT_FIELDS:
         candidates.append((f"{field}_down", f"Reducir {field}", "Prueba un ajuste conservador aislado.", {field: round(float(baseline[field]) - 0.25, 2)}))
@@ -117,8 +123,97 @@ def _candidate_rows(run_id, baseline, windows):
             **weights,
             "formula_expression": _formula_expression(weights),
             "created_at": datetime.utcnow().isoformat(),
+            "generation": generation,
+            "parent_candidate_id": parent_candidate_id,
         })
     return records
+
+
+def _clamp_weights(weights):
+    bounded = dict(weights)
+    for field in WEIGHT_FIELDS:
+        bounded[field] = round(max(-1.5, min(1.5, float(bounded[field]))), 2)
+    bounded["min_trade_score_add"] = round(max(-0.5, min(1.0, float(bounded["min_trade_score_add"]))), 2)
+    bounded["position_size_multiplier"] = round(max(0.5, min(1.1, float(bounded["position_size_multiplier"]))), 2)
+    return bounded
+
+
+def _parent_candidates(client, config):
+    query = f"""
+      WITH audited_runs AS (
+        SELECT DISTINCT run_id
+        FROM `{config['audits_table']}`
+      ), scored AS (
+        SELECT
+          c.*,
+          AVG(s.profit_factor) AS avg_profit_factor,
+          AVG(s.avg_net_return_pct) AS avg_net_return_pct,
+          AVG(s.win_rate_pct) AS avg_win_rate_pct,
+          AVG(s.pnl_p05_clp) AS avg_pnl_p05_clp,
+          SUM(s.net_pnl_clp) AS total_net_pnl_clp,
+          SUM(s.closed_trades) AS total_closed_trades
+        FROM `{config['candidates_table']}` c
+        JOIN `{config['summary_table']}` s
+          USING (run_id, candidate_id)
+        JOIN audited_runs a USING (run_id)
+        WHERE s.evaluation_split = "VALIDATION"
+        GROUP BY c.run_id, c.candidate_id, c.candidate_status, c.formula_version,
+          c.candidate_label, c.candidate_reason, c.training_start, c.training_end,
+          c.validation_start, c.validation_end, c.fear_weight, c.monetary_weight,
+          c.earnings_weight, c.company_lifecycle_weight, c.quality_weight,
+          c.valuation_state_weight, c.political_risk_weight, c.crypto_cycle_weight,
+          c.min_trade_score_add, c.position_size_multiplier, c.formula_expression,
+          c.created_at, c.generation, c.parent_candidate_id
+      )
+      SELECT *
+      FROM scored
+      WHERE total_closed_trades >= 80
+      ORDER BY
+        avg_profit_factor DESC,
+        avg_net_return_pct DESC,
+        avg_pnl_p05_clp DESC,
+        avg_win_rate_pct DESC,
+        total_net_pnl_clp DESC
+      LIMIT 3
+    """
+    return [dict(row.items()) for row in client.query(query).result()]
+
+
+def _iterative_candidate_rows(run_id, parents, windows, generation):
+    candidates = []
+    templates = (
+        ("anchor", "Replica del mejor candidato", "Control local para medir si la siguiente generacion mejora al padre.", {}),
+        ("risk_down", "Reducir riesgo desde el padre", "Reduce exposicion sin cambiar el filtro de entrada.", {"position_size_multiplier": -0.10}),
+        ("threshold_up", "Filtro mas estricto", "Exige mayor calidad de setup y reduce levemente exposicion.", {"min_trade_score_add": 0.15, "position_size_multiplier": -0.05}),
+        ("threshold_down", "Filtro moderadamente flexible", "Explora mas oportunidades con exposicion prudente.", {"min_trade_score_add": -0.10, "position_size_multiplier": -0.10}),
+        ("quality_defensive", "Calidad defensiva", "Refuerza calidad, valoracion y proteccion ante miedo o riesgo politico.", {"quality_weight": 0.15, "valuation_state_weight": 0.15, "fear_weight": 0.15, "political_risk_weight": 0.15, "position_size_multiplier": -0.10}),
+        ("event_careful", "Cautela ante eventos", "Aumenta sensibilidad a earnings y condiciones monetarias.", {"earnings_weight": 0.15, "monetary_weight": 0.15, "position_size_multiplier": -0.05}),
+    )
+    for parent in parents:
+        seed = {field: float(parent[field]) for field in WEIGHT_FIELDS}
+        seed["min_trade_score_add"] = float(parent["min_trade_score_add"])
+        seed["position_size_multiplier"] = float(parent["position_size_multiplier"])
+        for suffix, label, reason, deltas in templates:
+            weights = dict(seed)
+            for field, delta in deltas.items():
+                weights[field] = weights[field] + delta
+            weights = _clamp_weights(weights)
+            candidate_id = f"brain_g{generation}_{run_id.replace('-', '')[:10]}_{parent['candidate_id'][-12:]}_{suffix}"
+            candidates.append({
+                "run_id": run_id,
+                "candidate_id": candidate_id,
+                "candidate_status": "BACKTEST_ONLY",
+                "formula_version": FORMULA_VERSION,
+                "candidate_label": f"G{generation}: {label}",
+                "candidate_reason": f"Padre={parent['candidate_id']}; {reason}",
+                **{key: value.isoformat() for key, value in windows.items()},
+                **weights,
+                "formula_expression": _formula_expression(weights),
+                "created_at": datetime.utcnow().isoformat(),
+                "generation": generation,
+                "parent_candidate_id": parent["candidate_id"],
+            })
+    return candidates
 
 
 def _generate(client, config, payload):
@@ -131,19 +226,32 @@ def _generate(client, config, payload):
 
     run_id = payload.get("run_id") or f"brain-{datetime.utcnow():%Y%m%d%H%M%S}-{uuid.uuid4().hex[:6]}"
     windows = {"training_start": training_start, "training_end": training_end, "validation_start": validation_start, "validation_end": validation_end}
-    baseline = _baseline(client, config)
-    candidates = _candidate_rows(run_id, baseline, windows)
-    objective = "0.35 normalized net PnL + 0.25 capped profit factor + 0.20 win rate - 0.15 max drawdown - 0.05 tail loss; net of spread and slippage"
-    client.insert_rows_json(config["runs_table"], [{
+    parents = _parent_candidates(client, config)
+    if parents:
+        generation = max(int(parent.get("generation") or 1) for parent in parents) + 1
+        parent_run_id = parents[0]["run_id"]
+        generation_policy = "Iterative local search around the three best audited validation candidates."
+        candidates = _iterative_candidate_rows(run_id, parents, windows, generation)
+    else:
+        baseline = _baseline(client, config)
+        generation = 1
+        parent_run_id = None
+        generation_policy = "Initial bounded exploration around the current baseline."
+        candidates = _candidate_rows(run_id, baseline, windows, generation=generation)
+    objective = "Rank validation candidates by profit factor, average net return after costs, p05 tail loss, win rate and net PnL. Never promote to production."
+    run_errors = client.insert_rows_json(config["runs_table"], [{
         "run_id": run_id, "created_at": datetime.utcnow().isoformat(), "status": "CANDIDATES_READY",
         "formula_version": FORMULA_VERSION, **{key: value.isoformat() for key, value in windows.items()}, "objective_definition": objective,
         "data_quality_notes": "Daily price history is broad; earnings/news/macro historical coverage must be audited before interpretation.",
-        "production_change_allowed": False,
+        "production_change_allowed": False, "generation": generation, "parent_run_id": parent_run_id,
+        "generation_policy": generation_policy,
     }])
+    if run_errors:
+        raise RuntimeError(f"Could not save run: {run_errors}")
     errors = client.insert_rows_json(config["candidates_table"], candidates)
     if errors:
         raise RuntimeError(f"Could not save candidates: {errors}")
-    return {"run_id": run_id, "candidate_count": len(candidates), "status": "CANDIDATES_READY", "next_step": "Run Dataform, then call phase=review with this run_id."}
+    return {"run_id": run_id, "generation": generation, "parent_run_id": parent_run_id, "candidate_count": len(candidates), "status": "CANDIDATES_READY", "next_step": "Run Dataform, then call phase=review with this run_id."}
 
 
 def _review(client, config, payload):

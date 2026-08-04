@@ -16,6 +16,12 @@ El cerebro solo propone parametros para una corrida de backtesting identificable
 
 No se permite promover un peso al proceso diario desde este componente. Un candidato solo puede quedar como `BACKTEST_ONLY`, `PROPOSED`, `REJECTED` o `INSUFFICIENT_DATA`.
 
+## Iteracion controlada
+
+La primera generacion explora alrededor del baseline. Cada generacion posterior toma los tres candidatos auditados con mejor evidencia de validacion y crea una exploracion local alrededor de ellos. El orden de seleccion prioriza profit factor, retorno neto despues de costos, cola de perdidas, tasa de acierto y PnL neto.
+
+Cada candidato conserva `generation`, `parent_run_id` y `parent_candidate_id`. Esto permite reconstruir por que un peso fue probado y evita que la IA modifique parametros sin evidencia cuantitativa. Si todos los candidatos fallan, la siguiente generacion sigue siendo exploratoria y conservadora; nunca se activa produccion.
+
 ## Formula evaluada
 
 Para cada trade, la capa contextual ya parte del `setup_score` de V1-V4. El candidato ajusta el filtro y el tamano teorico, sin reescribir retroactivamente la senal base:
