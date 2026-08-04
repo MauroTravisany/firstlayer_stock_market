@@ -44,6 +44,23 @@ jobs:
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
+      - name: Refresh Dataform production release
+        run: |
+          REPO="projects/${{ secrets.GCP_PROJECT_ID }}/locations/us-east1/repositories/portfolio-valuation"
+          RELEASE="${REPO}/releaseConfigs/production"
+          TOKEN="$(gcloud auth print-access-token)"
+          COMPILATION="$(curl --fail-with-body -sS -X POST \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"releaseConfig\":\"${RELEASE}\"}" \
+            "https://dataform.googleapis.com/v1beta1/${REPO}/compilationResults" \
+            | jq -r '.name')"
+          curl --fail-with-body -sS -X PATCH \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"gitCommitish\":\"dataform-production\",\"releaseCompilationResult\":\"${COMPILATION}\"}" \
+            "https://dataform.googleapis.com/v1beta1/${RELEASE}?updateMask=releaseCompilationResult"
+
       - name: Deploy stock prices to Cloud Run
         run: |
           gcloud run deploy stockdaily \
