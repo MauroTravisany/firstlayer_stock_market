@@ -47,6 +47,7 @@ def main(request):
             ensure_weekly_review_table,
             fetch_closed_trades,
             fetch_asset_profiles,
+            fetch_alpaca_execution_summary,
             fetch_new_trades,
             fetch_strategy_performance,
             fetch_cycle_profile_performance,
@@ -176,6 +177,7 @@ def main(request):
             alert_type = f"paper_trading_intraday_{slot_hour:02d}00"
         new_trades = fetch_new_trades(config, summary_date)
         closed_trades = fetch_closed_trades(config, summary_date)
+        alpaca_summary = fetch_alpaca_execution_summary(config, summary_date)
         strategy_performance = fetch_strategy_performance(config)
         asset_profiles = fetch_asset_profiles(config)
         feedback = None
@@ -207,6 +209,7 @@ def main(request):
                         "summary": {key: str(value) for key, value in summary.items()},
                         "new_trades": new_trades,
                         "closed_trades": closed_trades,
+                        "alpaca_summary": alpaca_summary,
                         "strategy_performance": strategy_performance,
                         "feedback": feedback,
                     },
@@ -230,7 +233,7 @@ def main(request):
                 {"Content-Type": "application/json"},
             )
 
-        sent, error = send_alert(config, summary, new_trades, closed_trades, feedback)
+        sent, error = send_alert(config, summary, new_trades, closed_trades, feedback, alpaca_summary)
         mark_sent(config, summary_date, alert_type, "SENT" if sent else "ERROR", error or "OK")
         status_code = 200 if sent else 500
         return (

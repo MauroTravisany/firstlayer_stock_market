@@ -82,7 +82,37 @@ def _closed_line(row):
     )
 
 
-def build_discord_payload(summary, new_trades, closed_trades, feedback=None):
+def _alpaca_execution_line(row):
+    amount = f"USD {float(row.get('notional_usd') or 0):,.2f}"
+    detail = (
+        f"{row.get('ticker')} ({row.get('alpaca_symbol')}) | "
+        f"{row.get('order_intent')} {row.get('order_side')} | {amount} | "
+        f"{row.get('execution_status')} ({row.get('order_status') or 'sin estado'})"
+    )
+    if row.get("error_message"):
+        detail += f" | error: {row['error_message']}"
+    return detail
+
+
+def _alpaca_summary_text(alpaca_summary):
+    alpaca_summary = alpaca_summary or {}
+    entry_attempts = int(alpaca_summary.get("entry_attempt_count") or 0)
+    entries = int(alpaca_summary.get("entry_submitted_count") or 0)
+    exits = int(alpaca_summary.get("exit_submitted_count") or 0)
+    errors = int(alpaca_summary.get("error_count") or 0)
+    lines = [
+        f"Intentos de entrada: {entry_attempts} | Ordenes enviadas: {entries}",
+        f"Salidas enviadas: {exits} | Errores: {errors}",
+    ]
+    if entry_attempts == 0 and exits == 0:
+        lines.append("No se enviaron ordenes a Alpaca ese dia.")
+    execution_lines = "\n".join(_alpaca_execution_line(row) for row in alpaca_summary.get("executions", []))
+    if execution_lines:
+        lines.append(execution_lines)
+    return "\n".join(lines)
+
+
+def build_discord_payload(summary, new_trades, closed_trades, feedback=None, alpaca_summary=None):
     pnl = float(summary.get("realized_pnl_clp") or 0)
     status = summary.get("daily_result_status") or "SIN_CIERRES"
     color = DISCORD_BLUE
@@ -171,6 +201,11 @@ def build_discord_payload(summary, new_trades, closed_trades, feedback=None):
                     },
                     {"name": "Entradas/Vigilancia", "value": new_lines[:1024], "inline": False},
                     {"name": "Cierres", "value": closed_lines[:1024], "inline": False},
+                    {
+                        "name": "Alpaca Paper: ejecucion simulada",
+                        "value": _alpaca_summary_text(alpaca_summary)[:1024],
+                        "inline": False,
+                    },
                     {
                         "name": "Feedback IA",
                         "value": str((feedback or {}).get("executive_summary") or "Feedback IA no generado.")[:1024],
@@ -297,14 +332,14 @@ def send_weekly_alert(config, weekly_summary, strategy_performance, ticker_perfo
     return True, None
 
 
-def send_alert(config, summary, new_trades, closed_trades, feedback=None):
+def send_alert(config, summary, new_trades, closed_trades, feedback=None, alpaca_summary=None):
     url = config.get("alert_webhook_url")
     if not url:
         return False, "NO_WEBHOOK_URL"
 
     webhook_type = _detect_webhook_type(config)
     if webhook_type == "discord":
-        response = requests.post(url, json=build_discord_payload(summary, new_trades, closed_trades, feedback), timeout=30)
+        response = requests.post(url, json=build_discord_payload(summary, new_trades, closed_trades, feedback, alpaca_summary), timeout=30)
     else:
         response = requests.post(url, json={"text": summary.get("discord_summary") or "Paper trading diario"}, timeout=30)
 

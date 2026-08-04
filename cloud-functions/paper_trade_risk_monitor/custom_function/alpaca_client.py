@@ -31,3 +31,8 @@ class AlpacaPaperClient:
 
 def is_crypto_position(position):
     return str(position.get("asset_class", "")).lower() == "crypto" or "/" in str(position.get("symbol", ""))
+
+
+def normalize_symbol(symbol):
+    """Match Alpaca's compact symbols with the slash notation stored in BigQuery."""
+    return "".join(character for character in str(symbol or "").upper() if character.isalnum())

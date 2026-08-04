@@ -236,6 +236,63 @@ def fetch_closed_trades(config, summary_date, limit=20):
     return [dict(row) for row in client.query(query, job_config=job_config).result()]
 
 
+def fetch_alpaca_execution_summary(config, summary_date, limit=8):
+    """Return the broker activity that belongs in the daily Discord summary."""
+    client = bigquery.Client(project=config["project_id"])
+    query = f"""
+    WITH executions AS (
+      SELECT
+        ticker,
+        alpaca_symbol,
+        asset_type,
+        order_intent,
+        order_side,
+        order_status,
+        execution_status,
+        notional_usd,
+        error_message,
+        created_at
+      FROM {_table_ref(config["alpaca_executions_table"])}
+      WHERE analysis_date = @summary_date
+    )
+    SELECT
+      COUNTIF(order_intent = "ENTRY") AS entry_attempt_count,
+      COUNTIF(order_intent = "ENTRY" AND execution_status IN ("SUBMITTED", "FILLED", "ACCEPTED", "PENDING")) AS entry_submitted_count,
+      COUNTIF(order_intent = "EXIT" AND execution_status IN ("SUBMITTED", "FILLED", "ACCEPTED", "PENDING")) AS exit_submitted_count,
+      COUNTIF(execution_status = "ERROR") AS error_count,
+      ARRAY_AGG(
+        STRUCT(
+          ticker,
+          alpaca_symbol,
+          asset_type,
+          order_intent,
+          order_side,
+          order_status,
+          execution_status,
+          notional_usd,
+          error_message,
+          created_at
+        )
+        ORDER BY created_at DESC
+        LIMIT @limit
+      ) AS executions
+    FROM executions
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("summary_date", "DATE", summary_date),
+            bigquery.ScalarQueryParameter("limit", "INT64", limit),
+        ]
+    )
+    rows = list(client.query(query, job_config=job_config).result())
+    if not rows:
+        return {"entry_attempt_count": 0, "entry_submitted_count": 0, "exit_submitted_count": 0, "error_count": 0, "executions": []}
+
+    result = dict(rows[0])
+    result["executions"] = [dict(row) for row in (result.get("executions") or [])]
+    return result
+
+
 def fetch_strategy_performance(config, limit=20):
     client = bigquery.Client(project=config["project_id"])
     query = f"""

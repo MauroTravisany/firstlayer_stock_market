@@ -45,7 +45,7 @@ def main(request):
 
     try:
         from conf.conf import load_config
-        from custom_function.alpaca_client import AlpacaPaperClient, is_crypto_position
+        from custom_function.alpaca_client import AlpacaPaperClient, is_crypto_position, normalize_symbol
         from custom_function.bq_operations import fetch_open_entries, save_exit
 
         config = load_config()
@@ -56,7 +56,7 @@ def main(request):
         if account_status >= 400:
             return json.dumps({"status": "error", "message": "Alpaca account check failed", "response": account}), 502, {"Content-Type": "application/json"}
 
-        entries = {row["alpaca_symbol"]: row for row in fetch_open_entries(config)}
+        entries = {normalize_symbol(row["alpaca_symbol"]): row for row in fetch_open_entries(config)}
         positions_status, _, positions = client.get_positions()
         if positions_status >= 400:
             return json.dumps({"status": "error", "message": "Alpaca positions check failed", "response": positions}), 502, {"Content-Type": "application/json"}
@@ -73,7 +73,7 @@ def main(request):
             crypto = is_crypto_position(position)
             if (scope == "crypto" and not crypto) or (scope == "equities" and crypto):
                 continue
-            entry = entries.get(str(position.get("symbol")))
+            entry = entries.get(normalize_symbol(position.get("symbol")))
             if not entry:
                 results.append({"symbol": position.get("symbol"), "status": "SKIPPED_UNMANAGED_POSITION"})
                 continue
