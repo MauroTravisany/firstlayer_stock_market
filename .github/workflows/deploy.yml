@@ -9,10 +9,30 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Sync Dataform root branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          DATAFORM_TREE="$(git rev-parse HEAD:dataform)"
+          if git fetch origin dataform-production --depth=1 2>/dev/null; then
+            CURRENT_TREE="$(git rev-parse FETCH_HEAD^{tree})"
+            if [ "${DATAFORM_TREE}" = "${CURRENT_TREE}" ]; then
+              echo "Dataform branch already matches this commit."
+              exit 0
+            fi
+            PARENT="-p FETCH_HEAD"
+          else
+            PARENT=""
+          fi
+          SNAPSHOT="$(printf 'Sync Dataform project from %s\n' "${GITHUB_SHA}" | git commit-tree "${DATAFORM_TREE}" ${PARENT})"
+          git push origin "${SNAPSHOT}:refs/heads/dataform-production"
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
