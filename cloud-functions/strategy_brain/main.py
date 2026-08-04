@@ -168,7 +168,7 @@ def _clamp_weights(weights):
     return bounded
 
 
-def _parent_candidates(client, config):
+def _parent_candidates(client, config, parent_run_id=None):
     query = f"""
       WITH audited_runs AS (
         SELECT DISTINCT run_id
@@ -190,6 +190,7 @@ def _parent_candidates(client, config):
           USING (run_id, candidate_id)
         JOIN audited_runs a USING (run_id)
         WHERE s.evaluation_split = "VALIDATION"
+          AND (@parent_run_id IS NULL OR c.run_id = @parent_run_id)
         GROUP BY c.run_id, c.candidate_id, c.candidate_status, c.formula_version,
           c.candidate_label, c.candidate_reason, c.training_start, c.training_end,
           c.validation_start, c.validation_end, c.fear_weight, c.monetary_weight,
@@ -212,7 +213,10 @@ def _parent_candidates(client, config):
         total_net_pnl_clp DESC
       LIMIT 3
     """
-    return [dict(row.items()) for row in client.query(query).result()]
+    job_config = bigquery.QueryJobConfig(query_parameters=[
+        bigquery.ScalarQueryParameter("parent_run_id", "STRING", parent_run_id)
+    ])
+    return [dict(row.items()) for row in client.query(query, job_config=job_config).result()]
 
 
 def _optimization_state(client, config):
@@ -253,6 +257,9 @@ def _iterative_candidate_rows(run_id, parents, windows, generation):
         ("event_careful", "Cautela ante eventos", "Aumenta sensibilidad a earnings y condiciones monetarias.", {"earnings_weight": 0.15, "monetary_weight": 0.15, "position_size_multiplier": -0.05}),
         ("trend_confirmed", "Tendencia confirmada", "Da mayor importancia a tendencia, momentum y volumen, manteniendo riesgo prudente.", {"trend_weight": 0.15, "momentum_weight": 0.15, "volume_weight": 0.10, "position_size_multiplier": -0.05}),
         ("trend_defensive", "Tendencia defensiva", "Reduce entradas por volatilidad y exige una tendencia mas limpia.", {"trend_weight": 0.15, "volatility_weight": -0.10, "regime_weight": 0.10, "min_trade_score_add": 0.10, "position_size_multiplier": -0.05}),
+        ("trend_quality", "Tendencia con calidad", "Combina tendencia, momentum, calidad y valoracion para evitar persecucion de precio sin respaldo.", {"trend_weight": 0.20, "momentum_weight": 0.10, "quality_weight": 0.15, "valuation_state_weight": 0.15, "min_trade_score_add": 0.05, "position_size_multiplier": -0.05}),
+        ("trend_regime", "Tendencia segun regimen", "Refuerza tendencia solo cuando el regimen y volatilidad son favorables.", {"trend_weight": 0.20, "regime_weight": 0.15, "volatility_weight": -0.15, "volume_weight": 0.10, "min_trade_score_add": 0.10, "position_size_multiplier": -0.05}),
+        ("selective_events", "Selectivo ante eventos", "Prioriza tendencia pero reduce entradas alrededor de incertidumbre macro y resultados.", {"trend_weight": 0.15, "earnings_weight": 0.20, "fear_weight": 0.15, "monetary_weight": 0.10, "min_trade_score_add": 0.15, "position_size_multiplier": -0.10}),
     )
     for parent in parents:
         seed = {
@@ -305,11 +312,16 @@ def _generate(client, config, payload):
             "latest_generation": optimization["latest_generation"],
             "consecutive_non_improving": optimization["consecutive_non_improving"],
         }
-    parents = _parent_candidates(client, config)
+    requested_parent_run_id = payload.get("parent_run_id")
+    parents = _parent_candidates(client, config, requested_parent_run_id)
     if parents:
-        generation = max(int(parent.get("generation") or 1) for parent in parents) + 1
-        parent_run_id = parents[0]["run_id"]
-        generation_policy = "Iterative local search around the three best audited validation candidates."
+        generation = int(payload.get("generation_override") or (max(int(parent.get("generation") or 1) for parent in parents) + 1))
+        parent_run_id = requested_parent_run_id or parents[0]["run_id"]
+        generation_policy = (
+            "Forced hypothesis retest around audited parents from the requested run."
+            if requested_parent_run_id else
+            "Iterative local search around the three best audited validation candidates."
+        )
         candidates = _iterative_candidate_rows(run_id, parents, windows, generation)
     else:
         baseline = _baseline(client, config)
