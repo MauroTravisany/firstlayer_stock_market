@@ -1,0 +1,128 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_structural_backtest_results",
+  description: "Experimento aislado contra el mejor candidato G3: filtro de no-operar y salidas adaptativas por activo. Nunca alimenta produccion.",
+  tags: ["trading", "backtest", "experiment", "daily"],
+  bigquery: { partitionBy: "analysis_date", clusterBy: ["strategy_version", "ticker", "trade_status"] },
+  assertions: { nonNull: ["analysis_date", "ticker", "strategy_version", "structural_trade_id"], uniqueKey: ["structural_trade_id"] },
+  dependencies: ["trading_contextual_backtest_results", "trading_brain_candidate_summary", "trading_backtest_asset_rules", "trading_price_features"]
+}
+
+-- G3 is the benchmark only. This model deliberately does not change live signals.
+WITH g3_candidates AS (
+  SELECT candidate_id
+  FROM ${ref("trading_brain_candidate_summary")}
+  WHERE run_id = "brain-20260804191406-94f3ba"
+    AND evaluation_split = "VALIDATION"
+  GROUP BY candidate_id
+  ORDER BY
+    AVG(final_return_pct) - 0.75 * MAX(max_drawdown_pct) + 5 * LEAST(AVG(profit_factor) - 1, 1) DESC,
+    AVG(final_return_pct) DESC
+  LIMIT 1
+),
+base AS (
+  SELECT
+    r.*,
+    COALESCE(rule_group.min_score_add, rule_default.min_score_add) AS min_score_add,
+    COALESCE(rule_group.min_technical_score, rule_default.min_technical_score) AS min_technical_score,
+    COALESCE(rule_group.min_trend_score, rule_default.min_trend_score) AS min_trend_score,
+    COALESCE(rule_group.stop_multiplier, rule_default.stop_multiplier) AS stop_multiplier,
+    COALESCE(rule_group.take_profit_1_r, rule_default.take_profit_1_r) AS adaptive_take_profit_1_r,
+    COALESCE(rule_group.take_profit_2_r, rule_default.take_profit_2_r) AS adaptive_take_profit_2_r,
+    COALESCE(rule_group.max_holding_days, rule_default.max_holding_days) AS adaptive_max_holding_days,
+    COALESCE(rule_group.position_size_multiplier, rule_default.position_size_multiplier) AS position_size_multiplier,
+    COALESCE(rule_group.rule_rationale, rule_default.rule_rationale) AS rule_rationale
+  FROM ${ref("trading_contextual_backtest_results")} r
+  JOIN g3_candidates g ON g.candidate_id = r.variant_id
+  LEFT JOIN ${ref("trading_backtest_asset_rules")} rule_group ON rule_group.trading_group = r.trading_group
+  JOIN ${ref("trading_backtest_asset_rules")} rule_default ON rule_default.trading_group = "default"
+),
+qualified AS (
+  SELECT
+    *,
+    GREATEST(stop_distance_pct / 100 * stop_multiplier, IF(asset_type = "CRYPTO", 0.04, 0.025)) AS adaptive_stop_distance,
+    contextual_setup_score >= contextual_min_trade_score + min_score_add
+      AND contextual_technical_score >= min_technical_score
+      AND trend_score >= min_trend_score
+      AND macro_alignment_score >= -1.0
+      AND NOT (historical_fear_regime = "EXTREME_FEAR" AND factor_alignment_score < 0)
+      AND NOT (earnings_event_status = "EARNINGS_RISK" AND earnings_event_score < 0)
+      AND NOT (asset_type = "CRYPTO" AND crypto_context_regime = "CRYPTO_DEBIL") AS structural_filters_pass
+  FROM base
+),
+trades AS (
+  SELECT
+    *,
+    TO_HEX(SHA256(CONCAT(contextual_trade_id, "|structural-v1"))) AS structural_trade_id,
+    ROUND(theoretical_entry_price * (1 - adaptive_stop_distance), 4) AS adaptive_stop_loss,
+    ROUND(theoretical_entry_price * (1 + adaptive_stop_distance * adaptive_take_profit_1_r + estimated_roundtrip_cost_pct / 100), 4) AS adaptive_take_profit_1,
+    ROUND(theoretical_entry_price * (1 + adaptive_stop_distance * adaptive_take_profit_2_r + estimated_roundtrip_cost_pct / 100), 4) AS adaptive_take_profit_2,
+    ROUND(LEAST(10000000.0, contextual_position_notional_clp * position_size_multiplier), 0) AS adaptive_position_notional_clp
+  FROM qualified
+  WHERE contextual_signal = "TRADE_LONG" AND structural_filters_pass
+),
+future_candidates AS (
+  SELECT
+    t.structural_trade_id, t.adaptive_max_holding_days, p.analysis_date AS path_date, p.day_low, p.day_high, p.day_close,
+    CASE
+      WHEN p.day_low <= t.adaptive_stop_loss THEN "STOP_LOSS"
+      WHEN p.day_high >= t.adaptive_take_profit_2 THEN "TAKE_PROFIT_2"
+      WHEN p.day_high >= t.adaptive_take_profit_1 THEN "TAKE_PROFIT_1"
+      ELSE NULL
+    END AS event_type,
+    CASE
+      WHEN p.day_low <= t.adaptive_stop_loss THEN t.adaptive_stop_loss
+      WHEN p.day_high >= t.adaptive_take_profit_2 THEN t.adaptive_take_profit_2
+      WHEN p.day_high >= t.adaptive_take_profit_1 THEN t.adaptive_take_profit_1
+      ELSE NULL
+    END AS event_price,
+    CASE WHEN p.day_low <= t.adaptive_stop_loss THEN 1 WHEN p.day_high >= t.adaptive_take_profit_2 THEN 2 WHEN p.day_high >= t.adaptive_take_profit_1 THEN 3 ELSE 9 END AS event_priority
+  FROM trades t
+  JOIN ${ref("trading_price_features")} p
+    ON p.ticker = t.ticker
+   AND p.signal_timestamp > t.signal_timestamp
+   AND p.signal_timestamp <= DATETIME_ADD(t.signal_timestamp, INTERVAL 135 DAY)
+),
+future_path AS (
+  SELECT * EXCEPT(future_bar_number)
+  FROM (
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY structural_trade_id ORDER BY path_date) AS future_bar_number
+    FROM future_candidates
+  )
+  WHERE future_bar_number <= adaptive_max_holding_days
+),
+first_event AS (
+  SELECT
+    structural_trade_id,
+    ARRAY_AGG(IF(event_type IS NOT NULL, STRUCT(path_date, event_type, event_price, event_priority), NULL) IGNORE NULLS ORDER BY path_date, event_priority LIMIT 1)[SAFE_OFFSET(0)] AS first_hit,
+    ARRAY_AGG(STRUCT(path_date, day_close) ORDER BY path_date DESC LIMIT 1)[SAFE_OFFSET(0)] AS latest_seen,
+    COUNT(*) AS future_days_seen
+  FROM future_path
+  GROUP BY structural_trade_id
+),
+evaluated AS (
+  SELECT
+    t.*, fe.future_days_seen,
+    CASE WHEN fe.first_hit.event_type IS NOT NULL THEN fe.first_hit.path_date WHEN fe.future_days_seen >= t.adaptive_max_holding_days THEN fe.latest_seen.path_date ELSE NULL END AS outcome_date,
+    CASE WHEN fe.first_hit.event_type IS NOT NULL THEN fe.first_hit.event_type WHEN fe.future_days_seen >= t.adaptive_max_holding_days THEN "TIME_EXIT" ELSE "OPEN" END AS trade_status,
+    CASE WHEN fe.first_hit.event_price IS NOT NULL THEN fe.first_hit.event_price WHEN fe.future_days_seen >= t.adaptive_max_holding_days THEN fe.latest_seen.day_close ELSE NULL END AS exit_price
+  FROM trades t
+  LEFT JOIN first_event fe USING (structural_trade_id)
+)
+
+SELECT
+  analysis_date, signal_hour, signal_timestamp, outcome_date, ticker, asset_type, trading_group, sector_profile, cycle_profile,
+  strategy_version, strategy_name, variant_id AS benchmark_candidate_id, structural_trade_id, contextual_trade_id,
+  contextual_setup_score, contextual_technical_score, trend_score, momentum_score, volume_score, volatility_score, regime_score,
+  macro_alignment_score, factor_alignment_score, earnings_event_score, historical_fear_regime, monetary_regime_proxy, political_regime_proxy,
+  crypto_context_regime, earnings_event_status, company_lifecycle_context, rule_rationale, min_score_add, min_technical_score, min_trend_score,
+  theoretical_entry_price, adaptive_stop_loss, adaptive_take_profit_1, adaptive_take_profit_2, adaptive_max_holding_days,
+  estimated_roundtrip_cost_pct, adaptive_position_notional_clp, trade_status, exit_price, future_days_seen,
+  ROUND(SAFE_DIVIDE(exit_price - theoretical_entry_price, theoretical_entry_price), 4) AS gross_return_pct,
+  ROUND(SAFE_DIVIDE(exit_price - theoretical_entry_price, theoretical_entry_price) - estimated_roundtrip_cost_pct / 100, 4) AS net_return_pct,
+  ROUND(adaptive_position_notional_clp * (SAFE_DIVIDE(exit_price - theoretical_entry_price, theoretical_entry_price) - estimated_roundtrip_cost_pct / 100), 0) AS net_pnl_clp,
+  CASE WHEN trade_status IN ("TAKE_PROFIT_1", "TAKE_PROFIT_2") THEN TRUE WHEN trade_status = "TIME_EXIT" AND exit_price > theoretical_entry_price THEN TRUE ELSE FALSE END AS is_win,
+  CASE WHEN trade_status = "OPEN" THEN "ABIERTO" WHEN trade_status = "STOP_LOSS" THEN "PERDIDA" WHEN trade_status IN ("TAKE_PROFIT_1", "TAKE_PROFIT_2") THEN "GANANCIA" WHEN exit_price > theoretical_entry_price THEN "GANANCIA_TIEMPO" ELSE "PERDIDA_TIEMPO" END AS result_label,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM evaluated
