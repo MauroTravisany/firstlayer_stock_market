@@ -14,6 +14,8 @@ WITH RECURSIVE labeled AS (
   SELECT
     c.run_id,
     c.candidate_id,
+    c.formula_version,
+    c.candidate_status,
     r.strategy_version,
     r.ticker,
     r.analysis_date,
