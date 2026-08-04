@@ -1,0 +1,43 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_structural_backtest_summary",
+  description: "Comparacion auditable del experimento estructural contra G3, por estrategia y activo. Solo backtest.",
+  tags: ["trading", "backtest", "experiment", "audit", "daily"],
+  dependencies: ["trading_structural_backtest_results"]
+}
+
+WITH closed AS (
+  SELECT * FROM ${ref("trading_structural_backtest_results")}
+  WHERE trade_status != "OPEN" AND outcome_date IS NOT NULL
+),
+scored AS (
+  SELECT
+    *,
+    10000000.0 + SUM(net_pnl_clp) OVER (PARTITION BY strategy_version ORDER BY outcome_date, analysis_date, ticker) AS equity_clp
+  FROM closed
+),
+aggregated AS (
+  SELECT
+    strategy_version, asset_type, trading_group,
+    COUNT(*) AS closed_trades, COUNT(DISTINCT ticker) AS ticker_count,
+    ROUND(SAFE_DIVIDE(COUNTIF(is_win), COUNT(*)) * 100, 2) AS win_rate_pct,
+    ROUND(SUM(net_pnl_clp), 0) AS net_pnl_clp,
+    ROUND(SAFE_DIVIDE(SUM(IF(net_pnl_clp > 0, net_pnl_clp, 0)), ABS(SUM(IF(net_pnl_clp < 0, net_pnl_clp, 0)))), 3) AS profit_factor,
+    ROUND(APPROX_QUANTILES(net_pnl_clp, 100)[OFFSET(5)], 0) AS pnl_p05_clp,
+    ROUND(MAX(equity_clp), 0) AS peak_equity_clp,
+    ROUND(ARRAY_AGG(equity_clp ORDER BY outcome_date DESC, analysis_date DESC, ticker DESC LIMIT 1)[SAFE_OFFSET(0)], 0) AS final_capital_clp,
+    ROUND(MAX(running_peak - equity_clp), 0) AS max_drawdown_clp,
+    ROUND(MAX(SAFE_DIVIDE(running_peak - equity_clp, running_peak)) * 100, 2) AS max_drawdown_pct
+  FROM (
+    SELECT *, MAX(equity_clp) OVER (PARTITION BY strategy_version ORDER BY outcome_date, analysis_date, ticker) AS running_peak
+    FROM scored
+  )
+  GROUP BY strategy_version, asset_type, trading_group
+)
+SELECT
+  *,
+  ROUND((final_capital_clp / 10000000.0 - 1) * 100, 2) AS final_return_pct,
+  CASE WHEN closed_trades >= 20 AND final_capital_clp > 10000000 AND profit_factor >= 1.10 AND max_drawdown_pct <= 12 THEN "CANDIDATO_A_PAPER" ELSE "SOLO_EXPERIMENTO" END AS experiment_verdict,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM aggregated

@@ -1,0 +1,37 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_structural_walk_forward_validation",
+  description: "Robustez temporal del experimento estructural en tres ventanas independientes. No reoptimiza sobre la ventana evaluada.",
+  tags: ["trading", "backtest", "walk_forward", "audit", "daily"],
+  dependencies: ["trading_structural_backtest_results"]
+}
+
+WITH closed AS (
+  SELECT
+    *,
+    CASE
+      WHEN analysis_date BETWEEN DATE "2021-01-01" AND DATE "2022-12-31" THEN "WF1_2021_2022"
+      WHEN analysis_date BETWEEN DATE "2023-01-01" AND DATE "2024-12-31" THEN "WF2_2023_2024"
+      WHEN analysis_date >= DATE "2025-01-01" THEN "WF3_2025_PLUS"
+    END AS validation_fold
+  FROM ${ref("trading_structural_backtest_results")}
+  WHERE trade_status != "OPEN" AND outcome_date IS NOT NULL
+),
+folds AS (
+  SELECT
+    validation_fold, strategy_version, asset_type, trading_group,
+    COUNT(*) AS closed_trades,
+    ROUND(SAFE_DIVIDE(COUNTIF(is_win), COUNT(*)) * 100, 2) AS win_rate_pct,
+    ROUND(SUM(net_pnl_clp), 0) AS net_pnl_clp,
+    ROUND(SAFE_DIVIDE(SUM(IF(net_pnl_clp > 0, net_pnl_clp, 0)), ABS(SUM(IF(net_pnl_clp < 0, net_pnl_clp, 0)))), 3) AS profit_factor,
+    ROUND(APPROX_QUANTILES(net_pnl_clp, 100)[OFFSET(5)], 0) AS pnl_p05_clp
+  FROM closed
+  WHERE validation_fold IS NOT NULL
+  GROUP BY validation_fold, strategy_version, asset_type, trading_group
+)
+SELECT
+  *,
+  CASE WHEN closed_trades < 10 THEN "MUESTRA_INSUFICIENTE" WHEN net_pnl_clp > 0 AND profit_factor >= 1.05 THEN "FOLD_FAVORABLE" ELSE "FOLD_NO_VALIDADO" END AS fold_verdict,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM folds

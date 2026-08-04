@@ -1,0 +1,16 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_backtest_asset_rules",
+  description: "Reglas estructurales por tipo de activo para el experimento de backtesting. No modifica paper trading ni ejecucion.",
+  tags: ["trading", "backtest", "experiment", "daily"]
+}
+
+SELECT *
+FROM UNNEST([
+  STRUCT("mega_cap_stock" AS trading_group, 0.25 AS min_score_add, 4 AS min_technical_score, 3 AS min_trend_score, 0.95 AS stop_multiplier, 1.80 AS take_profit_1_r, 3.00 AS take_profit_2_r, 15 AS max_holding_days, 0.85 AS position_size_multiplier, "Calidad y tendencia, evitando perseguir entradas debiles." AS rule_rationale),
+  STRUCT("high_beta_stock", 0.50, 5, 3, 1.10, 2.00, 3.25, 15, 0.70, "Mayor volatilidad: exige mejor setup y reduce exposicion."),
+  STRUCT("crypto_sensitive_stock", 0.75, 5, 3, 1.20, 2.00, 3.50, 12, 0.60, "COIN depende del ciclo cripto: filtro alto y riesgo reducido."),
+  STRUCT("crypto_major", 0.75, 5, 3, 1.25, 2.20, 3.75, 12, 0.55, "Cripto 24/7: exige tendencia, volumen y regimen favorable."),
+  STRUCT("default", 0.50, 4, 3, 1.00, 1.80, 3.00, 15, 0.75, "Perfil conservador por defecto.")
+])
