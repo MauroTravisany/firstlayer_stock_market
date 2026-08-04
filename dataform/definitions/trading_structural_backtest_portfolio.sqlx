@@ -46,7 +46,7 @@ sequential_trades AS (
 ),
 capital AS (
   SELECT
-    *,
+    * EXCEPT(calculated_at),
     10000000.0 AS initial_capital_clp,
     ROUND(SUM(net_pnl_clp) OVER (PARTITION BY strategy_version ORDER BY outcome_date, analysis_date, ticker), 0) AS cumulative_pnl_clp
   FROM sequential_trades
