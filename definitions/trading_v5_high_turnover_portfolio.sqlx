@@ -1,0 +1,54 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v5_high_turnover_portfolio",
+  description: "Cartera V5 de ocho cupos concurrentes. Cada cupo espera el cierre de su propia posicion antes de reutilizarse; no duplica capital.",
+  tags: ["trading", "backtest", "v5", "experiment", "daily"],
+  bigquery: { partitionBy: "analysis_date", clusterBy: ["portfolio_slot", "ticker"] },
+  assertions: {
+    nonNull: ["v5_trade_id", "portfolio_slot", "outcome_date"],
+    uniqueKey: ["v5_trade_id"]
+  },
+  dependencies: ["trading_v5_high_turnover_results", "trading_v5_high_turnover_config"]
+}
+
+-- A rank slot is a deterministic capital bucket. It permits up to eight concurrent
+-- positions without treating every overlapping historical signal as fully funded.
+WITH RECURSIVE candidates AS (
+  SELECT
+    r.*,
+    r.daily_rank AS portfolio_slot,
+    c.initial_capital_clp
+  FROM ${ref("trading_v5_high_turnover_results")} r
+  CROSS JOIN ${ref("trading_v5_high_turnover_config")} c
+), seed AS (
+  SELECT
+    *,
+    ROW_NUMBER() OVER (PARTITION BY portfolio_slot ORDER BY analysis_date, ticker) AS seed_rank
+  FROM candidates
+), selected_trades AS (
+  (
+    SELECT * EXCEPT (seed_rank)
+    FROM seed
+    WHERE seed_rank = 1
+  )
+  UNION ALL
+  (
+    SELECT next_trade.*
+    FROM selected_trades previous_trade
+    JOIN candidates next_trade
+      ON next_trade.portfolio_slot = previous_trade.portfolio_slot
+     AND next_trade.analysis_date > previous_trade.outcome_date
+    LEFT JOIN candidates earlier_trade
+      ON earlier_trade.portfolio_slot = previous_trade.portfolio_slot
+     AND earlier_trade.analysis_date > previous_trade.outcome_date
+     AND earlier_trade.analysis_date < next_trade.analysis_date
+    WHERE earlier_trade.v5_trade_id IS NULL
+  )
+)
+
+SELECT
+  *,
+  "CONCURRENT_EIGHT_SLOT" AS portfolio_model,
+  CURRENT_TIMESTAMP() AS portfolio_calculated_at
+FROM selected_trades
