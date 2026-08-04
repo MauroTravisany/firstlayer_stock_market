@@ -15,21 +15,26 @@ WITH RECURSIVE ranked AS (
   WHERE trade_status != "OPEN" AND outcome_date IS NOT NULL
 ),
 daily_candidates AS (SELECT * EXCEPT(daily_rank) FROM ranked WHERE daily_rank = 1),
-seed AS (SELECT *, ROW_NUMBER() OVER (ORDER BY analysis_date, ticker) AS seed_rank FROM daily_candidates),
+seed AS (SELECT *, ROW_NUMBER() OVER (PARTITION BY strategy_version ORDER BY analysis_date, ticker) AS seed_rank FROM daily_candidates),
 sequential_trades AS (
   (SELECT * EXCEPT(seed_rank) FROM seed WHERE seed_rank = 1)
   UNION ALL
   (
     SELECT next_trade.*
     FROM sequential_trades previous_trade
-    JOIN daily_candidates next_trade ON next_trade.analysis_date > previous_trade.outcome_date
-    LEFT JOIN daily_candidates earlier_trade ON earlier_trade.analysis_date > previous_trade.outcome_date AND earlier_trade.analysis_date < next_trade.analysis_date
+    JOIN daily_candidates next_trade
+      ON next_trade.strategy_version = previous_trade.strategy_version
+     AND next_trade.analysis_date > previous_trade.outcome_date
+    LEFT JOIN daily_candidates earlier_trade
+      ON earlier_trade.strategy_version = previous_trade.strategy_version
+     AND earlier_trade.analysis_date > previous_trade.outcome_date
+     AND earlier_trade.analysis_date < next_trade.analysis_date
     WHERE earlier_trade.shadow_trade_id IS NULL
   )
 ),
 capital AS (
   SELECT * EXCEPT(calculated_at), 10000000.0 AS initial_capital_clp,
-    ROUND(SUM(net_pnl_clp) OVER (ORDER BY outcome_date, analysis_date, ticker), 0) AS cumulative_pnl_clp
+    ROUND(SUM(net_pnl_clp) OVER (PARTITION BY strategy_version ORDER BY outcome_date, analysis_date, ticker), 0) AS cumulative_pnl_clp
   FROM sequential_trades
 )
 SELECT *, ROUND(initial_capital_clp + cumulative_pnl_clp, 0) AS equity_clp, "SHADOW_ONLY_ONE_SLOT" AS portfolio_model, CURRENT_TIMESTAMP() AS calculated_at
