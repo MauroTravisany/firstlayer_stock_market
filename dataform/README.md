@@ -92,6 +92,16 @@ Para evitar sumar capital ficticio en operaciones incompatibles, el reporte prin
 
 Los `SHORT_SIMULATED` quedan como diagnostico historico separado: no llegan a Alpaca Paper y no afectan el PnL principal de los largos.
 
+## Frecuencia y backtesting
+
+El backtest principal usa `trading_price_features`, una serie **diaria homogenea** desde 2019. Si un dia contiene velas de 15 minutos, se consolidan en una unica vela diaria: primera apertura, maximo, minimo, ultimo cierre y volumen acumulado. Asi los retornos, medias moviles y ATR siempre comparan dias con dias.
+
+`trading_intraday_4h_backtest` es una pista independiente para experimentacion intradia. En acciones solo considera sesiones con al menos 12 velas reales de 15 minutos y las agrupa en velas de cuatro horas; para cripto usa las velas reales de cuatro horas que ya entrega la ingesta. No completa huecos ni reutiliza las velas diarias antiguas. Exige 60 sesiones reales por activo antes de publicar resultados, para evitar conclusiones basadas en una muestra demasiado corta.
+
+`trading_intraday_4h_readiness` muestra por activo cuantas sesiones reales existen, cuantas faltan y si el backtest ya esta listo.
+
+No se deben sumar ni comparar como si fueran una misma cartera los resultados diarios y los intradia: tienen horizonte, frecuencia y universo temporal distintos.
+
 ## Ejecucion local
 
 Desde `dataform/`:

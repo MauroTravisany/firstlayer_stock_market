@@ -1,0 +1,62 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_intraday_4h_readiness",
+  description: "Control de cobertura para el backtest intradia. Exige 60 sesiones de velas reales: 15 minutos para acciones y 4 horas para cripto.",
+  tags: ["trading", "paper", "backtest", "intraday", "quality"],
+  bigquery: { clusterBy: ["ticker"] },
+  assertions: { nonNull: ["ticker", "intraday_backtest_status"] }
+}
+
+WITH sessions AS (
+  SELECT
+    p.ticker,
+    p.fecha AS analysis_date,
+    COUNT(*) AS source_rows,
+    ANY_VALUE(w.asset_type) AS asset_type
+  FROM `stocks-437902.acciones_dataset.valores_acciones_recientes` p
+  JOIN ${ref("trading_watchlist")} w ON w.ticker = p.ticker AND w.enabled
+  GROUP BY p.ticker, p.fecha, w.asset_type
+  HAVING (w.asset_type = "STOCK" AND COUNT(*) >= 12 AND COUNTIF(EXTRACT(MINUTE FROM p.hora) IN (0, 15, 30, 45)) >= 12)
+      OR (w.asset_type = "CRYPTO" AND COUNT(*) >= 4 AND COUNTIF(MOD(EXTRACT(HOUR FROM p.hora), 4) = 0 AND EXTRACT(MINUTE FROM p.hora) = 0) >= 4)
+),
+coverage AS (
+  SELECT
+    s.ticker,
+    MIN(s.analysis_date) AS first_eligible_session,
+    MAX(s.analysis_date) AS last_eligible_session,
+    COUNT(*) AS eligible_session_count,
+    COUNTIF(s.analysis_date >= DATE_SUB(b.last_eligible_session, INTERVAL 90 DAY)) AS sessions_last_90_days
+  FROM sessions s
+  JOIN (
+    SELECT ticker, MAX(analysis_date) AS last_eligible_session
+    FROM sessions
+    GROUP BY ticker
+  ) b USING (ticker)
+  GROUP BY s.ticker
+)
+
+SELECT
+  w.ticker,
+  w.asset_type,
+  COALESCE(c.first_eligible_session, NULL) AS first_eligible_session,
+  COALESCE(c.last_eligible_session, NULL) AS last_eligible_session,
+  COALESCE(c.eligible_session_count, 0) AS eligible_session_count,
+  60 AS required_session_count,
+  GREATEST(60 - COALESCE(c.eligible_session_count, 0), 0) AS sessions_remaining,
+  COALESCE(c.sessions_last_90_days, 0) AS sessions_last_90_days,
+  50 AS required_sessions_last_90_days,
+  GREATEST(50 - COALESCE(c.sessions_last_90_days, 0), 0) AS recent_sessions_remaining,
+  CASE
+    WHEN COALESCE(c.eligible_session_count, 0) >= 60 AND COALESCE(c.sessions_last_90_days, 0) >= 50 THEN "READY"
+    WHEN COALESCE(c.eligible_session_count, 0) > 0 THEN "COLLECTING"
+    ELSE "NO_INTRADAY_DATA"
+  END AS intraday_backtest_status,
+  CASE WHEN w.asset_type = "CRYPTO"
+    THEN "Solo se usan sesiones con al menos 4 velas reales de 4 horas; no se rellena con datos diarios."
+    ELSE "Solo se usan sesiones con al menos 12 velas reales de 15 minutos; no se rellena con datos diarios."
+  END AS quality_note,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM ${ref("trading_watchlist")} w
+LEFT JOIN coverage c USING (ticker)
+WHERE w.enabled
