@@ -86,7 +86,7 @@ WITH config_values AS (
   GROUP BY v5_trade_id
 ), evaluated AS (
   SELECT
-    t.*,
+    t.* EXCEPT (outcome_date),
     fe.future_days_seen,
     CASE WHEN fe.first_hit.event_type IS NOT NULL THEN fe.first_hit.path_date ELSE fe.latest_seen.path_date END AS outcome_date,
     CASE WHEN fe.first_hit.event_type IS NOT NULL THEN fe.first_hit.event_type ELSE "TIME_EXIT" END AS trade_status,
