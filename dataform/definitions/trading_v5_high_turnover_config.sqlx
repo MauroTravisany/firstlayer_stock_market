@@ -1,0 +1,20 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v5_high_turnover_config",
+  description: "Configuracion auditable de V5: experimento G3 de cartera concurrente y rotacion mas alta. No alimenta Alpaca.",
+  tags: ["trading", "backtest", "v5", "experiment", "daily"]
+}
+
+SELECT
+  "v5-high-turnover-g3" AS experiment_id,
+  "G3_STRUCTURAL_V2" AS benchmark_source,
+  10000000.0 AS initial_capital_clp,
+  8 AS max_concurrent_positions,
+  8 AS max_entries_per_day,
+  2 AS max_entries_per_group_per_day,
+  0.10 AS max_position_pct,
+  5 AS stock_max_holding_days,
+  3 AS crypto_max_holding_days,
+  TRUE AS backtest_only,
+  "Mas observaciones sin sumar capital ficticio: ocho cupos independientes, 10% maximo por cupo y salidas temporales rapidas." AS rationale

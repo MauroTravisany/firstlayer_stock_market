@@ -1,0 +1,105 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v5_high_turnover_summary",
+  description: "Auditoria de V5: retorno, perdidas, exposicion y concentracion. Nunca autoriza ejecucion automatica.",
+  tags: ["trading", "backtest", "v5", "experiment", "audit", "daily"],
+  assertions: { nonNull: ["evaluation_period", "experiment_id"], uniqueKey: ["evaluation_period", "experiment_id"] },
+  dependencies: ["trading_v5_high_turnover_portfolio", "trading_v5_high_turnover_config"]
+}
+
+WITH config_values AS (
+  SELECT * FROM ${ref("trading_v5_high_turnover_config")}
+), period_trades AS (
+  SELECT "ALL_HISTORY" AS evaluation_period, p.*
+  FROM ${ref("trading_v5_high_turnover_portfolio")} p
+  UNION ALL
+  SELECT "RECENT_2025_ONWARD" AS evaluation_period, p.*
+  FROM ${ref("trading_v5_high_turnover_portfolio")} p
+  WHERE p.analysis_date >= DATE "2025-01-01"
+), equity_curve AS (
+  SELECT
+    t.*,
+    c.initial_capital_clp + SUM(t.net_pnl_clp) OVER (
+      PARTITION BY t.evaluation_period
+      ORDER BY t.outcome_date, t.analysis_date, t.v5_trade_id
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS equity_clp
+  FROM period_trades t
+  CROSS JOIN config_values c
+), equity_with_peak AS (
+  SELECT
+    *,
+    MAX(equity_clp) OVER (
+      PARTITION BY evaluation_period
+      ORDER BY outcome_date, analysis_date, v5_trade_id
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS running_peak_clp
+  FROM equity_curve
+), exposure_by_day AS (
+  SELECT
+    p.analysis_date AS entry_date,
+    active_date,
+    COUNT(*) AS concurrent_positions,
+    SUM(p.position_notional_clp) AS deployed_notional_clp,
+    MAX(group_positions) AS max_group_positions
+  FROM (
+    SELECT
+      p.*,
+      active_date,
+      COUNT(*) OVER (PARTITION BY active_date, trading_group) AS group_positions
+    FROM ${ref("trading_v5_high_turnover_portfolio")} p,
+    UNNEST(GENERATE_DATE_ARRAY(p.analysis_date, p.outcome_date)) AS active_date
+  ) p
+  GROUP BY entry_date, active_date
+), exposure_summary AS (
+  SELECT
+    MAX(concurrent_positions) AS peak_concurrent_positions,
+    ROUND(MAX(SAFE_DIVIDE(deployed_notional_clp, c.initial_capital_clp)) * 100, 2) AS peak_exposure_pct,
+    MAX(max_group_positions) AS peak_group_concentration
+  FROM exposure_by_day
+  CROSS JOIN config_values c
+), aggregated AS (
+  SELECT
+    evaluation_period,
+    ANY_VALUE(experiment_id) AS experiment_id,
+    ANY_VALUE(benchmark_candidate_id) AS benchmark_candidate_id,
+    COUNT(*) AS closed_trades,
+    COUNT(DISTINCT ticker) AS ticker_count,
+    COUNTIF(is_win) AS wins,
+    COUNTIF(NOT is_win) AS losses,
+    ROUND(SAFE_DIVIDE(COUNTIF(is_win), COUNT(*)) * 100, 2) AS win_rate_pct,
+    ROUND(SUM(net_pnl_clp), 0) AS net_pnl_clp,
+    ROUND(SAFE_DIVIDE(SUM(IF(net_pnl_clp > 0, net_pnl_clp, 0)), ABS(SUM(IF(net_pnl_clp < 0, net_pnl_clp, 0)))), 3) AS profit_factor,
+    ROUND(APPROX_QUANTILES(net_pnl_clp, 100)[OFFSET(5)], 0) AS pnl_p05_clp,
+    ROUND(ARRAY_AGG(equity_clp ORDER BY outcome_date DESC, analysis_date DESC, v5_trade_id DESC LIMIT 1)[SAFE_OFFSET(0)], 0) AS final_capital_clp,
+    ROUND(MAX(running_peak_clp - equity_clp), 0) AS max_drawdown_clp,
+    ROUND(MAX(SAFE_DIVIDE(running_peak_clp - equity_clp, running_peak_clp)) * 100, 2) AS max_drawdown_pct,
+    ROUND(AVG(future_days_seen), 2) AS avg_holding_days
+  FROM equity_with_peak
+  GROUP BY evaluation_period
+)
+
+SELECT
+  a.*,
+  c.initial_capital_clp,
+  ROUND(SAFE_DIVIDE(a.final_capital_clp - c.initial_capital_clp, c.initial_capital_clp) * 100, 2) AS final_return_pct,
+  e.peak_concurrent_positions,
+  e.peak_exposure_pct,
+  e.peak_group_concentration,
+  CASE
+    WHEN a.closed_trades >= 100
+      AND a.net_pnl_clp > 0
+      AND a.profit_factor >= 1.10
+      AND a.max_drawdown_pct <= 12
+      AND e.peak_concurrent_positions <= c.max_concurrent_positions
+      AND e.peak_exposure_pct <= c.max_concurrent_positions * c.max_position_pct * 100
+      AND e.peak_group_concentration <= 4
+      THEN "REVIEW_REQUIRED_BEFORE_PAPER"
+    ELSE "BACKTEST_ONLY"
+  END AS promotion_status,
+  "V5 permanece fuera de Alpaca. Requiere revision humana, validacion reciente positiva y al menos 100 cierres." AS safety_policy,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM aggregated a
+CROSS JOIN config_values c
+CROSS JOIN exposure_summary e

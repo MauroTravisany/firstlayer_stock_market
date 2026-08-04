@@ -1,0 +1,137 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v5_high_turnover_results",
+  description: "Resultados V5 derivados del benchmark estructural G3 y V2, con hasta ocho candidatos diarios y salidas mas cortas. Solo backtest.",
+  tags: ["trading", "backtest", "v5", "experiment", "daily"],
+  bigquery: { partitionBy: "analysis_date", clusterBy: ["ticker", "trading_group", "trade_status"] },
+  assertions: {
+    nonNull: ["analysis_date", "ticker", "v5_trade_id", "outcome_date"],
+    uniqueKey: ["v5_trade_id"]
+  },
+  dependencies: ["trading_structural_backtest_results", "trading_price_features", "trading_v5_high_turnover_config"]
+}
+
+WITH config_values AS (
+  SELECT * FROM ${ref("trading_v5_high_turnover_config")}
+), base AS (
+  SELECT
+    r.*,
+    c.experiment_id,
+    c.initial_capital_clp,
+    c.max_entries_per_day,
+    c.max_entries_per_group_per_day,
+    c.max_position_pct,
+    CASE WHEN r.asset_type = "CRYPTO" THEN c.crypto_max_holding_days ELSE c.stock_max_holding_days END AS v5_max_holding_days,
+    ROW_NUMBER() OVER (
+      PARTITION BY r.analysis_date
+      ORDER BY r.contextual_setup_score DESC, r.contextual_technical_score DESC, r.ticker
+    ) AS daily_rank,
+    ROW_NUMBER() OVER (
+      PARTITION BY r.analysis_date, r.trading_group
+      ORDER BY r.contextual_setup_score DESC, r.contextual_technical_score DESC, r.ticker
+    ) AS group_daily_rank
+  FROM ${ref("trading_structural_backtest_results")} r
+  CROSS JOIN config_values c
+  WHERE r.strategy_version = "v2"
+    AND r.trade_status != "OPEN"
+), selected_candidates AS (
+  SELECT
+    *,
+    TO_HEX(SHA256(CONCAT(structural_trade_id, "|", experiment_id))) AS v5_trade_id,
+    ROUND(LEAST(initial_capital_clp * max_position_pct, adaptive_position_notional_clp), 0) AS position_notional_clp,
+    adaptive_stop_loss AS stop_loss,
+    adaptive_take_profit_1 AS take_profit
+  FROM base
+  WHERE daily_rank <= max_entries_per_day
+    AND group_daily_rank <= max_entries_per_group_per_day
+), future_candidates AS (
+  SELECT
+    t.v5_trade_id,
+    t.v5_max_holding_days,
+    p.analysis_date AS path_date,
+    p.day_low,
+    p.day_high,
+    p.day_close,
+    CASE
+      WHEN p.day_low <= t.stop_loss THEN "STOP_LOSS"
+      WHEN p.day_high >= t.take_profit THEN "TAKE_PROFIT"
+      ELSE NULL
+    END AS event_type,
+    CASE
+      WHEN p.day_low <= t.stop_loss THEN t.stop_loss
+      WHEN p.day_high >= t.take_profit THEN t.take_profit
+      ELSE NULL
+    END AS event_price,
+    CASE WHEN p.day_low <= t.stop_loss THEN 1 WHEN p.day_high >= t.take_profit THEN 2 ELSE 9 END AS event_priority
+  FROM selected_candidates t
+  JOIN ${ref("trading_price_features")} p
+    ON p.ticker = t.ticker
+   AND p.signal_timestamp > t.signal_timestamp
+   AND p.signal_timestamp <= DATETIME_ADD(t.signal_timestamp, INTERVAL 30 DAY)
+), future_path AS (
+  SELECT * EXCEPT (future_bar_number)
+  FROM (
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY v5_trade_id ORDER BY path_date) AS future_bar_number
+    FROM future_candidates
+  )
+  WHERE future_bar_number <= v5_max_holding_days
+), first_event AS (
+  SELECT
+    v5_trade_id,
+    ARRAY_AGG(IF(event_type IS NOT NULL, STRUCT(path_date, event_type, event_price, event_priority), NULL) IGNORE NULLS ORDER BY path_date, event_priority LIMIT 1)[SAFE_OFFSET(0)] AS first_hit,
+    ARRAY_AGG(STRUCT(path_date, day_close) ORDER BY path_date DESC LIMIT 1)[SAFE_OFFSET(0)] AS latest_seen,
+    COUNT(*) AS future_days_seen
+  FROM future_path
+  GROUP BY v5_trade_id
+), evaluated AS (
+  SELECT
+    t.*,
+    fe.future_days_seen,
+    CASE WHEN fe.first_hit.event_type IS NOT NULL THEN fe.first_hit.path_date ELSE fe.latest_seen.path_date END AS outcome_date,
+    CASE WHEN fe.first_hit.event_type IS NOT NULL THEN fe.first_hit.event_type ELSE "TIME_EXIT" END AS trade_status,
+    CASE WHEN fe.first_hit.event_price IS NOT NULL THEN fe.first_hit.event_price ELSE fe.latest_seen.day_close END AS exit_price
+  FROM selected_candidates t
+  JOIN first_event fe USING (v5_trade_id)
+)
+
+SELECT
+  experiment_id,
+  benchmark_candidate_id,
+  v5_trade_id,
+  structural_trade_id,
+  analysis_date,
+  signal_timestamp,
+  outcome_date,
+  ticker,
+  asset_type,
+  trading_group,
+  sector_profile,
+  cycle_profile,
+  daily_rank,
+  group_daily_rank,
+  contextual_setup_score AS setup_score,
+  contextual_technical_score AS technical_score,
+  trend_score,
+  momentum_score,
+  volume_score,
+  macro_alignment_score,
+  factor_alignment_score,
+  historical_fear_regime,
+  crypto_context_regime,
+  earnings_event_status,
+  theoretical_entry_price,
+  stop_loss,
+  take_profit,
+  v5_max_holding_days,
+  future_days_seen,
+  estimated_roundtrip_cost_pct,
+  position_notional_clp,
+  trade_status,
+  exit_price,
+  ROUND(SAFE_DIVIDE(exit_price - theoretical_entry_price, theoretical_entry_price), 4) AS gross_return_pct,
+  ROUND(SAFE_DIVIDE(exit_price - theoretical_entry_price, theoretical_entry_price) - estimated_roundtrip_cost_pct / 100, 4) AS net_return_pct,
+  ROUND(position_notional_clp * (SAFE_DIVIDE(exit_price - theoretical_entry_price, theoretical_entry_price) - estimated_roundtrip_cost_pct / 100), 0) AS net_pnl_clp,
+  CASE WHEN exit_price > theoretical_entry_price THEN TRUE ELSE FALSE END AS is_win,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM evaluated

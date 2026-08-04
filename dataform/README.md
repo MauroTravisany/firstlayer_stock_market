@@ -89,6 +89,7 @@ Para evitar sumar capital ficticio en operaciones incompatibles, el reporte prin
 - `trading_directional_strategy_backtest`: selecciona una sola posicion LONG a la vez por estrategia y espera su cierre antes de reutilizar capital.
 - `trading_directional_strategy_daily_summary`: curva de capital independiente para v1, v2, v3 y v4. Estas curvas no se suman entre si.
 - `trading_directional_daily_summary`: usa v2 solo como referencia diaria compatible con alertas y muestra la comparativa de las cuatro variantes por separado.
+- `trading_v5_high_turnover_*`: experimento separado sobre el benchmark G3 y V2. Simula hasta ocho cupos concurrentes, 10% maximo por cupo y salidas temporales de 3 dias para cripto o 5 para acciones. Es solo backtest y no es leido por Alpaca.
 
 Los `SHORT_SIMULATED` quedan como diagnostico historico separado: no llegan a Alpaca Paper y no afectan el PnL principal de los largos.
 
