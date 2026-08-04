@@ -2,7 +2,7 @@ config {
   type: "table",
   schema: "acciones_dataset",
   name: "trading_paper_trade_results",
-  description: "Resultado historico de trades simulados, incluyendo costos estimados, stop, take profit y P&L ficticio en CLP.",
+  description: "Resultado historico de trades simulados, incluyendo costos estimados, stop, take profit y P&L ficticio en CLP. max_holding_days se mide en sesiones observables del activo.",
   tags: ["trading", "paper", "daily", "results"],
   bigquery: {
     partitionBy: "analysis_date",
@@ -19,9 +19,10 @@ WITH trades AS (
   FROM ${ref("trading_paper_signals")}
   WHERE paper_signal = "TRADE_LONG"
 ),
-future_path AS (
+future_candidates AS (
   SELECT
     t.paper_trade_id,
+    t.max_holding_days,
     p.analysis_date AS path_date,
     p.day_low,
     p.day_high,
@@ -48,7 +49,18 @@ future_path AS (
   JOIN ${ref("trading_price_features")} p
     ON p.ticker = t.ticker
    AND p.signal_timestamp > t.signal_timestamp
-   AND p.signal_timestamp <= DATETIME_ADD(t.signal_timestamp, INTERVAL t.max_holding_days DAY)
+   -- El limite amplio solo acota el costo de la consulta; el limite real es por sesiones abajo.
+   AND p.signal_timestamp <= DATETIME_ADD(t.signal_timestamp, INTERVAL 135 DAY)
+),
+future_path AS (
+  SELECT * EXCEPT(future_bar_number)
+  FROM (
+    SELECT
+      future_candidates.*,
+      ROW_NUMBER() OVER (PARTITION BY paper_trade_id ORDER BY path_date) AS future_bar_number
+    FROM future_candidates
+  )
+  WHERE future_bar_number <= max_holding_days
 ),
 first_event AS (
   SELECT

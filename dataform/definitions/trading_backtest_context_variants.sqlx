@@ -2,10 +2,11 @@ config {
   type: "table",
   schema: "acciones_dataset",
   name: "trading_backtest_context_variants",
-  description: "Variantes de ponderacion para backtesting contextual. Permite comparar sensibilidad a miedo, tasas proxy, earnings y estado de compania.",
+  description: "Variantes de ponderacion para backtesting contextual. Incluye candidatos auditables del cerebro en modo BACKTEST_ONLY; nunca modifica reglas productivas.",
   tags: ["trading", "paper", "backtest", "context", "daily", "portfolio", "valuation"]
 }
 
+WITH static_variants AS (
 SELECT *
 FROM UNNEST([
   STRUCT(
@@ -60,3 +61,25 @@ FROM UNNEST([
     -0.25, 0.15, 0.45, 0.60, 0.85, 0.50, 0.20, 0.10, 0.20, 0.80
   )
 ])
+)
+
+SELECT * FROM static_variants
+
+UNION ALL
+
+SELECT
+  candidate_id AS variant_id,
+  candidate_label AS variant_name,
+  CONCAT("Candidato generado por cerebro: ", candidate_reason, ". Solo backtesting.") AS variant_description,
+  fear_weight,
+  monetary_weight,
+  earnings_weight,
+  company_lifecycle_weight,
+  quality_weight,
+  valuation_state_weight,
+  political_risk_weight,
+  crypto_cycle_weight,
+  min_trade_score_add,
+  position_size_multiplier
+FROM `stocks-437902.acciones_dataset.trading_brain_weight_candidates`
+WHERE candidate_status = "BACKTEST_ONLY"

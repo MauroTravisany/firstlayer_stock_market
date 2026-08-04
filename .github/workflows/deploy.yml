@@ -3,6 +3,7 @@ name: Deploy Cloud Run service
 on:
   push:
     branches:
+      - main
       - master
 
 jobs:
@@ -155,6 +156,83 @@ jobs:
               --concurrency 1 \
               --max-instances 1 \
               --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},OPENAI_MODEL=gpt-5-mini,ALERT_WEBHOOK_TYPE=auto,TRADING_SUMMARY_TABLE_ID=trading_directional_daily_summary,TRADING_SIGNALS_TABLE_ID=trading_directional_signals,TRADING_RESULTS_TABLE_ID=trading_directional_trade_results,ALPACA_EXECUTIONS_TABLE_ID=trading_alpaca_paper_executions,TRADING_ALERTS_TABLE_ID=trading_alerts_sent,TRADING_FEEDBACK_TABLE_ID=trading_ai_feedback_daily,TRADING_WEEKLY_REVIEW_TABLE_ID=trading_weekly_ai_strategy_review,TRADING_AI_FEEDBACK=true,TRADING_PROMPT_VERSION=paper-trading-feedback-v2"
+
+      - name: Deploy strategy brain in backtest-only mode
+        run: |
+          gcloud run deploy strategybrain \
+              --source ./cloud-functions/strategy_brain \
+              --platform managed \
+              --region us-east1 \
+              --no-allow-unauthenticated \
+              --clear-base-image \
+              --command python \
+              --args main.py \
+              --timeout 900 \
+              --memory 1Gi \
+              --concurrency 1 \
+              --max-instances 1 \
+              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},OPENAI_MODEL=gpt-5-mini"
+
+      - name: Configure strategy brain candidate scheduler
+        run: |
+          SERVICE_URL="$(gcloud run services describe strategybrain --platform managed --region us-east1 --format='value(status.url)')"
+          SERVICE_ACCOUNT="stock-alert-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
+          gcloud run services add-iam-policy-binding strategybrain \
+            --region us-east1 \
+            --member "serviceAccount:${SERVICE_ACCOUNT}" \
+            --role "roles/run.invoker" \
+            --quiet
+          if gcloud scheduler jobs describe strategy-brain-generate --location us-east1 >/dev/null 2>&1; then
+            gcloud scheduler jobs update http strategy-brain-generate \
+              --location us-east1 \
+              --schedule "0 1 * * 6" \
+              --time-zone "America/Santiago" \
+              --uri "${SERVICE_URL}" \
+              --http-method POST \
+              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
+              --oidc-token-audience "${SERVICE_URL}" \
+              --message-body '{"phase":"generate"}' \
+              --attempt-deadline 900s
+          else
+            gcloud scheduler jobs create http strategy-brain-generate \
+              --location us-east1 \
+              --schedule "0 1 * * 6" \
+              --time-zone "America/Santiago" \
+              --uri "${SERVICE_URL}" \
+              --http-method POST \
+              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
+              --oidc-token-audience "${SERVICE_URL}" \
+              --message-body '{"phase":"generate"}' \
+              --attempt-deadline 900s
+          fi
+
+      - name: Configure strategy brain review scheduler
+        run: |
+          SERVICE_URL="$(gcloud run services describe strategybrain --platform managed --region us-east1 --format='value(status.url)')"
+          SERVICE_ACCOUNT="stock-alert-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
+          if gcloud scheduler jobs describe strategy-brain-review --location us-east1 >/dev/null 2>&1; then
+            gcloud scheduler jobs update http strategy-brain-review \
+              --location us-east1 \
+              --schedule "0 13 * * 0" \
+              --time-zone "America/Santiago" \
+              --uri "${SERVICE_URL}" \
+              --http-method POST \
+              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
+              --oidc-token-audience "${SERVICE_URL}" \
+              --message-body '{"phase":"review"}' \
+              --attempt-deadline 900s
+          else
+            gcloud scheduler jobs create http strategy-brain-review \
+              --location us-east1 \
+              --schedule "0 13 * * 0" \
+              --time-zone "America/Santiago" \
+              --uri "${SERVICE_URL}" \
+              --http-method POST \
+              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
+              --oidc-token-audience "${SERVICE_URL}" \
+              --message-body '{"phase":"review"}' \
+              --attempt-deadline 900s
+          fi
 
       - name: Deploy Alpaca paper trade executor to Cloud Run
         run: |
