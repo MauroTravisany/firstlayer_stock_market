@@ -3,8 +3,8 @@ config {
   schema: "acciones_dataset",
   name: "trading_structural_walk_forward_validation",
   description: "Robustez temporal del experimento estructural en tres ventanas independientes. No reoptimiza sobre la ventana evaluada.",
-  tags: ["trading", "backtest", "walk_forward", "audit", "daily"],
-  dependencies: ["trading_structural_backtest_results"]
+  tags: ["trading", "backtest", "walk_forward", "audit", "experiment", "daily"],
+  dependencies: ["trading_structural_backtest_portfolio"]
 }
 
 WITH closed AS (
@@ -15,8 +15,7 @@ WITH closed AS (
       WHEN analysis_date BETWEEN DATE "2023-01-01" AND DATE "2024-12-31" THEN "WF2_2023_2024"
       WHEN analysis_date >= DATE "2025-01-01" THEN "WF3_2025_PLUS"
     END AS validation_fold
-  FROM ${ref("trading_structural_backtest_results")}
-  WHERE trade_status != "OPEN" AND outcome_date IS NOT NULL
+  FROM ${ref("trading_structural_backtest_portfolio")}
 ),
 folds AS (
   SELECT

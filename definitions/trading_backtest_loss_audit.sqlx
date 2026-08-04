@@ -3,13 +3,12 @@ config {
   schema: "acciones_dataset",
   name: "trading_backtest_loss_audit",
   description: "Auditoria de perdidas: identifica activos, estrategia, contexto y tipo de salida que deterioran el backtest estructural.",
-  tags: ["trading", "backtest", "audit", "daily"],
-  dependencies: ["trading_structural_backtest_results"]
+  tags: ["trading", "backtest", "audit", "experiment", "daily"],
+  dependencies: ["trading_structural_backtest_portfolio"]
 }
 
 WITH closed AS (
-  SELECT * FROM ${ref("trading_structural_backtest_results")}
-  WHERE trade_status != "OPEN" AND outcome_date IS NOT NULL
+  SELECT * FROM ${ref("trading_structural_backtest_portfolio")}
 )
 SELECT
   ticker, asset_type, trading_group, strategy_version, result_label, historical_fear_regime, monetary_regime_proxy,
