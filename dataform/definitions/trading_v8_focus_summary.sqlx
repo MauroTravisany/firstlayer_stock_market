@@ -38,8 +38,6 @@ WITH period_trades AS (
       ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
     ) AS running_peak_clp
   FROM equity_curve
-)
-
 ), aggregated AS (
   SELECT
     evaluation_period, focus_profile,
