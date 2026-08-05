@@ -2,7 +2,7 @@ config {
   type: "table",
   schema: "acciones_dataset",
   name: "trading_v6_profile_backtest",
-  description: "V6: cartera secuencial aislada que usa la logica V2 solo en perfiles seleccionados antes de 2025. No alimenta Paper Trading.",
+  description: "V6: cartera aislada por lotes sin solapamiento que usa la logica V2 solo en perfiles seleccionados antes de 2025. No alimenta Paper Trading.",
   tags: ["trading", "backtest", "v6", "experiment", "daily"],
   bigquery: { partitionBy: "analysis_date", clusterBy: ["asset_rule_profile", "ticker"] },
   assertions: { nonNull: ["analysis_date", "outcome_date", "v6_trade_id", "asset_rule_profile"], uniqueKey: ["v6_trade_id"] },
@@ -11,7 +11,7 @@ config {
 
 -- V6 reuses V2's price, stop and cost model. Its only new hypothesis is a
 -- profile gate selected before the out-of-sample period begins.
-WITH RECURSIVE eligible AS (
+WITH eligible AS (
   SELECT
     r.*,
     CASE
@@ -47,33 +47,26 @@ WITH RECURSIVE eligible AS (
   SELECT * EXCEPT (daily_rank)
   FROM candidates
   WHERE daily_rank = 1
-), seed AS (
+), batched_candidates AS (
   SELECT
     *,
-    ROW_NUMBER() OVER (ORDER BY analysis_date, ticker) AS seed_rank
+    DIV(DATE_DIFF(analysis_date, DATE "2019-01-01", DAY), 16) AS batch_number,
+    MOD(DATE_DIFF(analysis_date, DATE "2019-01-01", DAY), 16) AS batch_day_offset
   FROM daily_candidates
-), sequential_trades AS (
-  (
-    SELECT * EXCEPT (seed_rank)
-    FROM seed
-    WHERE seed_rank = 1
-  )
-  UNION ALL
-  (
-    SELECT next_trade.*
-    FROM sequential_trades previous_trade
-    JOIN daily_candidates next_trade
-      ON next_trade.analysis_date > previous_trade.outcome_date
-    LEFT JOIN daily_candidates earlier_trade
-      ON earlier_trade.analysis_date > previous_trade.outcome_date
-     AND earlier_trade.analysis_date < next_trade.analysis_date
-    WHERE earlier_trade.v6_trade_id IS NULL
-  )
+), batch_entry_days AS (
+  SELECT batch_number, MIN(analysis_date) AS batch_start_date
+  FROM batched_candidates
+  WHERE batch_day_offset < 8
+  GROUP BY batch_number
 )
 
 SELECT
-  *,
-  "V6_V2_PROFILE_GATE_SEQUENTIAL" AS portfolio_model,
+  c.*,
+  b.batch_start_date,
+  "V6_V2_PROFILE_GATE_BATCHED" AS portfolio_model,
   "V2 rules plus pre-2025 profile selection; 2025+ is out-of-sample only." AS experiment_policy,
   CURRENT_TIMESTAMP() AS backtest_calculated_at
-FROM sequential_trades
+FROM batch_entry_days b
+JOIN batched_candidates c
+  ON c.batch_number = b.batch_number
+ AND c.analysis_date = b.batch_start_date
