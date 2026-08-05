@@ -1,0 +1,61 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v8_focus_summary",
+  description: "Auditoria V8 por periodo y perfil. La prueba 2025+ decide si merece revision; no hay promocion automatica.",
+  tags: ["trading", "backtest", "v8", "experiment", "audit", "daily"],
+  assertions: { nonNull: ["evaluation_period", "focus_profile"], uniqueKey: ["evaluation_period", "focus_profile"] },
+  dependencies: ["trading_v8_focus_backtest", "trading_v8_focus_config"]
+}
+
+WITH period_trades AS (
+  SELECT "TRAINING_TO_2024" AS evaluation_period, "ALL_FOCUSED" AS focus_profile, p.* EXCEPT (focus_profile)
+  FROM ${ref("trading_v8_focus_backtest")} p WHERE analysis_date < DATE "2025-01-01"
+  UNION ALL
+  SELECT "TRAINING_TO_2024", p.focus_profile, p.* EXCEPT (focus_profile)
+  FROM ${ref("trading_v8_focus_backtest")} p WHERE analysis_date < DATE "2025-01-01"
+  UNION ALL
+  SELECT "OUT_OF_SAMPLE_2025_ONWARD", "ALL_FOCUSED", p.* EXCEPT (focus_profile)
+  FROM ${ref("trading_v8_focus_backtest")} p WHERE analysis_date >= DATE "2025-01-01"
+  UNION ALL
+  SELECT "OUT_OF_SAMPLE_2025_ONWARD", p.focus_profile, p.* EXCEPT (focus_profile)
+  FROM ${ref("trading_v8_focus_backtest")} p WHERE analysis_date >= DATE "2025-01-01"
+), equity_curve AS (
+  SELECT
+    *,
+    initial_capital_clp + SUM(net_pnl_clp) OVER (
+      PARTITION BY evaluation_period, focus_profile
+      ORDER BY outcome_date, analysis_date, ticker
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS equity_clp
+  FROM period_trades
+), equity_with_peak AS (
+  SELECT
+    *,
+    MAX(equity_clp) OVER (
+      PARTITION BY evaluation_period, focus_profile
+      ORDER BY outcome_date, analysis_date, ticker
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS running_peak_clp
+  FROM equity_curve
+)
+
+SELECT
+  evaluation_period, focus_profile,
+  COUNT(*) AS closed_trades,
+  COUNTIF(is_win) AS wins,
+  COUNTIF(NOT is_win) AS losses,
+  ROUND(SAFE_DIVIDE(COUNTIF(is_win), COUNT(*)) * 100, 2) AS win_rate_pct,
+  ROUND(SUM(net_pnl_clp), 0) AS net_pnl_clp,
+  ROUND(SAFE_DIVIDE(SUM(IF(net_pnl_clp > 0, net_pnl_clp, 0)), ABS(SUM(IF(net_pnl_clp < 0, net_pnl_clp, 0)))), 3) AS profit_factor,
+  ROUND(MAX(running_peak_clp - equity_clp), 0) AS max_drawdown_clp,
+  ROUND(MAX(SAFE_DIVIDE(running_peak_clp - equity_clp, running_peak_clp)) * 100, 2) AS max_drawdown_pct,
+  ROUND(AVG(position_size_pct) * 100, 2) AS position_size_pct,
+  CASE
+    WHEN evaluation_period = "OUT_OF_SAMPLE_2025_ONWARD" AND COUNT(*) >= 15 AND SUM(net_pnl_clp) > 0 AND SAFE_DIVIDE(SUM(IF(net_pnl_clp > 0, net_pnl_clp, 0)), ABS(SUM(IF(net_pnl_clp < 0, net_pnl_clp, 0)))) >= 1.10 THEN "REVIEW_REQUIRED_BEFORE_ANY_PROMOTION"
+    ELSE "BACKTEST_ONLY"
+  END AS promotion_status,
+  "V8 aumenta capacidad a dos posiciones pequeñas, pero mantiene las reglas V2 y no opera fuera de AAPL/META." AS safety_policy,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM equity_with_peak
+GROUP BY evaluation_period, focus_profile

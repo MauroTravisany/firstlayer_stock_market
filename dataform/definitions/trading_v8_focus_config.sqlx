@@ -1,0 +1,19 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v8_focus_config",
+  description: "Configuracion auditable V8: V2 enfocado en los perfiles seleccionados con datos hasta 2024 y dos posiciones pequenas por lote.",
+  tags: ["trading", "backtest", "v8", "experiment", "daily"]
+}
+
+SELECT
+  "v8-v2-focus-two-slot" AS experiment_id,
+  "v2" AS base_strategy_version,
+  10000000.0 AS initial_capital_clp,
+  0.09 AS position_size_pct,
+  2 AS max_positions_per_batch,
+  16 AS batch_cycle_days,
+  8 AS entry_window_days,
+  DATE "2025-01-01" AS out_of_sample_start,
+  TRUE AS backtest_only,
+  "AAPL y META fueron los perfiles V2 seleccionados con datos hasta 2024. COIN se excluye por muestra insuficiente; semiconductores y cripto se excluyen por deterioro reciente." AS selection_policy
