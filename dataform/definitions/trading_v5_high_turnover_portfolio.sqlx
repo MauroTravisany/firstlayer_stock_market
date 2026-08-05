@@ -2,7 +2,7 @@ config {
   type: "table",
   schema: "acciones_dataset",
   name: "trading_v5_high_turnover_portfolio",
-  description: "Cartera V5 de hasta ocho posiciones concurrentes por lote. Cada lote espera un ciclo seguro de ocho dias; no duplica capital.",
+  description: "Cartera V5 de hasta ocho posiciones concurrentes por lote. Los ciclos de 16 dias evitan solapamientos y no duplican capital.",
   tags: ["trading", "backtest", "v5", "experiment", "daily"],
   bigquery: { partitionBy: "analysis_date", clusterBy: ["portfolio_slot", "ticker"] },
   assertions: {
@@ -12,52 +12,34 @@ config {
   dependencies: ["trading_v5_high_turnover_results", "trading_v5_high_turnover_config"]
 }
 
--- A batch admits the daily top-ranked candidates together. The eight-calendar-day
--- cycle safely contains the maximum five trading-day stock holding period and
--- prevents the recursive planner from producing unbounded candidate combinations.
-WITH RECURSIVE candidates AS (
+-- A fixed 16-day batch is deliberately longer than the maximum five-trading-day
+-- holding period. Even if the first available signal is late in a batch, the next
+-- batch begins at least nine calendar days later, so positions cannot overlap.
+WITH candidates AS (
   SELECT
     r.*,
-    c.initial_capital_clp
+    c.initial_capital_clp,
+    c.batch_cycle_days,
+    DIV(DATE_DIFF(r.analysis_date, DATE "2019-01-01", DAY), c.batch_cycle_days) AS batch_number,
+    MOD(DATE_DIFF(r.analysis_date, DATE "2019-01-01", DAY), c.batch_cycle_days) AS batch_day_offset
   FROM ${ref("trading_v5_high_turnover_results")} r
   CROSS JOIN ${ref("trading_v5_high_turnover_config")} c
 ), daily_batches AS (
   SELECT
-    analysis_date AS batch_start_date,
-    MAX(outcome_date) AS latest_outcome_date
+    batch_number,
+    MIN(analysis_date) AS batch_start_date
   FROM candidates
-  GROUP BY batch_start_date
-), scheduled_batches AS (
-  (
-    SELECT
-      1 AS batch_number,
-      batch_start_date,
-      latest_outcome_date
-    FROM daily_batches
-    QUALIFY ROW_NUMBER() OVER (ORDER BY batch_start_date) = 1
-  )
-  UNION ALL
-  (
-    SELECT
-      previous_batch.batch_number + 1,
-      next_batch.batch_start_date,
-      next_batch.latest_outcome_date
-    FROM scheduled_batches previous_batch
-    JOIN daily_batches next_batch
-      ON next_batch.batch_start_date >= DATE_ADD(previous_batch.batch_start_date, INTERVAL 8 DAY)
-    QUALIFY ROW_NUMBER() OVER (
-      PARTITION BY previous_batch.batch_number
-      ORDER BY next_batch.batch_start_date
-    ) = 1
-  )
+  WHERE batch_day_offset < 8
+  GROUP BY batch_number
 )
 
 SELECT
   c.*,
   c.daily_rank AS portfolio_slot,
-  s.batch_number,
+  d.batch_start_date,
   "CONCURRENT_EIGHT_BATCH" AS portfolio_model,
   CURRENT_TIMESTAMP() AS portfolio_calculated_at
-FROM scheduled_batches s
+FROM daily_batches d
 JOIN candidates c
-  ON c.analysis_date = s.batch_start_date
+  ON c.batch_number = d.batch_number
+ AND c.analysis_date = d.batch_start_date
