@@ -30,7 +30,8 @@ WITH profiled AS (
     c.crypto_flow_proxy_score,
     c.eth_vs_btc_20d,
     c.proxy_limitations,
-    w.* EXCEPT (asset_rule_profile),
+    w.* EXCEPT (asset_rule_profile, rule_rationale),
+    w.rule_rationale AS v7_rule_rationale,
     ROUND(
       p.trend_score * w.trend_weight +
       p.momentum_score * w.momentum_weight +
@@ -108,7 +109,7 @@ WITH profiled AS (
 
 SELECT
   v7_trade_id, structural_trade_id, benchmark_candidate_id, analysis_date, signal_timestamp, outcome_date,
-  ticker, asset_type, trading_group, sector_profile, cycle_profile, asset_rule_profile, rule_rationale,
+  ticker, asset_type, trading_group, sector_profile, cycle_profile, asset_rule_profile, v7_rule_rationale,
   v7_setup_score, trend_score, momentum_score, volume_score, volatility_score, regime_score,
   semiconductor_trend_breadth, semiconductor_volume_breadth, semiconductor_cycle_score,
   crypto_cycle_state, crypto_flow_proxy_score, eth_vs_btc_20d, proxy_limitations,
