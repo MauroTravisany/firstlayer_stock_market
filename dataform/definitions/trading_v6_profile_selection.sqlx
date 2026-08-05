@@ -1,0 +1,47 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v6_profile_selection",
+  description: "Seleccion V6 basada solamente en resultados V2 hasta 2024. Evita usar 2025+ para decidir perfiles de la prueba fuera de muestra.",
+  tags: ["trading", "backtest", "v6", "experiment", "daily"],
+  assertions: { nonNull: ["asset_rule_profile", "selection_status"], uniqueKey: ["asset_rule_profile"] },
+  dependencies: ["trading_directional_strategy_backtest"]
+}
+
+WITH training_trades AS (
+  SELECT
+    CASE
+      WHEN asset_type = "CRYPTO" AND cycle_profile LIKE "%BTC%" THEN "CRYPTO_BTC"
+      WHEN asset_type = "CRYPTO" THEN "CRYPTO_ETH"
+      WHEN trading_group = "crypto_sensitive_stock" THEN "CRYPTO_LINKED_EQUITY"
+      WHEN trading_group = "high_beta_stock" THEN "SEMICONDUCTOR_AI"
+      WHEN sector_profile = "Digital advertising/AI" THEN "DIGITAL_ADVERTISING_AI"
+      WHEN trading_group = "mega_cap_stock" THEN "TECH_MEGACAP"
+      ELSE "DEFENSIVE_OR_ETF"
+    END AS asset_rule_profile,
+    net_pnl_clp,
+    is_win
+  FROM ${ref("trading_directional_strategy_backtest")}
+  WHERE strategy_version = "v2"
+    AND analysis_date < DATE "2025-01-01"
+), aggregated AS (
+  SELECT
+    asset_rule_profile,
+    COUNT(*) AS training_closed_trades,
+    ROUND(SUM(net_pnl_clp), 0) AS training_net_pnl_clp,
+    ROUND(SAFE_DIVIDE(SUM(IF(net_pnl_clp > 0, net_pnl_clp, 0)), ABS(SUM(IF(net_pnl_clp < 0, net_pnl_clp, 0)))), 3) AS training_profit_factor,
+    ROUND(SAFE_DIVIDE(COUNTIF(is_win), COUNT(*)) * 100, 2) AS training_win_rate_pct
+  FROM training_trades
+  GROUP BY asset_rule_profile
+)
+
+SELECT
+  *,
+  CASE
+    WHEN training_closed_trades >= 10 AND training_net_pnl_clp > 0 AND training_profit_factor >= 1.10 THEN "SELECTED_FOR_V6"
+    ELSE "EXCLUDED_FROM_V6"
+  END AS selection_status,
+  "Regla bloqueada con datos hasta 2024; 2025+ se reserva para validacion fuera de muestra." AS selection_policy,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM aggregated
+
