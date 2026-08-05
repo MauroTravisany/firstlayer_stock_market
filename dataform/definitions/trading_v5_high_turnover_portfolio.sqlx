@@ -2,7 +2,7 @@ config {
   type: "table",
   schema: "acciones_dataset",
   name: "trading_v5_high_turnover_portfolio",
-  description: "Cartera V5 de ocho cupos concurrentes. Cada cupo espera el cierre de su propia posicion antes de reutilizarse; no duplica capital.",
+  description: "Cartera V5 de hasta ocho posiciones concurrentes por lote. Cada lote espera un ciclo seguro de ocho dias; no duplica capital.",
   tags: ["trading", "backtest", "v5", "experiment", "daily"],
   bigquery: { partitionBy: "analysis_date", clusterBy: ["portfolio_slot", "ticker"] },
   assertions: {
@@ -12,43 +12,52 @@ config {
   dependencies: ["trading_v5_high_turnover_results", "trading_v5_high_turnover_config"]
 }
 
--- A rank slot is a deterministic capital bucket. It permits up to eight concurrent
--- positions without treating every overlapping historical signal as fully funded.
+-- A batch admits the daily top-ranked candidates together. The eight-calendar-day
+-- cycle safely contains the maximum five trading-day stock holding period and
+-- prevents the recursive planner from producing unbounded candidate combinations.
 WITH RECURSIVE candidates AS (
   SELECT
     r.*,
-    r.daily_rank AS portfolio_slot,
     c.initial_capital_clp
   FROM ${ref("trading_v5_high_turnover_results")} r
   CROSS JOIN ${ref("trading_v5_high_turnover_config")} c
-), seed AS (
+), daily_batches AS (
   SELECT
-    *,
-    ROW_NUMBER() OVER (PARTITION BY portfolio_slot ORDER BY analysis_date, ticker) AS seed_rank
+    analysis_date AS batch_start_date,
+    MAX(outcome_date) AS latest_outcome_date
   FROM candidates
-), selected_trades AS (
+  GROUP BY batch_start_date
+), scheduled_batches AS (
   (
-    SELECT * EXCEPT (seed_rank)
-    FROM seed
-    WHERE seed_rank = 1
+    SELECT
+      1 AS batch_number,
+      batch_start_date,
+      latest_outcome_date
+    FROM daily_batches
+    QUALIFY ROW_NUMBER() OVER (ORDER BY batch_start_date) = 1
   )
   UNION ALL
   (
-    SELECT next_trade.*
-    FROM selected_trades previous_trade
-    JOIN candidates next_trade
-      ON next_trade.portfolio_slot = previous_trade.portfolio_slot
-     AND next_trade.analysis_date > previous_trade.outcome_date
-    LEFT JOIN candidates earlier_trade
-      ON earlier_trade.portfolio_slot = previous_trade.portfolio_slot
-     AND earlier_trade.analysis_date > previous_trade.outcome_date
-     AND earlier_trade.analysis_date < next_trade.analysis_date
-    WHERE earlier_trade.v5_trade_id IS NULL
+    SELECT
+      previous_batch.batch_number + 1,
+      next_batch.batch_start_date,
+      next_batch.latest_outcome_date
+    FROM scheduled_batches previous_batch
+    JOIN daily_batches next_batch
+      ON next_batch.batch_start_date >= DATE_ADD(previous_batch.batch_start_date, INTERVAL 8 DAY)
+    QUALIFY ROW_NUMBER() OVER (
+      PARTITION BY previous_batch.batch_number
+      ORDER BY next_batch.batch_start_date
+    ) = 1
   )
 )
 
 SELECT
-  *,
-  "CONCURRENT_EIGHT_SLOT" AS portfolio_model,
+  c.*,
+  c.daily_rank AS portfolio_slot,
+  s.batch_number,
+  "CONCURRENT_EIGHT_BATCH" AS portfolio_model,
   CURRENT_TIMESTAMP() AS portfolio_calculated_at
-FROM selected_trades
+FROM scheduled_batches s
+JOIN candidates c
+  ON c.analysis_date = s.batch_start_date
