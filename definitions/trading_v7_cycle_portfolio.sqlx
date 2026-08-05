@@ -1,0 +1,39 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v7_cycle_portfolio",
+  description: "Cartera V7 en lotes de 16 dias: hasta una posicion por perfil y lote, sin sumar senales superpuestas como si fueran capital independiente.",
+  tags: ["trading", "backtest", "v7", "experiment", "daily"],
+  bigquery: { partitionBy: "analysis_date", clusterBy: ["asset_rule_profile", "ticker"] },
+  assertions: { nonNull: ["v7_trade_id", "asset_rule_profile", "outcome_date"], uniqueKey: ["v7_trade_id"] },
+  dependencies: ["trading_v7_cycle_results"]
+}
+
+WITH candidates AS (
+  SELECT
+    r.*,
+    DIV(DATE_DIFF(analysis_date, DATE "2019-01-01", DAY), 16) AS batch_number,
+    MOD(DATE_DIFF(analysis_date, DATE "2019-01-01", DAY), 16) AS batch_day_offset
+  FROM ${ref("trading_v7_cycle_results")} r
+  WHERE trade_status != "OPEN" AND outcome_date IS NOT NULL
+), batch_entry_days AS (
+  SELECT batch_number, MIN(analysis_date) AS batch_start_date
+  FROM candidates
+  WHERE batch_day_offset < 8
+  GROUP BY batch_number
+), ranked AS (
+  SELECT
+    c.*,
+    ROW_NUMBER() OVER (PARTITION BY c.batch_number, c.asset_rule_profile ORDER BY c.v7_setup_score DESC, c.ticker) AS profile_rank
+  FROM candidates c
+  JOIN batch_entry_days b
+    ON b.batch_number = c.batch_number
+   AND b.batch_start_date = c.analysis_date
+)
+
+SELECT
+  *,
+  "V7_PROFILED_TWO_SLOT_BATCHED" AS portfolio_model,
+  CURRENT_TIMESTAMP() AS portfolio_calculated_at
+FROM ranked
+WHERE profile_rank = 1

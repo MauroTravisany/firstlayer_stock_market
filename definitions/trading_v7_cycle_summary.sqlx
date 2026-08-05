@@ -1,0 +1,45 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v7_cycle_summary",
+  description: "Auditoria V7 por perfil y periodo. Solo permite revision si supera prueba fuera de muestra; nunca promociona por si sola a Paper Trading.",
+  tags: ["trading", "backtest", "v7", "experiment", "audit", "daily"],
+  assertions: { nonNull: ["evaluation_period", "asset_rule_profile"], uniqueKey: ["evaluation_period", "asset_rule_profile"] },
+  dependencies: ["trading_v7_cycle_portfolio"]
+}
+
+WITH period_trades AS (
+  SELECT "TRAINING_TO_2024" AS evaluation_period, "ALL_V7_PROFILES" AS asset_rule_profile, p.* EXCEPT (asset_rule_profile)
+  FROM ${ref("trading_v7_cycle_portfolio")} p WHERE analysis_date < DATE "2025-01-01"
+  UNION ALL
+  SELECT "TRAINING_TO_2024", p.asset_rule_profile, p.* EXCEPT (asset_rule_profile)
+  FROM ${ref("trading_v7_cycle_portfolio")} p WHERE analysis_date < DATE "2025-01-01"
+  UNION ALL
+  SELECT "OUT_OF_SAMPLE_2025_ONWARD", "ALL_V7_PROFILES", p.* EXCEPT (asset_rule_profile)
+  FROM ${ref("trading_v7_cycle_portfolio")} p WHERE analysis_date >= DATE "2025-01-01"
+  UNION ALL
+  SELECT "OUT_OF_SAMPLE_2025_ONWARD", p.asset_rule_profile, p.* EXCEPT (asset_rule_profile)
+  FROM ${ref("trading_v7_cycle_portfolio")} p WHERE analysis_date >= DATE "2025-01-01"
+), aggregated AS (
+  SELECT
+    evaluation_period, asset_rule_profile,
+    COUNT(*) AS closed_trades,
+    COUNTIF(is_win) AS wins,
+    COUNTIF(NOT is_win) AS losses,
+    ROUND(SAFE_DIVIDE(COUNTIF(is_win), COUNT(*)) * 100, 2) AS win_rate_pct,
+    ROUND(SUM(net_pnl_clp), 0) AS net_pnl_clp,
+    ROUND(SAFE_DIVIDE(SUM(IF(net_pnl_clp > 0, net_pnl_clp, 0)), ABS(SUM(IF(net_pnl_clp < 0, net_pnl_clp, 0)))), 3) AS profit_factor,
+    ROUND(AVG(future_days_seen), 2) AS avg_holding_days
+  FROM period_trades
+  GROUP BY evaluation_period, asset_rule_profile
+)
+
+SELECT
+  *,
+  CASE
+    WHEN evaluation_period = "OUT_OF_SAMPLE_2025_ONWARD" AND closed_trades >= 20 AND net_pnl_clp > 0 AND profit_factor >= 1.10 THEN "REVIEW_REQUIRED_BEFORE_ANY_PROMOTION"
+    ELSE "BACKTEST_ONLY"
+  END AS promotion_status,
+  "V7 usa proxies transparentes de flujo y ciclo. Debe superar muestra 2025+ antes de considerar cualquier cambio operativo." AS safety_policy,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM aggregated

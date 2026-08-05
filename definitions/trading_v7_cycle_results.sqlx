@@ -1,0 +1,124 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v7_cycle_results",
+  description: "Resultados V7 para semiconductores, BTC y ETH usando ciclos y ponderaciones especificas. Experimento aislado, sin ejecucion real ni Paper Trading.",
+  tags: ["trading", "backtest", "v7", "experiment", "daily"],
+  bigquery: { partitionBy: "analysis_date", clusterBy: ["asset_rule_profile", "ticker", "trade_status"] },
+  assertions: { nonNull: ["analysis_date", "ticker", "v7_trade_id", "asset_rule_profile"], uniqueKey: ["v7_trade_id"] },
+  dependencies: ["trading_structural_backtest_results", "trading_v7_cycle_context", "trading_v7_cycle_weights", "trading_price_features"]
+}
+
+WITH profiled AS (
+  SELECT
+    r.*,
+    CASE
+      WHEN r.asset_type = "CRYPTO" AND r.cycle_profile LIKE "%BTC%" THEN "CRYPTO_BTC"
+      WHEN r.asset_type = "CRYPTO" THEN "CRYPTO_ETH"
+      WHEN r.trading_group = "high_beta_stock" THEN "SEMICONDUCTOR_AI"
+    END AS asset_rule_profile
+  FROM ${ref("trading_structural_backtest_results")} r
+  WHERE r.strategy_version = "v2"
+    AND r.trade_status != "OPEN"
+), scored AS (
+  SELECT
+    p.*,
+    c.semiconductor_trend_breadth,
+    c.semiconductor_volume_breadth,
+    c.semiconductor_cycle_score,
+    c.crypto_cycle_state,
+    c.crypto_flow_proxy_score,
+    c.eth_vs_btc_20d,
+    c.proxy_limitations,
+    w.* EXCEPT (asset_rule_profile),
+    ROUND(
+      p.trend_score * w.trend_weight +
+      p.momentum_score * w.momentum_weight +
+      p.volume_score * w.volume_weight +
+      p.volatility_score * w.volatility_weight +
+      p.regime_score * w.regime_weight +
+      p.macro_alignment_score * w.macro_weight +
+      p.factor_alignment_score * w.factor_weight +
+      p.earnings_event_score * w.earnings_weight +
+      CASE WHEN p.trading_group = "high_beta_stock" THEN c.semiconductor_cycle_score * w.cycle_weight ELSE c.crypto_flow_proxy_score * w.cycle_weight END,
+      2
+    ) AS v7_setup_score
+  FROM profiled p
+  JOIN ${ref("trading_v7_cycle_context")} c USING (analysis_date)
+  JOIN ${ref("trading_v7_cycle_weights")} w USING (asset_rule_profile)
+), qualified AS (
+  SELECT
+    *,
+    CASE
+      WHEN asset_rule_profile = "SEMICONDUCTOR_AI" THEN semiconductor_cycle_score >= min_cycle_score
+      WHEN asset_rule_profile = "CRYPTO_BTC" THEN crypto_cycle_state = "BTC_ACCUMULATION" AND crypto_flow_proxy_score >= min_cycle_score
+      WHEN asset_rule_profile = "CRYPTO_ETH" THEN crypto_cycle_state = "ETH_ROTATION" AND crypto_flow_proxy_score >= min_cycle_score
+      ELSE FALSE
+    END AS cycle_filters_pass,
+    GREATEST(SAFE_DIVIDE(theoretical_entry_price - adaptive_stop_loss, theoretical_entry_price) * stop_distance_multiplier, IF(asset_type = "CRYPTO", 0.04, 0.025)) AS v7_stop_distance
+  FROM scored
+), prepared_trades AS (
+  SELECT
+    *,
+    TO_HEX(SHA256(CONCAT(structural_trade_id, "|v7-cycle"))) AS v7_trade_id,
+    ROUND(theoretical_entry_price * (1 - v7_stop_distance), 4) AS stop_loss,
+    ROUND(theoretical_entry_price * (1 + v7_stop_distance * take_profit_r + estimated_roundtrip_cost_pct / 100), 4) AS take_profit,
+    ROUND(LEAST(10000000.0 * max_position_pct, adaptive_position_notional_clp), 0) AS position_notional_clp
+  FROM qualified
+  WHERE v7_setup_score >= min_v7_score
+    AND cycle_filters_pass
+    AND macro_alignment_score >= -1.0
+    AND NOT (historical_fear_regime = "EXTREME_FEAR" AND factor_alignment_score < 0)
+    AND NOT (earnings_event_status = "EARNINGS_RISK" AND earnings_event_score < 0)
+), future_candidates AS (
+  SELECT
+    t.v7_trade_id, t.max_holding_days, p.analysis_date AS path_date, p.day_low, p.day_high, p.day_close,
+    CASE WHEN p.day_low <= t.stop_loss THEN "STOP_LOSS" WHEN p.day_high >= t.take_profit THEN "TAKE_PROFIT" END AS event_type,
+    CASE WHEN p.day_low <= t.stop_loss THEN t.stop_loss WHEN p.day_high >= t.take_profit THEN t.take_profit END AS event_price,
+    CASE WHEN p.day_low <= t.stop_loss THEN 1 WHEN p.day_high >= t.take_profit THEN 2 ELSE 9 END AS event_priority
+  FROM prepared_trades t
+  JOIN ${ref("trading_price_features")} p
+    ON p.ticker = t.ticker
+   AND p.signal_timestamp > t.signal_timestamp
+   AND p.signal_timestamp <= DATETIME_ADD(t.signal_timestamp, INTERVAL 30 DAY)
+), future_path AS (
+  SELECT * EXCEPT (future_bar_number)
+  FROM (
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY v7_trade_id ORDER BY path_date) AS future_bar_number
+    FROM future_candidates
+  )
+  WHERE future_bar_number <= max_holding_days
+), first_event AS (
+  SELECT
+    v7_trade_id,
+    ARRAY_AGG(IF(event_type IS NOT NULL, STRUCT(path_date, event_type, event_price, event_priority), NULL) IGNORE NULLS ORDER BY path_date, event_priority LIMIT 1)[SAFE_OFFSET(0)] AS first_hit,
+    ARRAY_AGG(STRUCT(path_date, day_close) ORDER BY path_date DESC LIMIT 1)[SAFE_OFFSET(0)] AS latest_seen,
+    COUNT(*) AS future_days_seen
+  FROM future_path
+  GROUP BY v7_trade_id
+), evaluated AS (
+  SELECT
+    t.*, fe.future_days_seen,
+    CASE WHEN fe.first_hit.event_type IS NOT NULL THEN fe.first_hit.path_date WHEN fe.future_days_seen >= t.max_holding_days THEN fe.latest_seen.path_date ELSE NULL END AS outcome_date,
+    CASE WHEN fe.first_hit.event_type IS NOT NULL THEN fe.first_hit.event_type WHEN fe.future_days_seen >= t.max_holding_days THEN "TIME_EXIT" ELSE "OPEN" END AS trade_status,
+    CASE WHEN fe.first_hit.event_price IS NOT NULL THEN fe.first_hit.event_price WHEN fe.future_days_seen >= t.max_holding_days THEN fe.latest_seen.day_close ELSE NULL END AS exit_price
+  FROM prepared_trades t
+  LEFT JOIN first_event fe USING (v7_trade_id)
+)
+
+SELECT
+  v7_trade_id, structural_trade_id, benchmark_candidate_id, analysis_date, signal_timestamp, outcome_date,
+  ticker, asset_type, trading_group, sector_profile, cycle_profile, asset_rule_profile, rule_rationale,
+  v7_setup_score, trend_score, momentum_score, volume_score, volatility_score, regime_score,
+  semiconductor_trend_breadth, semiconductor_volume_breadth, semiconductor_cycle_score,
+  crypto_cycle_state, crypto_flow_proxy_score, eth_vs_btc_20d, proxy_limitations,
+  trend_weight, momentum_weight, volume_weight, volatility_weight, regime_weight, macro_weight, factor_weight, earnings_weight, cycle_weight,
+  min_v7_score, min_cycle_score, theoretical_entry_price, stop_loss, take_profit, v7_stop_distance, max_holding_days,
+  estimated_roundtrip_cost_pct, position_notional_clp, future_days_seen, trade_status, exit_price,
+  ROUND(SAFE_DIVIDE(exit_price - theoretical_entry_price, theoretical_entry_price), 4) AS gross_return_pct,
+  ROUND(SAFE_DIVIDE(exit_price - theoretical_entry_price, theoretical_entry_price) - estimated_roundtrip_cost_pct / 100, 4) AS net_return_pct,
+  ROUND(position_notional_clp * (SAFE_DIVIDE(exit_price - theoretical_entry_price, theoretical_entry_price) - estimated_roundtrip_cost_pct / 100), 0) AS net_pnl_clp,
+  CASE WHEN trade_status = "TAKE_PROFIT" THEN TRUE WHEN trade_status = "TIME_EXIT" AND exit_price > theoretical_entry_price THEN TRUE ELSE FALSE END AS is_win,
+  CONCAT("V7 formula: trend*", CAST(trend_weight AS STRING), "+momentum*", CAST(momentum_weight AS STRING), "+volume*", CAST(volume_weight AS STRING), "+cycle*", CAST(cycle_weight AS STRING)) AS formula_expression,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM evaluated
