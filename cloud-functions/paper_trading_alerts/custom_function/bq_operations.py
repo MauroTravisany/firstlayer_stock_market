@@ -1,6 +1,7 @@
 import json
 
 from google.cloud import bigquery
+from google.api_core.exceptions import NotFound
 
 
 def _table_ref(table):
@@ -374,6 +375,50 @@ def fetch_strategy_performance(config, limit=20):
         query_parameters=[bigquery.ScalarQueryParameter("limit", "INT64", limit)]
     )
     return [dict(row) for row in client.query(query, job_config=job_config).result()]
+
+
+def fetch_annual_backtest_performance(config):
+    """Return independent yearly results for V1-V4 and V5 when V5 exists."""
+    client = bigquery.Client(project=config["project_id"])
+    v5_union = ""
+    try:
+        client.get_table(config["v5_backtest_table"])
+        v5_union = f"""
+        UNION ALL
+        SELECT
+          EXTRACT(YEAR FROM outcome_date) AS report_year,
+          "v5" AS strategy_version,
+          "V5 cartera concurrente" AS strategy_name,
+          COUNT(*) AS closed_count,
+          COUNTIF(is_win) AS wins,
+          COUNTIF(NOT is_win) AS losses,
+          ROUND(SUM(net_pnl_clp), 0) AS realized_pnl_clp
+        FROM {_table_ref(config["v5_backtest_table"])}
+        WHERE outcome_date IS NOT NULL
+        GROUP BY report_year, strategy_version, strategy_name
+        """
+    except NotFound:
+        pass
+
+    query = f"""
+    SELECT *
+    FROM (
+      SELECT
+        EXTRACT(YEAR FROM outcome_date) AS report_year,
+        strategy_version,
+        ANY_VALUE(strategy_name) AS strategy_name,
+        COUNT(*) AS closed_count,
+        COUNTIF(is_win) AS wins,
+        COUNTIF(NOT is_win) AS losses,
+        ROUND(SUM(net_pnl_clp), 0) AS realized_pnl_clp
+      FROM {_table_ref(config["strategy_backtest_table"])}
+      WHERE outcome_date IS NOT NULL
+      GROUP BY report_year, strategy_version
+      {v5_union}
+    )
+    ORDER BY report_year DESC, strategy_version
+    """
+    return [dict(row) for row in client.query(query).result()]
 
 
 def fetch_asset_profiles(config, limit=50):

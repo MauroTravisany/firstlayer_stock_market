@@ -49,6 +49,7 @@ def main(request):
             fetch_closed_trades,
             fetch_asset_profiles,
             fetch_alpaca_execution_summary,
+            fetch_annual_backtest_performance,
             fetch_new_trades,
             fetch_strategy_performance,
             fetch_cycle_profile_performance,
@@ -181,6 +182,7 @@ def main(request):
         closed_trades = fetch_closed_trades(config, summary_date)
         alpaca_summary = fetch_alpaca_execution_summary(config, summary_date)
         strategy_performance = fetch_strategy_performance(config)
+        annual_backtest_performance = fetch_annual_backtest_performance(config)
         asset_profiles = fetch_asset_profiles(config)
         feedback = None
 
@@ -213,6 +215,7 @@ def main(request):
                         "closed_trades": closed_trades,
                         "alpaca_summary": alpaca_summary,
                         "strategy_performance": strategy_performance,
+                        "annual_backtest_performance": annual_backtest_performance,
                         "feedback": feedback,
                     },
                     default=str,
@@ -235,7 +238,15 @@ def main(request):
                 {"Content-Type": "application/json"},
             )
 
-        sent, error = send_alert(config, summary, new_trades, closed_trades, feedback, alpaca_summary)
+        sent, error = send_alert(
+            config,
+            summary,
+            new_trades,
+            closed_trades,
+            feedback,
+            alpaca_summary,
+            annual_backtest_performance,
+        )
         mark_sent(config, summary_date, alert_type, "SENT" if sent else "ERROR", error or "OK")
         status_code = 200 if sent else 500
         return (

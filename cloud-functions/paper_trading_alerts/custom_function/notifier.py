@@ -131,7 +131,52 @@ def _alpaca_summary_text(alpaca_summary):
     return "\n".join(lines)
 
 
-def build_discord_payload(summary, new_trades, closed_trades, feedback=None, alpaca_summary=None):
+def _annual_backtest_embed(annual_performance):
+    by_year = {}
+    for row in annual_performance or []:
+        by_year.setdefault(row.get("report_year"), []).append(row)
+
+    fields = []
+    for year, rows in sorted(by_year.items(), reverse=True):
+        best = max(rows, key=lambda row: float(row.get("realized_pnl_clp") or 0))
+        worst = min(rows, key=lambda row: float(row.get("realized_pnl_clp") or 0))
+        lines = []
+        for row in sorted(rows, key=lambda item: item.get("strategy_version") or ""):
+            lines.append(
+                f"{str(row.get('strategy_version') or '').upper()}: "
+                f"{_signed_money_clp(row.get('realized_pnl_clp'))} | "
+                f"{row.get('closed_count', 0)} ops | "
+                f"{row.get('wins', 0)} G / {row.get('losses', 0)} P"
+            )
+        fields.append(
+            {
+                "name": (
+                    f"{year} | mejor {str(best.get('strategy_version') or '').upper()} "
+                    f"{_signed_money_clp(best.get('realized_pnl_clp'))} | peor "
+                    f"{str(worst.get('strategy_version') or '').upper()} "
+                    f"{_signed_money_clp(worst.get('realized_pnl_clp'))}"
+                )[:256],
+                "value": "\n".join(lines)[:1024],
+                "inline": False,
+            }
+        )
+
+    if not fields:
+        fields = [{"name": "Sin histórico anual", "value": "Aún no hay operaciones cerradas para comparar.", "inline": False}]
+
+    return {
+        "title": "Backtesting anual por estrategia",
+        "description": (
+            "Cada versión usa una cartera histórica independiente. V1-V4 son carteras secuenciales; "
+            "V5 es un experimento concurrente. Los resultados no se suman entre versiones."
+        ),
+        "color": DISCORD_BLUE,
+        "fields": fields[:10],
+        "footer": {"text": "Backtesting histórico: simulación, no dinero real ni resultado de Alpaca."},
+    }
+
+
+def build_discord_payload(summary, new_trades, closed_trades, feedback=None, alpaca_summary=None, annual_backtest_performance=None):
     pnl = float(summary.get("realized_pnl_clp") or 0)
     status = summary.get("daily_result_status") or "SIN_CIERRES"
     color = DISCORD_BLUE
@@ -153,7 +198,7 @@ def build_discord_payload(summary, new_trades, closed_trades, feedback=None, alp
     day_read = summary.get("daily_plain_read") or "Resumen diario disponible."
     week_read = summary.get("weekly_plain_read") or "Resumen semanal disponible."
 
-    return {
+    payload = {
         "embeds": [
             {
                 "title": f"Paper trading diario | {summary.get('summary_date')}",
@@ -235,6 +280,8 @@ def build_discord_payload(summary, new_trades, closed_trades, feedback=None, alp
             }
         ]
     }
+    payload["embeds"].append(_annual_backtest_embed(annual_backtest_performance))
+    return payload
 
 
 def _strategy_line(row):
@@ -351,14 +398,22 @@ def send_weekly_alert(config, weekly_summary, strategy_performance, ticker_perfo
     return True, None
 
 
-def send_alert(config, summary, new_trades, closed_trades, feedback=None, alpaca_summary=None):
+def send_alert(config, summary, new_trades, closed_trades, feedback=None, alpaca_summary=None, annual_backtest_performance=None):
     url = config.get("alert_webhook_url")
     if not url:
         return False, "NO_WEBHOOK_URL"
 
     webhook_type = _detect_webhook_type(config)
     if webhook_type == "discord":
-        response = requests.post(url, json=build_discord_payload(summary, new_trades, closed_trades, feedback, alpaca_summary), timeout=30)
+        payload = build_discord_payload(
+            summary,
+            new_trades,
+            closed_trades,
+            feedback,
+            alpaca_summary,
+            annual_backtest_performance,
+        )
+        response = requests.post(url, json=payload, timeout=30)
     else:
         response = requests.post(url, json={"text": summary.get("discord_summary") or "Paper trading diario"}, timeout=30)
 

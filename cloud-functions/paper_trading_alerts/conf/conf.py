@@ -33,6 +33,8 @@ def load_config():
         "summary_table": f"{project_id}.{dataset_id}.{os.environ.get('TRADING_SUMMARY_TABLE_ID', 'trading_daily_summary')}",
         "signals_table": f"{project_id}.{dataset_id}.{os.environ.get('TRADING_SIGNALS_TABLE_ID', 'trading_paper_signals')}",
         "results_table": f"{project_id}.{dataset_id}.{os.environ.get('TRADING_RESULTS_TABLE_ID', 'trading_paper_trade_results')}",
+        "strategy_backtest_table": f"{project_id}.{dataset_id}.{os.environ.get('TRADING_STRATEGY_BACKTEST_TABLE_ID', 'trading_directional_strategy_backtest')}",
+        "v5_backtest_table": f"{project_id}.{dataset_id}.{os.environ.get('TRADING_V5_BACKTEST_TABLE_ID', 'trading_v5_high_turnover_portfolio')}",
         "alpaca_executions_table": f"{project_id}.{dataset_id}.{os.environ.get('ALPACA_EXECUTIONS_TABLE_ID', 'trading_alpaca_paper_executions')}",
         "alpaca_positions_table": f"{project_id}.{dataset_id}.{os.environ.get('ALPACA_POSITIONS_TABLE_ID', 'trading_alpaca_paper_positions')}",
         "alerts_table": f"{project_id}.{dataset_id}.{os.environ.get('TRADING_ALERTS_TABLE_ID', 'trading_alerts_sent')}",
