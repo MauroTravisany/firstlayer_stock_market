@@ -3,7 +3,7 @@ config {
   schema: "acciones_dataset",
   name: "trading_v7_cycle_weights",
   description: "Ponderaciones V7 por perfil especulativo. Solo parametros auditables de backtesting; no alimentan Paper Trading.",
-  tags: ["trading", "backtest", "v7", "experiment", "daily"]
+  tags: ["trading", "backtest", "v7", "experiment"]
 }
 
 SELECT *

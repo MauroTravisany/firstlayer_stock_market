@@ -3,7 +3,7 @@ config {
   schema: "acciones_dataset",
   name: "trading_v6_profile_summary",
   description: "Resumen V6 separado entre calibracion hasta 2024 y prueba fuera de muestra 2025+. No autoriza Paper Trading.",
-  tags: ["trading", "backtest", "v6", "experiment", "audit", "daily"],
+  tags: ["trading", "backtest", "v6", "experiment", "audit"],
   assertions: { nonNull: ["evaluation_period"], uniqueKey: ["evaluation_period"] },
   dependencies: ["trading_v6_profile_backtest"]
 }
@@ -55,4 +55,3 @@ SELECT
   CURRENT_TIMESTAMP() AS calculated_at
 FROM equity_with_peak
 GROUP BY evaluation_period
-

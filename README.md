@@ -91,6 +91,15 @@ Para evitar sumar capital ficticio en operaciones incompatibles, el reporte prin
 - `trading_directional_daily_summary`: usa v2 solo como referencia diaria compatible con alertas y muestra la comparativa de las cuatro variantes por separado.
 - `trading_v5_high_turnover_*`: experimento separado sobre el benchmark G3 y V2. Simula hasta ocho cupos concurrentes, 10% maximo por cupo y salidas temporales de 3 dias para cripto o 5 para acciones. Es solo backtest y no es leido por Alpaca.
 
+La ejecucion paper usa una capa separada de gobernanza:
+
+- `trading_champion_challenger_policy` define manualmente el campeon por perfil de activo.
+- `trading_champion_challenger_signals` deja todas las variantes como medicion, pero solo marca como `execution_eligible` al campeon validado.
+- `trading_champion_challenger_scorecard` compara rendimiento historico por perfil sin promocion automatica.
+- `trading_champion_execution_reconciliation` compara fills y salidas de Alpaca Paper contra el precio teorico.
+
+Actualmente V2 solo puede ejecutar en AAPL y META. NVDA, COIN, BTC y ETH se conservan en sombra hasta cumplir una revision manual fuera de muestra.
+
 Los `SHORT_SIMULATED` quedan como diagnostico historico separado: no llegan a Alpaca Paper y no afectan el PnL principal de los largos.
 
 ## Frecuencia y backtesting

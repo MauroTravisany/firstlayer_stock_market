@@ -34,16 +34,17 @@ WITH eligible AS (
   JOIN ${ref("trading_backtest_context_variants")} v
     ON v.variant_id = r.variant_id
   WHERE r.recommendation IN ("MEJOR_CONTEXTO_ACTIVO", "USABLE")
-    -- Los candidatos del cerebro nunca se infiltran al motor diario: requieren
-    -- una promocion explicita despues de validacion y paper trading.
-    AND NOT STARTS_WITH(r.variant_id, "brain_")
+    -- Los ajustes semanales quedan congelados. El motor solo puede consumir el
+    -- control baseline hasta que una promocion manual, auditada y fuera de muestra
+    -- habilite otra variante.
+    AND r.variant_id = "baseline_actual"
     AND r.total_pnl_clp > 0
     AND r.avg_pnl_clp > 0
     AND r.profit_factor >= 1.05
     AND r.stop_loss_rate_pct < 60
     AND (
-      (r.asset_type = "CRYPTO" AND r.closed_trades >= 30)
-      OR (r.asset_type != "CRYPTO" AND r.closed_trades >= 8)
+      (r.asset_type = "CRYPTO" AND r.closed_trades >= 50)
+      OR (r.asset_type != "CRYPTO" AND r.closed_trades >= 30)
     )
     AND r.pnl_p05_clp > -250000
 )

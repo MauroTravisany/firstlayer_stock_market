@@ -1,0 +1,47 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_champion_challenger_scorecard",
+  description: "Scorecard auditable de campeon y challengers por perfil. No promociona ni modifica pesos automaticamente.",
+  tags: ["trading", "paper", "daily", "champion", "audit"],
+  bigquery: { clusterBy: ["ticker", "strategy_version", "model_role"] },
+  dependencies: ["trading_directional_trade_results", "trading_champion_challenger_policy"]
+}
+
+WITH evaluated AS (
+  SELECT
+    r.*,
+    p.asset_rule_profile,
+    p.champion_strategy_version,
+    p.execution_mode,
+    p.policy_reason,
+    CASE WHEN r.strategy_version = p.champion_strategy_version THEN "CHAMPION" ELSE "CHALLENGER_SHADOW" END AS model_role,
+    CASE WHEN r.analysis_date < DATE "2025-01-01" THEN "TRAINING_TO_2024" ELSE "OUT_OF_SAMPLE_2025_ONWARD" END AS evaluation_period
+  FROM ${ref("trading_directional_trade_results")} r
+  JOIN ${ref("trading_champion_challenger_policy")} p USING (ticker)
+  WHERE r.direction = "LONG"
+    AND r.outcome_date IS NOT NULL
+), aggregated AS (
+  SELECT
+    evaluation_period, ticker, asset_type, asset_rule_profile, strategy_version, champion_strategy_version,
+    execution_mode, model_role, policy_reason,
+    COUNT(*) AS closed_trades,
+    COUNTIF(is_win) AS wins,
+    ROUND(SAFE_DIVIDE(COUNTIF(is_win), COUNT(*)) * 100, 2) AS win_rate_pct,
+    ROUND(SUM(net_pnl_clp), 0) AS net_pnl_clp,
+    ROUND(SAFE_DIVIDE(SUM(IF(net_pnl_clp > 0, net_pnl_clp, 0)), ABS(SUM(IF(net_pnl_clp < 0, net_pnl_clp, 0)))), 3) AS profit_factor,
+    ROUND(AVG(net_return_pct) * 100, 3) AS avg_net_return_pct,
+    ROUND(AVG(IF(is_win, net_pnl_clp, NULL)), 0) AS avg_win_pnl_clp,
+    ROUND(AVG(IF(NOT is_win, net_pnl_clp, NULL)), 0) AS avg_loss_pnl_clp
+  FROM evaluated
+  GROUP BY evaluation_period, ticker, asset_type, asset_rule_profile, strategy_version, champion_strategy_version, execution_mode, model_role, policy_reason
+)
+SELECT
+  *,
+  CASE
+    WHEN model_role = "CHAMPION" AND execution_mode = "PAPER_CHAMPION" THEN "CONTROL_PAPER"
+    WHEN evaluation_period = "OUT_OF_SAMPLE_2025_ONWARD" AND closed_trades >= 60 AND net_pnl_clp > 0 AND profit_factor >= 1.10 THEN "CANDIDATO_A_REVISION_MANUAL"
+    ELSE "SOLO_MEDICION"
+  END AS promotion_gate,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM aggregated

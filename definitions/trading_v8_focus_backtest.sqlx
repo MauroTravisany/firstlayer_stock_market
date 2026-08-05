@@ -3,7 +3,7 @@ config {
   schema: "acciones_dataset",
   name: "trading_v8_focus_backtest",
   description: "V8: V2 concentrada en AAPL y META, con hasta dos posiciones pequenas por lote. No alimenta Paper Trading ni Alpaca.",
-  tags: ["trading", "backtest", "v8", "experiment", "daily"],
+  tags: ["trading", "backtest", "v8", "experiment"],
   bigquery: { partitionBy: "analysis_date", clusterBy: ["focus_profile", "ticker"] },
   assertions: { nonNull: ["v8_trade_id", "analysis_date", "outcome_date", "ticker"], uniqueKey: ["v8_trade_id"] },
   dependencies: ["trading_directional_trade_results", "trading_v8_focus_config"]

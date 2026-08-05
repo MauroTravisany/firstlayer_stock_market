@@ -3,7 +3,7 @@ config {
   schema: "acciones_dataset",
   name: "trading_v8_focus_config",
   description: "Configuracion auditable V8: V2 enfocado en los perfiles seleccionados con datos hasta 2024 y dos posiciones pequenas por lote.",
-  tags: ["trading", "backtest", "v8", "experiment", "daily"]
+  tags: ["trading", "backtest", "v8", "experiment"]
 }
 
 SELECT

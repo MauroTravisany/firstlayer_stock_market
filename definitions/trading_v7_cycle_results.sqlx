@@ -3,7 +3,7 @@ config {
   schema: "acciones_dataset",
   name: "trading_v7_cycle_results",
   description: "Resultados V7 para semiconductores, BTC y ETH usando ciclos y ponderaciones especificas. Experimento aislado, sin ejecucion real ni Paper Trading.",
-  tags: ["trading", "backtest", "v7", "experiment", "daily"],
+  tags: ["trading", "backtest", "v7", "experiment"],
   bigquery: { partitionBy: "analysis_date", clusterBy: ["asset_rule_profile", "ticker", "trade_status"] },
   assertions: { nonNull: ["analysis_date", "ticker", "v7_trade_id", "asset_rule_profile"], uniqueKey: ["v7_trade_id"] },
   dependencies: ["trading_structural_backtest_results", "trading_v7_cycle_context", "trading_v7_cycle_weights", "trading_price_features"]

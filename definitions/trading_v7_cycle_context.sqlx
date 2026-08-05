@@ -3,7 +3,7 @@ config {
   schema: "acciones_dataset",
   name: "trading_v7_cycle_context",
   description: "Contexto V7 de ciclos: confirmacion de pares semiconductor y proxies de flujo BTC/ETH construidos solo con precio y volumen diarios disponibles.",
-  tags: ["trading", "backtest", "v7", "experiment", "daily"],
+  tags: ["trading", "backtest", "v7", "experiment"],
   bigquery: { partitionBy: "analysis_date" },
   assertions: { nonNull: ["analysis_date"], uniqueKey: ["analysis_date"] }
 }

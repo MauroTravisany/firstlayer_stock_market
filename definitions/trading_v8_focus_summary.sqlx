@@ -3,7 +3,7 @@ config {
   schema: "acciones_dataset",
   name: "trading_v8_focus_summary",
   description: "Auditoria V8 por periodo y perfil. La prueba 2025+ decide si merece revision; no hay promocion automatica.",
-  tags: ["trading", "backtest", "v8", "experiment", "audit", "daily"],
+  tags: ["trading", "backtest", "v8", "experiment", "audit"],
   assertions: { nonNull: ["evaluation_period", "focus_profile"], uniqueKey: ["evaluation_period", "focus_profile"] },
   dependencies: ["trading_v8_focus_backtest", "trading_v8_focus_config"]
 }
