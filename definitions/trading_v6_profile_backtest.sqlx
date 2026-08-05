@@ -1,0 +1,79 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v6_profile_backtest",
+  description: "V6: cartera secuencial aislada que usa la logica V2 solo en perfiles seleccionados antes de 2025. No alimenta Paper Trading.",
+  tags: ["trading", "backtest", "v6", "experiment", "daily"],
+  bigquery: { partitionBy: "analysis_date", clusterBy: ["asset_rule_profile", "ticker"] },
+  assertions: { nonNull: ["analysis_date", "outcome_date", "v6_trade_id", "asset_rule_profile"], uniqueKey: ["v6_trade_id"] },
+  dependencies: ["trading_directional_trade_results", "trading_watchlist", "trading_v6_profile_selection"]
+}
+
+-- V6 reuses V2's price, stop and cost model. Its only new hypothesis is a
+-- profile gate selected before the out-of-sample period begins.
+WITH RECURSIVE eligible AS (
+  SELECT
+    r.*,
+    CASE
+      WHEN r.asset_type = "CRYPTO" AND r.cycle_profile LIKE "%BTC%" THEN "CRYPTO_BTC"
+      WHEN r.asset_type = "CRYPTO" THEN "CRYPTO_ETH"
+      WHEN r.trading_group = "crypto_sensitive_stock" THEN "CRYPTO_LINKED_EQUITY"
+      WHEN r.trading_group = "high_beta_stock" THEN "SEMICONDUCTOR_AI"
+      WHEN r.sector_profile = "Digital advertising/AI" THEN "DIGITAL_ADVERTISING_AI"
+      WHEN r.trading_group = "mega_cap_stock" THEN "TECH_MEGACAP"
+      ELSE "DEFENSIVE_OR_ETF"
+    END AS asset_rule_profile
+  FROM ${ref("trading_directional_trade_results")} r
+  JOIN ${ref("trading_watchlist")} w
+    ON w.ticker = r.ticker
+   AND w.asset_type = r.asset_type
+  WHERE r.strategy_version = "v2"
+    AND r.direction = "LONG"
+    AND r.outcome_date IS NOT NULL
+    AND w.enabled
+), candidates AS (
+  SELECT
+    e.*,
+    TO_HEX(SHA256(CONCAT(e.paper_trade_id, "|v6-profile-gate"))) AS v6_trade_id,
+    ROW_NUMBER() OVER (
+      PARTITION BY e.analysis_date
+      ORDER BY e.setup_score DESC, e.ticker
+    ) AS daily_rank
+  FROM eligible e
+  JOIN ${ref("trading_v6_profile_selection")} s
+    ON s.asset_rule_profile = e.asset_rule_profile
+   AND s.selection_status = "SELECTED_FOR_V6"
+), daily_candidates AS (
+  SELECT * EXCEPT (daily_rank)
+  FROM candidates
+  WHERE daily_rank = 1
+), seed AS (
+  SELECT
+    *,
+    ROW_NUMBER() OVER (ORDER BY analysis_date, ticker) AS seed_rank
+  FROM daily_candidates
+), sequential_trades AS (
+  (
+    SELECT * EXCEPT (seed_rank)
+    FROM seed
+    WHERE seed_rank = 1
+  )
+  UNION ALL
+  (
+    SELECT next_trade.*
+    FROM sequential_trades previous_trade
+    JOIN daily_candidates next_trade
+      ON next_trade.analysis_date > previous_trade.outcome_date
+    LEFT JOIN daily_candidates earlier_trade
+      ON earlier_trade.analysis_date > previous_trade.outcome_date
+     AND earlier_trade.analysis_date < next_trade.analysis_date
+    WHERE earlier_trade.v6_trade_id IS NULL
+  )
+)
+
+SELECT
+  *,
+  "V6_V2_PROFILE_GATE_SEQUENTIAL" AS portfolio_model,
+  "V2 rules plus pre-2025 profile selection; 2025+ is out-of-sample only." AS experiment_policy,
+  CURRENT_TIMESTAMP() AS backtest_calculated_at
+FROM sequential_trades
