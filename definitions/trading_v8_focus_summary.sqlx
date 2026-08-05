@@ -40,22 +40,34 @@ WITH period_trades AS (
   FROM equity_curve
 )
 
+), aggregated AS (
+  SELECT
+    evaluation_period, focus_profile,
+    COUNT(*) AS closed_trades,
+    COUNTIF(is_win) AS wins,
+    COUNTIF(NOT is_win) AS losses,
+    ROUND(SAFE_DIVIDE(COUNTIF(is_win), COUNT(*)) * 100, 2) AS win_rate_pct,
+    ROUND(SUM(net_pnl_clp), 0) AS net_pnl_clp,
+    ROUND(SAFE_DIVIDE(SUM(IF(net_pnl_clp > 0, net_pnl_clp, 0)), ABS(SUM(IF(net_pnl_clp < 0, net_pnl_clp, 0)))), 3) AS profit_factor,
+    ROUND(MAX(running_peak_clp - equity_clp), 0) AS max_drawdown_clp,
+    ROUND(MAX(SAFE_DIVIDE(running_peak_clp - equity_clp, running_peak_clp)) * 100, 2) AS max_drawdown_pct,
+    ROUND(AVG(position_size_pct) * 100, 2) AS position_size_pct
+  FROM equity_with_peak
+  GROUP BY evaluation_period, focus_profile
+)
+
 SELECT
-  evaluation_period, focus_profile,
-  COUNT(*) AS closed_trades,
-  COUNTIF(is_win) AS wins,
-  COUNTIF(NOT is_win) AS losses,
-  ROUND(SAFE_DIVIDE(COUNTIF(is_win), COUNT(*)) * 100, 2) AS win_rate_pct,
-  ROUND(SUM(net_pnl_clp), 0) AS net_pnl_clp,
-  ROUND(SAFE_DIVIDE(SUM(IF(net_pnl_clp > 0, net_pnl_clp, 0)), ABS(SUM(IF(net_pnl_clp < 0, net_pnl_clp, 0)))), 3) AS profit_factor,
-  ROUND(MAX(running_peak_clp - equity_clp), 0) AS max_drawdown_clp,
-  ROUND(MAX(SAFE_DIVIDE(running_peak_clp - equity_clp, running_peak_clp)) * 100, 2) AS max_drawdown_pct,
-  ROUND(AVG(position_size_pct) * 100, 2) AS position_size_pct,
+  *,
   CASE
-    WHEN evaluation_period = "OUT_OF_SAMPLE_2025_ONWARD" AND COUNT(*) >= 15 AND SUM(net_pnl_clp) > 0 AND SAFE_DIVIDE(SUM(IF(net_pnl_clp > 0, net_pnl_clp, 0)), ABS(SUM(IF(net_pnl_clp < 0, net_pnl_clp, 0)))) >= 1.10 THEN "REVIEW_REQUIRED_BEFORE_ANY_PROMOTION"
+    WHEN evaluation_period = "OUT_OF_SAMPLE_2025_ONWARD"
+      AND closed_trades >= 15
+      AND net_pnl_clp > 0
+      AND profit_factor >= 1.10
+      AND MAX(IF(evaluation_period = "TRAINING_TO_2024", net_pnl_clp, NULL)) OVER (PARTITION BY focus_profile) > 0
+      AND MAX(IF(evaluation_period = "TRAINING_TO_2024", profit_factor, NULL)) OVER (PARTITION BY focus_profile) >= 1.10
+      THEN "REVIEW_REQUIRED_BEFORE_ANY_PROMOTION"
     ELSE "BACKTEST_ONLY"
   END AS promotion_status,
   "V8 aumenta capacidad a dos posiciones pequeñas, pero mantiene las reglas V2 y no opera fuera de AAPL/META." AS safety_policy,
   CURRENT_TIMESTAMP() AS calculated_at
-FROM equity_with_peak
-GROUP BY evaluation_period, focus_profile
+FROM aggregated
