@@ -98,7 +98,7 @@ WITH profiled AS (
   GROUP BY v7_trade_id
 ), evaluated AS (
   SELECT
-    t.*, fe.future_days_seen,
+    t.* EXCEPT (outcome_date, future_days_seen, trade_status, exit_price), fe.future_days_seen,
     CASE WHEN fe.first_hit.event_type IS NOT NULL THEN fe.first_hit.path_date WHEN fe.future_days_seen >= t.max_holding_days THEN fe.latest_seen.path_date ELSE NULL END AS outcome_date,
     CASE WHEN fe.first_hit.event_type IS NOT NULL THEN fe.first_hit.event_type WHEN fe.future_days_seen >= t.max_holding_days THEN "TIME_EXIT" ELSE "OPEN" END AS trade_status,
     CASE WHEN fe.first_hit.event_price IS NOT NULL THEN fe.first_hit.event_price WHEN fe.future_days_seen >= t.max_holding_days THEN fe.latest_seen.day_close ELSE NULL END AS exit_price
