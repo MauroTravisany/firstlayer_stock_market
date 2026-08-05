@@ -1,0 +1,71 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v8_focus_backtest",
+  description: "V8: V2 concentrada en AAPL y META, con hasta dos posiciones pequenas por lote. No alimenta Paper Trading ni Alpaca.",
+  tags: ["trading", "backtest", "v8", "experiment", "daily"],
+  bigquery: { partitionBy: "analysis_date", clusterBy: ["focus_profile", "ticker"] },
+  assertions: { nonNull: ["v8_trade_id", "analysis_date", "outcome_date", "ticker"], uniqueKey: ["v8_trade_id"] },
+  dependencies: ["trading_directional_trade_results", "trading_v8_focus_config"]
+}
+
+-- V8 changes portfolio capacity, not V2's entry, exit or cost assumptions.
+WITH config_values AS (
+  SELECT * FROM ${ref("trading_v8_focus_config")}
+), eligible AS (
+  SELECT
+    r.*,
+    c.*,
+    CASE
+      WHEN r.ticker = "META" THEN "DIGITAL_ADVERTISING_AI"
+      WHEN r.ticker = "AAPL" THEN "TECH_MEGACAP"
+    END AS focus_profile
+  FROM ${ref("trading_directional_trade_results")} r
+  CROSS JOIN config_values c
+  WHERE r.strategy_version = "v2"
+    AND r.direction = "LONG"
+    AND r.outcome_date IS NOT NULL
+    AND r.ticker IN ("AAPL", "META")
+), batched AS (
+  SELECT
+    *,
+    DIV(DATE_DIFF(analysis_date, DATE "2019-01-01", DAY), batch_cycle_days) AS batch_number,
+    MOD(DATE_DIFF(analysis_date, DATE "2019-01-01", DAY), batch_cycle_days) AS batch_day_offset
+  FROM eligible
+), batch_entry_days AS (
+  SELECT batch_number, MIN(analysis_date) AS batch_start_date
+  FROM batched
+  WHERE batch_day_offset < entry_window_days
+  GROUP BY batch_number
+), ranked AS (
+  SELECT
+    b.*,
+    ROW_NUMBER() OVER (
+      PARTITION BY b.batch_number
+      ORDER BY b.setup_score DESC, b.ticker
+    ) AS portfolio_slot
+  FROM batched b
+  JOIN batch_entry_days d
+    ON d.batch_number = b.batch_number
+   AND d.batch_start_date = b.analysis_date
+), selected AS (
+  SELECT
+    *,
+    TO_HEX(SHA256(CONCAT(paper_trade_id, "|v8-focus-two-slot"))) AS v8_trade_id,
+    ROUND(initial_capital_clp * position_size_pct, 0) AS position_notional_clp
+  FROM ranked
+  WHERE portfolio_slot <= max_positions_per_batch
+)
+
+SELECT
+  v8_trade_id, paper_trade_id, experiment_id, base_strategy_version, selection_policy,
+  analysis_date, signal_timestamp, outcome_date, ticker, asset_type, trading_group, focus_profile,
+  portfolio_slot, batch_number, setup_score, long_score, short_score, risk_score,
+  theoretical_entry_price, stop_loss, take_profit_1, take_profit_2, max_holding_days,
+  estimated_roundtrip_cost_pct, net_return_pct, gross_return_pct, is_win, trade_status,
+  initial_capital_clp, position_size_pct, position_notional_clp,
+  ROUND(position_notional_clp * net_return_pct, 0) AS net_pnl_clp,
+  "V2 signal and exit model; AAPL/META only; two 9% capital slots per 16-day batch." AS formula_expression,
+  "V8_FOCUSED_TWO_SLOT_BATCHED" AS portfolio_model,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM selected
