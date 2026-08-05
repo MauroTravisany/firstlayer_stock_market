@@ -1,0 +1,59 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_version_profile_decisions",
+  description: "Registro de decisiones de investigacion por version y perfil. Nunca promociona ni altera Paper Trading automaticamente.",
+  tags: ["trading", "backtest", "evaluation", "audit", "daily"],
+  assertions: { nonNull: ["strategy_version", "asset_rule_profile", "research_decision", "paper_trading_status"], uniqueKey: ["strategy_version", "asset_rule_profile"] },
+  dependencies: ["trading_version_profile_evaluation", "trading_v5_profile_asset_rules"]
+}
+
+WITH evaluated_profiles AS (
+  SELECT DISTINCT strategy_version, asset_rule_profile
+  FROM ${ref("trading_version_profile_evaluation")}
+  UNION DISTINCT
+  SELECT "v5p", asset_rule_profile
+  FROM ${ref("trading_v5_profile_asset_rules")}
+), history AS (
+  SELECT *
+  FROM ${ref("trading_version_profile_evaluation")}
+  WHERE evaluation_period = "ALL_HISTORY"
+), recent AS (
+  SELECT *
+  FROM ${ref("trading_version_profile_evaluation")}
+  WHERE evaluation_period = "RECENT_2025_ONWARD"
+)
+
+SELECT
+  p.strategy_version,
+  p.asset_rule_profile,
+  COALESCE(h.closed_trades, 0) AS history_closed_trades,
+  COALESCE(h.net_pnl_clp, 0) AS history_net_pnl_clp,
+  h.profit_factor AS history_profit_factor,
+  COALESCE(r.closed_trades, 0) AS recent_closed_trades,
+  COALESCE(r.net_pnl_clp, 0) AS recent_net_pnl_clp,
+  r.profit_factor AS recent_profit_factor,
+  r.win_rate_pct AS recent_win_rate_pct,
+  CASE
+    WHEN COALESCE(r.closed_trades, 0) < 15 THEN "COLLECT_MORE_DATA"
+    WHEN r.net_pnl_clp > 0 AND r.profit_factor >= 1.10 AND h.net_pnl_clp > 0 AND h.profit_factor >= 1.05 THEN "CANDIDATE_NEXT_EXPERIMENT"
+    WHEN r.net_pnl_clp < 0 AND r.profit_factor < 0.90 THEN "REWORK_OR_DISABLE"
+    ELSE "KEEP_UNDER_OBSERVATION"
+  END AS research_decision,
+  CASE
+    WHEN COALESCE(r.closed_trades, 0) < 15 THEN "Muestra reciente insuficiente: mantener en laboratorio."
+    WHEN r.net_pnl_clp > 0 AND r.profit_factor >= 1.10 AND h.net_pnl_clp > 0 AND h.profit_factor >= 1.05 THEN "Conservar reglas y crear una variante acotada para validacion fuera de muestra."
+    WHEN r.net_pnl_clp < 0 AND r.profit_factor < 0.90 THEN "No usar estas reglas en nuevas versiones; investigar filtro de entrada, salida o perfil."
+    ELSE "No hay evidencia suficiente para promover ni descartar; seguir midiendo sin alterar produccion."
+  END AS decision_rationale,
+  "BACKTEST_ONLY" AS paper_trading_status,
+  "V1-V5 y V5P permanecen como evidencia separada. Toda nueva version requiere validacion fuera de muestra y aprobacion humana." AS governance_policy,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM evaluated_profiles p
+LEFT JOIN history h
+  ON h.strategy_version = p.strategy_version
+ AND h.asset_rule_profile = p.asset_rule_profile
+LEFT JOIN recent r
+  ON r.strategy_version = p.strategy_version
+ AND r.asset_rule_profile = p.asset_rule_profile
+
