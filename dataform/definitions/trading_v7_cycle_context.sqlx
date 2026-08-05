@@ -1,0 +1,72 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v7_cycle_context",
+  description: "Contexto V7 de ciclos: confirmacion de pares semiconductor y proxies de flujo BTC/ETH construidos solo con precio y volumen diarios disponibles.",
+  tags: ["trading", "backtest", "v7", "experiment", "daily"],
+  bigquery: { partitionBy: "analysis_date" },
+  assertions: { nonNull: ["analysis_date"], uniqueKey: ["analysis_date"] }
+}
+
+-- These are transparent market-data proxies, not on-chain or ETF fund flows.
+WITH daily_prices AS (
+  SELECT
+    ticker,
+    fecha AS analysis_date,
+    ARRAY_AGG(close ORDER BY hora DESC LIMIT 1)[SAFE_OFFSET(0)] AS day_close,
+    SUM(volumen) AS day_volume
+  FROM `stocks-437902.acciones_dataset.valores_acciones_recientes`
+  WHERE ticker IN ("NVDA", "ASML", "INTC", "BTC-USD", "ETH-USD")
+  GROUP BY ticker, fecha
+), features AS (
+  SELECT
+    *,
+    SAFE_DIVIDE(day_close, LAG(day_close, 20) OVER ticker_window) - 1 AS return_20d,
+    SAFE_DIVIDE(day_close, LAG(day_close, 60) OVER ticker_window) - 1 AS return_60d,
+    AVG(day_close) OVER ticker_50 AS sma_50,
+    AVG(day_volume) OVER ticker_20 AS avg_volume_20d
+  FROM daily_prices
+  WINDOW
+    ticker_window AS (PARTITION BY ticker ORDER BY analysis_date),
+    ticker_20 AS (PARTITION BY ticker ORDER BY analysis_date ROWS BETWEEN 19 PRECEDING AND CURRENT ROW),
+    ticker_50 AS (PARTITION BY ticker ORDER BY analysis_date ROWS BETWEEN 49 PRECEDING AND CURRENT ROW)
+), pivoted AS (
+  SELECT
+    analysis_date,
+    COUNTIF(ticker IN ("NVDA", "ASML", "INTC") AND day_close > sma_50 AND return_20d > 0) AS semiconductor_trend_breadth,
+    COUNTIF(ticker IN ("NVDA", "ASML", "INTC") AND SAFE_DIVIDE(day_volume, avg_volume_20d) >= 1.0) AS semiconductor_volume_breadth,
+    AVG(IF(ticker IN ("NVDA", "ASML", "INTC"), return_20d, NULL)) AS semiconductor_peer_return_20d,
+    MAX(IF(ticker = "BTC-USD", return_20d, NULL)) AS btc_return_20d,
+    MAX(IF(ticker = "BTC-USD", return_60d, NULL)) AS btc_return_60d,
+    MAX(IF(ticker = "BTC-USD", SAFE_DIVIDE(day_volume, avg_volume_20d), NULL)) AS btc_volume_vs_20d_avg,
+    MAX(IF(ticker = "ETH-USD", return_20d, NULL)) AS eth_return_20d,
+    MAX(IF(ticker = "ETH-USD", return_60d, NULL)) AS eth_return_60d,
+    MAX(IF(ticker = "ETH-USD", SAFE_DIVIDE(day_volume, avg_volume_20d), NULL)) AS eth_volume_vs_20d_avg
+  FROM features
+  GROUP BY analysis_date
+)
+
+SELECT
+  *,
+  ROUND(eth_return_20d - btc_return_20d, 4) AS eth_vs_btc_20d,
+  CASE
+    WHEN semiconductor_trend_breadth = 3 AND semiconductor_volume_breadth >= 2 THEN 2
+    WHEN semiconductor_trend_breadth >= 2 THEN 1
+    WHEN semiconductor_trend_breadth <= 1 THEN -1
+    ELSE 0
+  END AS semiconductor_cycle_score,
+  CASE
+    WHEN btc_return_20d >= 0.08 AND btc_return_60d >= 0.12 AND btc_volume_vs_20d_avg >= 0.90 THEN "BTC_ACCUMULATION"
+    WHEN btc_return_20d >= 0.03 AND eth_return_20d - btc_return_20d >= 0.05 AND eth_volume_vs_20d_avg >= 1.00 THEN "ETH_ROTATION"
+    WHEN btc_return_20d <= -0.08 AND eth_return_20d <= -0.08 THEN "CRYPTO_DISTRIBUTION"
+    WHEN btc_volume_vs_20d_avg < 0.70 AND eth_volume_vs_20d_avg < 0.70 THEN "CRYPTO_LOW_PARTICIPATION"
+    ELSE "CRYPTO_NEUTRAL"
+  END AS crypto_cycle_state,
+  CASE
+    WHEN btc_return_20d >= 0.08 THEN 1 ELSE 0 END +
+    CASE WHEN btc_volume_vs_20d_avg >= 1.00 THEN 1 ELSE 0 END +
+    CASE WHEN eth_return_20d >= 0.05 THEN 1 ELSE 0 END +
+    CASE WHEN eth_volume_vs_20d_avg >= 1.00 THEN 1 ELSE 0 END AS crypto_flow_proxy_score,
+  "Precio relativo y volumen versus promedio de 20 dias; no representa flujos on-chain, ETF ni stablecoins." AS proxy_limitations,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM pivoted

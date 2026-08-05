@@ -1,0 +1,14 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v7_cycle_weights",
+  description: "Ponderaciones V7 por perfil especulativo. Solo parametros auditables de backtesting; no alimentan Paper Trading.",
+  tags: ["trading", "backtest", "v7", "experiment", "daily"]
+}
+
+SELECT *
+FROM UNNEST([
+  STRUCT("SEMICONDUCTOR_AI" AS asset_rule_profile, 1.30 AS trend_weight, 1.25 AS momentum_weight, 1.30 AS volume_weight, 0.75 AS volatility_weight, 1.10 AS regime_weight, 0.70 AS macro_weight, 0.70 AS factor_weight, 0.40 AS earnings_weight, 1.25 AS cycle_weight, 5.75 AS min_v7_score, 1.00 AS min_cycle_score, 1.15 AS stop_distance_multiplier, 2.20 AS take_profit_r, 6 AS max_holding_days, 0.07 AS max_position_pct, "Semiconductores: exige amplitud de tendencia entre NVDA, ASML e INTC y participacion de volumen." AS rule_rationale),
+  STRUCT("CRYPTO_BTC", 1.20, 1.35, 1.40, 0.70, 1.35, 0.55, 0.55, 0.00, 1.35, 5.50, 1.00, 1.25, 2.25, 4, 0.06, "BTC: exige tendencia, volumen y fase de acumulacion; evita periodos de distribucion o baja participacion."),
+  STRUCT("CRYPTO_ETH", 1.20, 1.40, 1.50, 0.70, 1.40, 0.50, 0.50, 0.00, 1.55, 5.75, 1.00, 1.35, 2.50, 4, 0.05, "ETH: solo busca rotacion relativa favorable frente a BTC con volumen confirmado y menor exposicion.")
+])
