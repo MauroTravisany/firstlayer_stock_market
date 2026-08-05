@@ -1,0 +1,17 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_champion_challenger_policy",
+  description: "Politica manual por activo para Paper Trading. V2 solo es campeon donde tiene evidencia; los demas perfiles permanecen en sombra.",
+  tags: ["trading", "paper", "daily", "champion", "governance"],
+  assertions: { nonNull: ["ticker", "champion_strategy_version", "execution_mode"], uniqueKey: ["ticker"] }
+}
+
+SELECT * FROM UNNEST([
+  STRUCT("AAPL" AS ticker, "TECH_MEGACAP" AS asset_rule_profile, "v2" AS champion_strategy_version, "PAPER_CHAMPION" AS execution_mode, "V2 tuvo evidencia positiva relativa en mega caps tecnologicas; se mantiene como control paper." AS policy_reason),
+  STRUCT("META", "DIGITAL_ADVERTISING_AI", "v2", "PAPER_CHAMPION", "V2 tuvo evidencia positiva relativa en publicidad digital/IA; se mantiene como control paper."),
+  STRUCT("NVDA", "SEMICONDUCTOR_AI", "v2", "SHADOW_ONLY", "V2 no valido una ventaja robusta en semiconductores; se mide sin abrir orden."),
+  STRUCT("COIN", "CRYPTO_LINKED_EQUITY", "v2", "SHADOW_ONLY", "La muestra de COIN es insuficiente para ejecutar; se conserva como comparador."),
+  STRUCT("BTC-USD", "CRYPTO_BTC", "v2", "SHADOW_ONLY", "La evidencia diaria de BTC no alcanza para promover V2 a ejecucion."),
+  STRUCT("ETH-USD", "CRYPTO_ETH", "v2", "SHADOW_ONLY", "La evidencia diaria de ETH no alcanza para promover V2 a ejecucion.")
+])

@@ -70,7 +70,7 @@ def count_submitted_today(config, analysis_date):
     return int(rows[0]["submitted_count"]) if rows else 0
 
 
-def fetch_entry_candidates(config, analysis_date=None, limit=10):
+def fetch_entry_candidates(config, analysis_date=None, limit=10, asset_scope="all"):
     client = bigquery.Client(project=config["project_id"])
     date_filter = "analysis_date = @analysis_date" if analysis_date else "analysis_date = (SELECT MAX(analysis_date) FROM " + _table_ref(config["signals_table"]) + ")"
     query = f"""
@@ -111,14 +111,21 @@ def fetch_entry_candidates(config, analysis_date=None, limit=10):
     LEFT JOIN already_executed ae
       ON ae.paper_trade_id = s.paper_trade_id
     WHERE s.paper_signal = "TRADE_LONG"
+      AND s.execution_eligible = TRUE
       AND s.setup_score >= @min_setup_score
       AND ae.paper_trade_id IS NULL
+      AND (
+        @asset_scope = "all"
+        OR (@asset_scope = "crypto" AND s.asset_type = "CRYPTO")
+        OR (@asset_scope = "equities" AND s.asset_type != "CRYPTO")
+      )
     ORDER BY s.setup_score DESC, s.ticker, s.strategy_version
     LIMIT @limit
     """
     params = [
         bigquery.ScalarQueryParameter("min_setup_score", "FLOAT64", config["min_setup_score"]),
         bigquery.ScalarQueryParameter("limit", "INT64", limit),
+        bigquery.ScalarQueryParameter("asset_scope", "STRING", asset_scope),
     ]
     if analysis_date:
         params.append(bigquery.ScalarQueryParameter("analysis_date", "DATE", analysis_date))

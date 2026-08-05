@@ -16,6 +16,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Validate Python entrypoints
+        run: |
+          python -m compileall -q \
+            cloud-functions/daily_stocks \
+            cloud-functions/financial_data \
+            cloud-functions/macro_data \
+            cloud-functions/daily_ai_analysis \
+            cloud-functions/paper_trading_alerts \
+            cloud-functions/paper_trade_executor \
+            cloud-functions/paper_trade_risk_monitor \
+            cloud-functions/strategy_brain
+
       - name: Sync Dataform root branch
         run: |
           git config user.name "github-actions[bot]"
@@ -55,6 +67,18 @@ jobs:
             -d "{\"releaseConfig\":\"${RELEASE}\"}" \
             "https://dataform.googleapis.com/v1beta1/${REPO}/compilationResults" \
             | jq -r '.name')"
+          if [ -z "${COMPILATION}" ] || [ "${COMPILATION}" = "null" ]; then
+            echo "Dataform compilation did not return a result name." >&2
+            exit 1
+          fi
+          COMPILATION_ERRORS="$(curl --fail-with-body -sS \
+            -H "Authorization: Bearer ${TOKEN}" \
+            "https://dataform.googleapis.com/v1beta1/${COMPILATION}" \
+            | jq '[.compilationErrors[]?] | length')"
+          if [ "${COMPILATION_ERRORS}" != "0" ]; then
+            echo "Dataform compilation contains ${COMPILATION_ERRORS} error(s)." >&2
+            exit 1
+          fi
           curl --fail-with-body -sS -X PATCH \
             -H "Authorization: Bearer ${TOKEN}" \
             -H "Content-Type: application/json" \
@@ -74,7 +98,7 @@ jobs:
               --timeout 900 \
               --concurrency 1 \
               --max-instances 1 \
-              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PORTFOLIO_TABLE_ID=portfolio_assets,DATA_QUALITY_TABLE_ID=pipeline_data_quality_daily,ALERT_WEBHOOK_TYPE=auto,TIME_ZONE=America/Santiago"
+              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PORTFOLIO_TABLE_ID=portfolio_assets,DATA_QUALITY_TABLE_ID=pipeline_data_quality_daily,ALERT_WEBHOOK_TYPE=auto,TIME_ZONE=America/Santiago,YAHOO_REQUEST_TIMEOUT_SECONDS=30"
 
       - name: Configure stock prices intraday scheduler
         run: |
@@ -164,6 +188,39 @@ jobs:
               --concurrency 1 \
               --max-instances 1 \
               --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PORTFOLIO_TABLE_ID=portfolio_assets,PEER_UNIVERSE_TABLE_ID=peer_universe,DATA_QUALITY_TABLE_ID=pipeline_data_quality_daily,ALERT_WEBHOOK_TYPE=auto,TIME_ZONE=America/Santiago,FINANCIAL_STATEMENTS_TABLE_ID=financial_statements,FINANCIAL_RATIOS_TABLE_ID=financial_ratios_snapshot"
+
+      - name: Configure financial data scheduler
+        run: |
+          SERVICE_URL="$(gcloud run services describe stockfinancial --platform managed --region us-east1 --format='value(status.url)')"
+          SERVICE_ACCOUNT="stock-alert-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
+          gcloud run services add-iam-policy-binding stockfinancial \
+            --region us-east1 \
+            --member "serviceAccount:${SERVICE_ACCOUNT}" \
+            --role "roles/run.invoker" \
+            --quiet
+          if gcloud scheduler jobs describe stockfinancial-daily --location us-east1 >/dev/null 2>&1; then
+            gcloud scheduler jobs update http stockfinancial-daily \
+              --location us-east1 \
+              --schedule "30 19 * * 1-5" \
+              --time-zone "America/Santiago" \
+              --uri "${SERVICE_URL}" \
+              --http-method POST \
+              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
+              --oidc-token-audience "${SERVICE_URL}" \
+              --message-body "{}" \
+              --attempt-deadline 900s
+          else
+            gcloud scheduler jobs create http stockfinancial-daily \
+              --location us-east1 \
+              --schedule "30 19 * * 1-5" \
+              --time-zone "America/Santiago" \
+              --uri "${SERVICE_URL}" \
+              --http-method POST \
+              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
+              --oidc-token-audience "${SERVICE_URL}" \
+              --message-body "{}" \
+              --attempt-deadline 900s
+          fi
 
       - name: Deploy AI analysis to Cloud Run
         run: |
@@ -284,7 +341,7 @@ jobs:
               --timeout 300 \
               --concurrency 1 \
               --max-instances 1 \
-              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PAPER_EXECUTION_MODE=paper,TRADING_SIGNALS_TABLE_ID=trading_directional_signals,TRADING_RESULTS_TABLE_ID=trading_directional_trade_results,ALPACA_EXECUTIONS_TABLE_ID=trading_alpaca_paper_executions,ALPACA_EQUITY_ORDER_CLASS=simple,ALPACA_ENABLE_CRYPTO_ORDERS=true,ALPACA_MAX_ORDERS_PER_RUN=3,ALPACA_MAX_ORDERS_PER_DAY=5,ALPACA_MAX_OPEN_POSITIONS=5,ALPACA_MAX_NOTIONAL_USD=10,ALPACA_MIN_SETUP_SCORE=0,ALPACA_REQUEST_TIMEOUT_SECONDS=20"
+              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PAPER_EXECUTION_MODE=paper,TRADING_SIGNALS_TABLE_ID=trading_champion_challenger_signals,TRADING_RESULTS_TABLE_ID=trading_directional_trade_results,ALPACA_EXECUTIONS_TABLE_ID=trading_alpaca_paper_executions,ALPACA_EQUITY_ORDER_CLASS=simple,ALPACA_ENABLE_CRYPTO_ORDERS=true,ALPACA_MAX_ORDERS_PER_RUN=3,ALPACA_MAX_ORDERS_PER_DAY=5,ALPACA_MAX_OPEN_POSITIONS=5,ALPACA_MAX_NOTIONAL_USD=10,ALPACA_MIN_SETUP_SCORE=0,ALPACA_REQUEST_TIMEOUT_SECONDS=20"
 
       - name: Configure Alpaca paper trade executor scheduler
         run: |
@@ -295,29 +352,31 @@ jobs:
             --member "serviceAccount:${SERVICE_ACCOUNT}" \
             --role "roles/run.invoker" \
             --quiet
-          if gcloud scheduler jobs describe paper-trade-executor-intraday --location us-east1 >/dev/null 2>&1; then
-            gcloud scheduler jobs update http paper-trade-executor-intraday \
+          if gcloud scheduler jobs describe paper-trade-executor-equities --location us-east1 >/dev/null 2>&1; then
+            gcloud scheduler jobs update http paper-trade-executor-equities \
               --location us-east1 \
               --schedule "55 */4 * * 1-5" \
               --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}?execute=true" \
+              --uri "${SERVICE_URL}?execute=true&asset_scope=equities" \
               --http-method POST \
               --oidc-service-account-email "${SERVICE_ACCOUNT}" \
               --oidc-token-audience "${SERVICE_URL}" \
               --message-body "{}" \
               --attempt-deadline 300s
           else
-            gcloud scheduler jobs create http paper-trade-executor-intraday \
+            gcloud scheduler jobs create http paper-trade-executor-equities \
               --location us-east1 \
               --schedule "55 */4 * * 1-5" \
               --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}?execute=true" \
+              --uri "${SERVICE_URL}?execute=true&asset_scope=equities" \
               --http-method POST \
               --oidc-service-account-email "${SERVICE_ACCOUNT}" \
               --oidc-token-audience "${SERVICE_URL}" \
               --message-body "{}" \
               --attempt-deadline 300s
           fi
+          gcloud scheduler jobs delete paper-trade-executor-intraday --location us-east1 --quiet || true
+          gcloud scheduler jobs delete paper-trade-executor-crypto --location us-east1 --quiet || true
 
       - name: Deploy Alpaca paper risk monitor to Cloud Run
         run: |

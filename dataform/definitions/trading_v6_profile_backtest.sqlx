@@ -3,7 +3,7 @@ config {
   schema: "acciones_dataset",
   name: "trading_v6_profile_backtest",
   description: "V6: cartera aislada por lotes sin solapamiento que usa la logica V2 solo en perfiles seleccionados antes de 2025. No alimenta Paper Trading.",
-  tags: ["trading", "backtest", "v6", "experiment", "daily"],
+  tags: ["trading", "backtest", "v6", "experiment"],
   bigquery: { partitionBy: "analysis_date", clusterBy: ["asset_rule_profile", "ticker"] },
   assertions: { nonNull: ["analysis_date", "outcome_date", "v6_trade_id", "asset_rule_profile"], uniqueKey: ["v6_trade_id"] },
   dependencies: ["trading_directional_trade_results", "trading_watchlist", "trading_v6_profile_selection"]

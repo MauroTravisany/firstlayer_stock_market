@@ -1,0 +1,38 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_champion_challenger_signals",
+  description: "Senales V1-V4 etiquetadas como campeon ejecutable o challenger en sombra segun politica manual por perfil.",
+  tags: ["trading", "paper", "daily", "champion", "signal"],
+  bigquery: { partitionBy: "analysis_date", clusterBy: ["ticker", "model_role", "execution_eligible"] },
+  assertions: { nonNull: ["analysis_date", "ticker", "paper_trade_id", "model_role"], uniqueKey: ["paper_trade_id"] },
+  dependencies: ["trading_directional_signals", "trading_champion_challenger_policy"]
+}
+
+SELECT
+  s.*,
+  p.asset_rule_profile AS champion_asset_rule_profile,
+  p.champion_strategy_version,
+  p.execution_mode,
+  p.policy_reason,
+  CASE
+    WHEN s.strategy_version = p.champion_strategy_version THEN "CHAMPION"
+    ELSE "CHALLENGER_SHADOW"
+  END AS model_role,
+  CASE
+    WHEN p.execution_mode = "PAPER_CHAMPION"
+      AND s.strategy_version = p.champion_strategy_version
+      AND s.direction = "LONG"
+      AND s.paper_signal = "TRADE_LONG"
+      THEN TRUE
+    ELSE FALSE
+  END AS execution_eligible,
+  CASE
+    WHEN p.execution_mode = "PAPER_CHAMPION" AND s.strategy_version = p.champion_strategy_version THEN "EJECUTAR_PAPER"
+    WHEN p.execution_mode = "SHADOW_ONLY" THEN "MEDIR_SIN_EJECUTAR_SIN_EVIDENCIA_POR_PERFIL"
+    ELSE "MEDIR_CHALLENGER"
+  END AS execution_decision,
+  CURRENT_TIMESTAMP() AS champion_calculated_at
+FROM ${ref("trading_directional_signals")} s
+JOIN ${ref("trading_champion_challenger_policy")} p
+  ON p.ticker = s.ticker

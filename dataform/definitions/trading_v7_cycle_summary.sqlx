@@ -3,7 +3,7 @@ config {
   schema: "acciones_dataset",
   name: "trading_v7_cycle_summary",
   description: "Auditoria V7 por perfil y periodo. Solo permite revision si supera prueba fuera de muestra; nunca promociona por si sola a Paper Trading.",
-  tags: ["trading", "backtest", "v7", "experiment", "audit", "daily"],
+  tags: ["trading", "backtest", "v7", "experiment", "audit"],
   assertions: { nonNull: ["evaluation_period", "asset_rule_profile"], uniqueKey: ["evaluation_period", "asset_rule_profile"] },
   dependencies: ["trading_v7_cycle_portfolio"]
 }

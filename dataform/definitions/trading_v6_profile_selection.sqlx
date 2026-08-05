@@ -3,7 +3,7 @@ config {
   schema: "acciones_dataset",
   name: "trading_v6_profile_selection",
   description: "Seleccion V6 basada solamente en resultados V2 hasta 2024. Evita usar 2025+ para decidir perfiles de la prueba fuera de muestra.",
-  tags: ["trading", "backtest", "v6", "experiment", "daily"],
+  tags: ["trading", "backtest", "v6", "experiment"],
   assertions: { nonNull: ["asset_rule_profile", "selection_status"], uniqueKey: ["asset_rule_profile"] },
   dependencies: ["trading_directional_strategy_backtest"]
 }
@@ -44,4 +44,3 @@ SELECT
   "Regla bloqueada con datos hasta 2024; 2025+ se reserva para validacion fuera de muestra." AS selection_policy,
   CURRENT_TIMESTAMP() AS calculated_at
 FROM aggregated
-

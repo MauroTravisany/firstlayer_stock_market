@@ -70,6 +70,9 @@ def main(request):
     dry_run = parse_bool(request_json.get("dry_run", request.args.get("dry_run")), True)
     analysis_date = parse_date(request_json.get("analysis_date") or request.args.get("analysis_date"))
     max_orders = int(request_json.get("max_orders") or request.args.get("max_orders") or 0)
+    asset_scope = (request_json.get("asset_scope") or request.args.get("asset_scope") or "all").lower()
+    if asset_scope not in {"all", "equities", "crypto"}:
+        return json.dumps({"status": "error", "message": "asset_scope must be all, equities or crypto"}), 400, {"Content-Type": "application/json"}
 
     try:
         if request_json.get("execute") is True or str(request.args.get("execute")).lower() == "true":
@@ -126,7 +129,7 @@ def main(request):
             )
 
         candidate_limit = max_orders or config["max_orders_per_run"]
-        candidates = fetch_entry_candidates(config, analysis_date, limit=candidate_limit * 3)
+        candidates = fetch_entry_candidates(config, analysis_date, limit=candidate_limit * 3, asset_scope=asset_scope)
         if not candidates:
             return json.dumps({"status": "no_candidates"}), 200, {"Content-Type": "application/json"}
 
@@ -143,6 +146,7 @@ def main(request):
                         "status": "skipped_risk_limit",
                         "message": "Daily order limit reached",
                         "analysis_date": str(first_date),
+                        "asset_scope": asset_scope,
                         "submitted_today": submitted_today,
                     },
                     default=str,
@@ -234,6 +238,7 @@ def main(request):
                 {
                     "status": "dry_run" if dry_run else "processed",
                     "analysis_date": str(first_date),
+                    "asset_scope": asset_scope,
                     "candidate_count": len(candidates),
                     "submitted_today_before_run": submitted_today,
                     "max_orders_this_run": remaining_run,

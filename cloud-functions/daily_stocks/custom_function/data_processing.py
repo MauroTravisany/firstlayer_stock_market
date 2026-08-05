@@ -2,6 +2,7 @@ import base64
 import hashlib
 import json
 import logging
+import os
 from datetime import datetime, timedelta
 
 logging.basicConfig(level=logging.INFO)
@@ -11,6 +12,7 @@ CRYPTO_INTERVAL = "1h"
 CRYPTO_OUTPUT_FREQUENCY = "4h"
 DEFAULT_INTERVAL = "15m"
 HISTORICAL_DAILY_THRESHOLD_DAYS = 59
+YAHOO_REQUEST_TIMEOUT_SECONDS = int(os.environ.get("YAHOO_REQUEST_TIMEOUT_SECONDS", "30"))
 
 
 def generate_unique_id(ticker, fecha, hora):
@@ -53,6 +55,7 @@ def save_data_to_json(ticker, output_file, target_date, asset_type="STOCK", end_
                 end=end_date,
                 interval=interval,
                 auto_adjust=False,
+                timeout=YAHOO_REQUEST_TIMEOUT_SECONDS,
             )
             stock_data = _normalize_market_data(stock_data, asset_type)
         except ValueError as exc:

@@ -1,0 +1,56 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_champion_execution_reconciliation",
+  description: "Compara entradas y salidas reales de Alpaca Paper con el precio teorico de las senales campeonas.",
+  tags: ["trading", "paper", "daily", "champion", "execution"],
+  bigquery: { partitionBy: "analysis_date", clusterBy: ["ticker", "execution_status"] },
+  dependencies: ["trading_champion_challenger_signals"]
+}
+
+WITH entries AS (
+  SELECT *
+  FROM `stocks-437902.acciones_dataset.trading_alpaca_paper_executions`
+  WHERE order_intent = "ENTRY"
+), exits AS (
+  SELECT * EXCEPT (exit_rank)
+  FROM (
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY paper_trade_id ORDER BY updated_at DESC) AS exit_rank
+    FROM `stocks-437902.acciones_dataset.trading_alpaca_paper_executions`
+    WHERE order_intent = "EXIT"
+  )
+  WHERE exit_rank = 1
+)
+SELECT
+  e.analysis_date,
+  e.paper_trade_id,
+  e.ticker,
+  e.asset_type,
+  e.strategy_version,
+  s.champion_asset_rule_profile,
+  s.model_role,
+  s.execution_mode,
+  e.execution_status,
+  e.order_status,
+  e.notional_usd,
+  e.theoretical_entry_price,
+  SAFE_CAST(JSON_VALUE(e.order_response_json, "$.filled_avg_price") AS FLOAT64) AS broker_entry_price,
+  SAFE_CAST(JSON_VALUE(x.order_response_json, "$.filled_avg_price") AS FLOAT64) AS broker_exit_price,
+  x.execution_status AS exit_execution_status,
+  x.updated_at AS exit_updated_at,
+  ROUND(SAFE_CAST(JSON_VALUE(e.order_response_json, "$.filled_avg_price") AS FLOAT64) - e.theoretical_entry_price, 4) AS entry_slippage_usd,
+  CASE
+    WHEN x.execution_status = "FILLED"
+      AND SAFE_CAST(JSON_VALUE(e.order_response_json, "$.filled_avg_price") AS FLOAT64) IS NOT NULL
+      AND SAFE_CAST(JSON_VALUE(x.order_response_json, "$.filled_avg_price") AS FLOAT64) IS NOT NULL
+      THEN ROUND(
+        COALESCE(e.qty, SAFE_CAST(JSON_VALUE(e.order_response_json, "$.filled_qty") AS FLOAT64))
+        * (SAFE_CAST(JSON_VALUE(x.order_response_json, "$.filled_avg_price") AS FLOAT64) - SAFE_CAST(JSON_VALUE(e.order_response_json, "$.filled_avg_price") AS FLOAT64)),
+        4
+      )
+  END AS realized_pnl_usd_estimate,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM entries e
+JOIN ${ref("trading_champion_challenger_signals")} s USING (paper_trade_id)
+LEFT JOIN exits x USING (paper_trade_id)
+WHERE s.execution_eligible
