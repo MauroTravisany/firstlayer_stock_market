@@ -50,7 +50,7 @@ WITH config_values AS (
    AND d.batch_start_date = b.analysis_date
 ), selected AS (
   SELECT
-    *,
+    * EXCEPT (position_notional_clp),
     TO_HEX(SHA256(CONCAT(paper_trade_id, "|v8-focus-two-slot"))) AS v8_trade_id,
     ROUND(initial_capital_clp * position_size_pct, 0) AS position_notional_clp
   FROM ranked
