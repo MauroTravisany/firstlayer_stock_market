@@ -16,5 +16,6 @@ SELECT
   0.10 AS max_position_pct,
   5 AS stock_max_holding_days,
   3 AS crypto_max_holding_days,
+  16 AS batch_cycle_days,
   TRUE AS backtest_only,
-  "Mas observaciones sin sumar capital ficticio: ocho cupos independientes, 10% maximo por cupo y salidas temporales rapidas." AS rationale
+  "Mas observaciones sin sumar capital ficticio: hasta ocho posiciones por lote, 10% maximo por posicion y ciclos de 16 dias que evitan solapamientos." AS rationale
