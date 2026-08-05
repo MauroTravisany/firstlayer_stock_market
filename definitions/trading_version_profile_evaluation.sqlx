@@ -1,0 +1,120 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_version_profile_evaluation",
+  description: "Evaluacion auditable por version y perfil de activo. Compara V1-V5 y V5P sin sumar capital entre estrategias.",
+  tags: ["trading", "backtest", "evaluation", "audit", "daily"],
+  assertions: { nonNull: ["evaluation_period", "strategy_version", "asset_rule_profile"], uniqueKey: ["evaluation_period", "strategy_version", "asset_rule_profile"] },
+  dependencies: ["trading_directional_strategy_backtest", "trading_v5_high_turnover_portfolio", "trading_v5_profile_portfolio"]
+}
+
+-- The mapping is intentionally shared across versions so a profile means the
+-- same thing in every experiment. Each source retains its own capital model.
+WITH base_trades AS (
+  SELECT
+    LOWER(strategy_version) AS strategy_version,
+    asset_type,
+    trading_group,
+    sector_profile,
+    cycle_profile,
+    analysis_date,
+    outcome_date,
+    ticker,
+    net_pnl_clp,
+    net_return_pct,
+    is_win
+  FROM ${ref("trading_directional_strategy_backtest")}
+  UNION ALL
+  SELECT
+    "v5" AS strategy_version,
+    asset_type,
+    trading_group,
+    sector_profile,
+    cycle_profile,
+    analysis_date,
+    outcome_date,
+    ticker,
+    net_pnl_clp,
+    net_return_pct,
+    is_win
+  FROM ${ref("trading_v5_high_turnover_portfolio")}
+  UNION ALL
+  SELECT
+    "v5p" AS strategy_version,
+    asset_type,
+    trading_group,
+    sector_profile,
+    cycle_profile,
+    analysis_date,
+    outcome_date,
+    ticker,
+    net_pnl_clp,
+    net_return_pct,
+    is_win
+  FROM ${ref("trading_v5_profile_portfolio")}
+), profiled AS (
+  SELECT
+    *,
+    CASE
+      WHEN asset_type = "CRYPTO" AND cycle_profile LIKE "%BTC%" THEN "CRYPTO_BTC"
+      WHEN asset_type = "CRYPTO" THEN "CRYPTO_ETH"
+      WHEN trading_group = "crypto_sensitive_stock" THEN "CRYPTO_LINKED_EQUITY"
+      WHEN trading_group = "high_beta_stock" THEN "SEMICONDUCTOR_AI"
+      WHEN sector_profile = "Digital advertising/AI" THEN "DIGITAL_ADVERTISING_AI"
+      WHEN trading_group = "mega_cap_stock" THEN "TECH_MEGACAP"
+      ELSE "DEFENSIVE_OR_ETF"
+    END AS asset_rule_profile
+  FROM base_trades
+  WHERE outcome_date IS NOT NULL
+), period_trades AS (
+  SELECT "ALL_HISTORY" AS evaluation_period, strategy_version, "ALL_ASSETS" AS asset_rule_profile, * EXCEPT (strategy_version, asset_rule_profile)
+  FROM profiled
+  UNION ALL
+  SELECT "ALL_HISTORY", strategy_version, asset_rule_profile, * EXCEPT (strategy_version, asset_rule_profile)
+  FROM profiled
+  UNION ALL
+  SELECT "RECENT_2025_ONWARD", strategy_version, "ALL_ASSETS", * EXCEPT (strategy_version, asset_rule_profile)
+  FROM profiled
+  WHERE analysis_date >= DATE "2025-01-01"
+  UNION ALL
+  SELECT "RECENT_2025_ONWARD", strategy_version, asset_rule_profile, * EXCEPT (strategy_version, asset_rule_profile)
+  FROM profiled
+  WHERE analysis_date >= DATE "2025-01-01"
+), equity_curve AS (
+  SELECT
+    *,
+    SUM(net_pnl_clp) OVER (
+      PARTITION BY evaluation_period, strategy_version, asset_rule_profile
+      ORDER BY outcome_date, analysis_date, ticker
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS cumulative_pnl_clp
+  FROM period_trades
+), equity_with_peak AS (
+  SELECT
+    *,
+    MAX(cumulative_pnl_clp) OVER (
+      PARTITION BY evaluation_period, strategy_version, asset_rule_profile
+      ORDER BY outcome_date, analysis_date, ticker
+      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS running_peak_pnl_clp
+  FROM equity_curve
+)
+
+SELECT
+  evaluation_period,
+  strategy_version,
+  asset_rule_profile,
+  COUNT(*) AS closed_trades,
+  COUNT(DISTINCT ticker) AS ticker_count,
+  COUNTIF(is_win) AS wins,
+  COUNTIF(NOT is_win) AS losses,
+  ROUND(SAFE_DIVIDE(COUNTIF(is_win), COUNT(*)) * 100, 2) AS win_rate_pct,
+  ROUND(SUM(net_pnl_clp), 0) AS net_pnl_clp,
+  ROUND(SAFE_DIVIDE(SUM(IF(net_pnl_clp > 0, net_pnl_clp, 0)), ABS(SUM(IF(net_pnl_clp < 0, net_pnl_clp, 0)))), 3) AS profit_factor,
+  ROUND(AVG(net_return_pct) * 100, 2) AS avg_net_return_pct,
+  ROUND(APPROX_QUANTILES(net_pnl_clp, 100)[OFFSET(5)], 0) AS pnl_p05_clp,
+  ROUND(MAX(running_peak_pnl_clp - cumulative_pnl_clp), 0) AS max_drawdown_clp,
+  ROUND(AVG(DATE_DIFF(outcome_date, analysis_date, DAY)), 2) AS avg_calendar_holding_days,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM equity_with_peak
+GROUP BY evaluation_period, strategy_version, asset_rule_profile
