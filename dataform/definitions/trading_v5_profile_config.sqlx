@@ -1,0 +1,18 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v5_profile_config",
+  description: "Configuracion auditable de V5P: experimento de reglas independientes por perfil de activo. No alimenta paper trading ni Alpaca.",
+  tags: ["trading", "backtest", "v5_profile", "experiment", "daily"]
+}
+
+SELECT
+  "v5-profile-g3" AS experiment_id,
+  "G3_STRUCTURAL_V2" AS benchmark_source,
+  10000000.0 AS initial_capital_clp,
+  8 AS max_entries_per_day,
+  2 AS max_entries_per_profile_per_day,
+  16 AS batch_cycle_days,
+  TRUE AS backtest_only,
+  "V5P mantiene V5 original intacto y prueba filtros, riesgo y salidas distintos por tipo de activo." AS rationale
+

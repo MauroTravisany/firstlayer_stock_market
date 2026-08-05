@@ -1,0 +1,19 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v5_profile_asset_rules",
+  description: "Reglas V5P independientes por perfil de activo. Son parametros de backtesting, no parametros de ejecucion.",
+  tags: ["trading", "backtest", "v5_profile", "experiment", "daily"]
+}
+
+SELECT *
+FROM UNNEST([
+  STRUCT("TECH_MEGACAP" AS asset_rule_profile, 4.5 AS min_setup_score, 4 AS min_technical_score, 3 AS min_trend_score, 0.95 AS stop_distance_multiplier, 1.80 AS take_profit_r, 5 AS max_holding_days, 0.10 AS max_position_pct, FALSE AS require_positive_macro, TRUE AS block_earnings_risk, FALSE AS require_crypto_strength, "Tecnologia mega-cap: tendencia y calidad, sin perseguir una entrada debil." AS rule_rationale),
+  STRUCT("DIGITAL_ADVERTISING_AI", 5.0, 4, 3, 1.00, 2.00, 5, 0.08, TRUE, TRUE, FALSE, "Publicidad digital/IA: exige contexto macro favorable y controla riesgo de resultados."),
+  STRUCT("SEMICONDUCTOR_AI", 5.5, 5, 4, 1.15, 2.20, 5, 0.07, TRUE, TRUE, FALSE, "Semiconductores: alta volatilidad, requiere tendencia, tecnica y macro alineadas."),
+  STRUCT("CRYPTO_LINKED_EQUITY", 5.5, 5, 4, 1.20, 2.20, 4, 0.05, FALSE, FALSE, TRUE, "Accion ligada a cripto: riesgo reducido y confirma ciclo cripto favorable."),
+  STRUCT("CRYPTO_BTC", 5.0, 5, 4, 1.25, 2.25, 3, 0.08, FALSE, FALSE, TRUE, "BTC: tendencia, volumen y regimen cripto; horizonte corto por operacion continua."),
+  STRUCT("CRYPTO_ETH", 5.5, 5, 4, 1.35, 2.50, 3, 0.06, FALSE, FALSE, TRUE, "ETH: beta mayor que BTC, filtro y stop mas amplios con menor exposicion."),
+  STRUCT("DEFENSIVE_OR_ETF", 4.0, 3, 2, 0.85, 1.50, 5, 0.10, FALSE, FALSE, FALSE, "Defensivas y ETF: objetivo moderado, stop mas ajustado y menor exigencia de momentum.")
+])
+

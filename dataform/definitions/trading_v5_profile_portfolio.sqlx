@@ -1,0 +1,37 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v5_profile_portfolio",
+  description: "Cartera V5P con hasta ocho posiciones por lote, sin solapar capital. Solo backtesting.",
+  tags: ["trading", "backtest", "v5_profile", "experiment", "daily"],
+  bigquery: { partitionBy: "analysis_date", clusterBy: ["asset_rule_profile", "ticker"] },
+  assertions: { nonNull: ["v5p_trade_id", "outcome_date", "asset_rule_profile"], uniqueKey: ["v5p_trade_id"] },
+  dependencies: ["trading_v5_profile_results", "trading_v5_profile_config"]
+}
+
+WITH candidates AS (
+  SELECT
+    r.*,
+    c.batch_cycle_days,
+    DIV(DATE_DIFF(r.analysis_date, DATE "2019-01-01", DAY), c.batch_cycle_days) AS batch_number,
+    MOD(DATE_DIFF(r.analysis_date, DATE "2019-01-01", DAY), c.batch_cycle_days) AS batch_day_offset
+  FROM ${ref("trading_v5_profile_results")} r
+  CROSS JOIN ${ref("trading_v5_profile_config")} c
+), batch_entry_days AS (
+  SELECT batch_number, MIN(analysis_date) AS batch_start_date
+  FROM candidates
+  WHERE batch_day_offset < 8
+  GROUP BY batch_number
+)
+
+SELECT
+  c.*,
+  c.daily_rank AS portfolio_slot,
+  b.batch_start_date,
+  "CONCURRENT_EIGHT_BATCH_PROFILED" AS portfolio_model,
+  CURRENT_TIMESTAMP() AS portfolio_calculated_at
+FROM batch_entry_days b
+JOIN candidates c
+  ON c.batch_number = b.batch_number
+ AND c.analysis_date = b.batch_start_date
+

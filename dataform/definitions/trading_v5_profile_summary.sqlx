@@ -1,0 +1,53 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v5_profile_summary",
+  description: "Auditoria V5P por periodo y perfil de activo. Nunca autoriza ejecucion en paper trading.",
+  tags: ["trading", "backtest", "v5_profile", "experiment", "audit", "daily"],
+  assertions: { nonNull: ["evaluation_period", "asset_rule_profile"], uniqueKey: ["evaluation_period", "asset_rule_profile"] },
+  dependencies: ["trading_v5_profile_portfolio", "trading_v5_profile_config"]
+}
+
+WITH period_trades AS (
+  SELECT "ALL_HISTORY" AS evaluation_period, "ALL_ASSETS" AS asset_rule_profile, p.* EXCEPT (asset_rule_profile)
+  FROM ${ref("trading_v5_profile_portfolio")} p
+  UNION ALL
+  SELECT "ALL_HISTORY", p.asset_rule_profile, p.* EXCEPT (asset_rule_profile)
+  FROM ${ref("trading_v5_profile_portfolio")} p
+  UNION ALL
+  SELECT "RECENT_2025_ONWARD", "ALL_ASSETS", p.* EXCEPT (asset_rule_profile)
+  FROM ${ref("trading_v5_profile_portfolio")} p
+  WHERE p.analysis_date >= DATE "2025-01-01"
+  UNION ALL
+  SELECT "RECENT_2025_ONWARD", p.asset_rule_profile, p.* EXCEPT (asset_rule_profile)
+  FROM ${ref("trading_v5_profile_portfolio")} p
+  WHERE p.analysis_date >= DATE "2025-01-01"
+), aggregated AS (
+  SELECT
+    evaluation_period,
+    asset_rule_profile,
+    COUNT(*) AS closed_trades,
+    COUNT(DISTINCT ticker) AS ticker_count,
+    COUNTIF(is_win) AS wins,
+    COUNTIF(NOT is_win) AS losses,
+    ROUND(SAFE_DIVIDE(COUNTIF(is_win), COUNT(*)) * 100, 2) AS win_rate_pct,
+    ROUND(SUM(net_pnl_clp), 0) AS net_pnl_clp,
+    ROUND(SAFE_DIVIDE(SUM(IF(net_pnl_clp > 0, net_pnl_clp, 0)), ABS(SUM(IF(net_pnl_clp < 0, net_pnl_clp, 0)))), 3) AS profit_factor,
+    ROUND(AVG(future_days_seen), 2) AS avg_holding_days
+  FROM period_trades
+  GROUP BY evaluation_period, asset_rule_profile
+)
+
+SELECT
+  a.*,
+  c.experiment_id,
+  c.initial_capital_clp,
+  ROUND(SAFE_DIVIDE(a.net_pnl_clp, c.initial_capital_clp) * 100, 2) AS return_on_initial_capital_pct,
+  CASE
+    WHEN evaluation_period = "RECENT_2025_ONWARD" AND closed_trades >= 20 AND net_pnl_clp > 0 AND profit_factor >= 1.10 THEN "REVIEW_REQUIRED_BEFORE_PAPER"
+    ELSE "BACKTEST_ONLY"
+  END AS promotion_status,
+  "V5P es experimental: se compara con V5 original por perfil y periodo antes de cualquier promocion." AS safety_policy,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM aggregated a
+CROSS JOIN ${ref("trading_v5_profile_config")} c
