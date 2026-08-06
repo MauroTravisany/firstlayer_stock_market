@@ -90,6 +90,7 @@ Para evitar sumar capital ficticio en operaciones incompatibles, el reporte prin
 - `trading_directional_strategy_daily_summary`: curva de capital independiente para v1, v2, v3 y v4. Estas curvas no se suman entre si.
 - `trading_directional_daily_summary`: usa v2 solo como referencia diaria compatible con alertas y muestra la comparativa de las cuatro variantes por separado.
 - `trading_v5_high_turnover_*`: experimento separado sobre el benchmark G3 y V2. Simula hasta ocho cupos concurrentes, 10% maximo por cupo y salidas temporales de 3 dias para cripto o 5 para acciones. Es solo backtest y no es leido por Alpaca.
+- `trading_v6_1_profile_*`: experimento por perfiles independientes construido desde la consistencia V1-V5 y G1-G3. Evalua AAPL/V2, META/V2 y BTC/V3 por separado entre entrenamiento hasta 2024 y validacion 2025+. Solo AAPL/V2 cumple la puerta inicial; META/V2 y BTC/V3 siguen en sombra por muestra fuera de muestra insuficiente. Nunca suma sus PnL ni habilita Alpaca.
 
 La ejecucion paper usa una capa separada de gobernanza:
 

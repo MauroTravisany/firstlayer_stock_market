@@ -1,0 +1,37 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v6_1_profile_summary",
+  description: "Resumen auditable V6.1 por perfil y ventana. Solo habilita revision manual cuando acumula evidencia fuera de muestra.",
+  tags: ["trading", "backtest", "v6_1", "experiment", "audit"],
+  assertions: { nonNull: ["profile_id", "evaluation_period"], uniqueKey: ["profile_id", "evaluation_period"] },
+  dependencies: ["trading_v6_1_profile_backtest"]
+}
+
+SELECT
+  profile_id,
+  ANY_VALUE(ticker) AS ticker,
+  ANY_VALUE(strategy_version) AS strategy_version,
+  ANY_VALUE(execution_lane) AS execution_lane,
+  ANY_VALUE(selection_status) AS selection_status,
+  evaluation_period,
+  COUNT(*) AS closed_trades,
+  COUNTIF(is_win) AS wins,
+  COUNTIF(NOT is_win) AS losses,
+  ROUND(SAFE_DIVIDE(COUNTIF(is_win), COUNT(*)) * 100, 2) AS win_rate_pct,
+  ROUND(SUM(net_pnl_clp), 0) AS net_pnl_clp,
+  ROUND(AVG(net_pnl_clp), 0) AS avg_net_pnl_clp,
+  ROUND(SAFE_DIVIDE(SUM(IF(net_pnl_clp > 0, net_pnl_clp, 0)), ABS(SUM(IF(net_pnl_clp < 0, net_pnl_clp, 0)))), 3) AS profit_factor,
+  ROUND(AVG(net_return_pct) * 100, 2) AS avg_net_return_pct,
+  CASE
+    WHEN evaluation_period = "OUT_OF_SAMPLE_2025_ONWARD"
+      AND COUNT(*) >= 15
+      AND SUM(net_pnl_clp) > 0
+      AND SAFE_DIVIDE(SUM(IF(net_pnl_clp > 0, net_pnl_clp, 0)), ABS(SUM(IF(net_pnl_clp < 0, net_pnl_clp, 0)))) >= 1.15
+      THEN "MANUAL_REVIEW_ELIGIBLE"
+    ELSE "BACKTEST_OR_SHADOW_ONLY"
+  END AS promotion_status,
+  "No combina PnL entre perfiles y no modifica las estrategias activas ni Alpaca." AS safety_policy,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM ${ref("trading_v6_1_profile_backtest")}
+GROUP BY profile_id, evaluation_period
