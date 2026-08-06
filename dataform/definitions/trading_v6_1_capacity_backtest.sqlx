@@ -1,0 +1,62 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v6_1_capacity_backtest",
+  description: "V6.1 de capacidad: conserva las mismas senales LONG estrictas, pero asigna un cupo secuencial independiente a cada perfil seleccionado.",
+  tags: ["trading", "backtest", "v6_1_capacity", "experiment", "audit"],
+  bigquery: { partitionBy: "analysis_date", clusterBy: ["profile_id", "ticker"] },
+  assertions: { nonNull: ["profile_id", "analysis_date", "outcome_date", "paper_trade_id"], uniqueKey: ["profile_id", "paper_trade_id"] },
+  dependencies: ["trading_directional_trade_results", "trading_v6_1_profile_selection"]
+}
+
+-- Capacity changes only portfolio availability. Entry score, trend, risk, stops,
+-- targets, costs and holding horizon are inherited unchanged from the base signal.
+WITH RECURSIVE candidates AS (
+  SELECT
+    s.profile_id,
+    s.execution_lane,
+    s.selection_status,
+    s.rationale AS profile_rationale,
+    r.* EXCEPT (calculated_at),
+    ROW_NUMBER() OVER (
+      PARTITION BY s.profile_id, r.analysis_date
+      ORDER BY r.setup_score DESC, r.signal_timestamp DESC
+    ) AS daily_rank
+  FROM ${ref("trading_directional_trade_results")} r
+  JOIN ${ref("trading_v6_1_profile_selection")} s
+    ON s.ticker = r.ticker
+   AND s.strategy_version = r.strategy_version
+  WHERE r.direction = "LONG"
+    AND r.outcome_date IS NOT NULL
+    AND s.selection_status IN ("SELECTED_FOR_V6_1", "SHADOW_PENDING_OOS_SAMPLE")
+), daily_candidates AS (
+  SELECT * EXCEPT (daily_rank)
+  FROM candidates
+  WHERE daily_rank = 1
+), seed AS (
+  SELECT
+    *,
+    ROW_NUMBER() OVER (PARTITION BY profile_id ORDER BY analysis_date, signal_timestamp) AS seed_rank
+  FROM daily_candidates
+), sequential_trades AS (
+  (SELECT * EXCEPT (seed_rank) FROM seed WHERE seed_rank = 1)
+  UNION ALL
+  (SELECT next_trade.*
+   FROM sequential_trades previous_trade
+   JOIN daily_candidates next_trade
+     ON next_trade.profile_id = previous_trade.profile_id
+    AND next_trade.analysis_date > previous_trade.outcome_date
+   LEFT JOIN daily_candidates earlier_trade
+     ON earlier_trade.profile_id = previous_trade.profile_id
+    AND earlier_trade.analysis_date > previous_trade.outcome_date
+    AND earlier_trade.analysis_date < next_trade.analysis_date
+   WHERE earlier_trade.paper_trade_id IS NULL)
+)
+
+SELECT
+  *,
+  CASE WHEN analysis_date < DATE "2025-01-01" THEN "TRAINING_TO_2024" ELSE "OUT_OF_SAMPLE_2025_ONWARD" END AS evaluation_period,
+  "V6_1_INDEPENDENT_PROFILE_CAPACITY" AS portfolio_model,
+  "Backtest only. One open position per profile, with no duplicated entries and no Alpaca execution." AS safety_policy,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM sequential_trades

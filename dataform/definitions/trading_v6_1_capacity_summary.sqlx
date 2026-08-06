@@ -1,0 +1,54 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v6_1_capacity_summary",
+  description: "Compara V6.1 normal con la prueba de capacidad. No permite promocion automatica ni modifica Paper Trading.",
+  tags: ["trading", "backtest", "v6_1_capacity", "experiment", "audit"],
+  assertions: { nonNull: ["profile_id", "evaluation_period"], uniqueKey: ["profile_id", "evaluation_period"] },
+  dependencies: ["trading_v6_1_capacity_backtest", "trading_v6_1_profile_summary"]
+}
+
+WITH capacity AS (
+  SELECT
+    profile_id,
+    ANY_VALUE(ticker) AS ticker,
+    ANY_VALUE(strategy_version) AS strategy_version,
+    evaluation_period,
+    COUNT(*) AS capacity_closed_trades,
+    COUNTIF(is_win) AS capacity_wins,
+    ROUND(SAFE_DIVIDE(COUNTIF(is_win), COUNT(*)) * 100, 2) AS capacity_win_rate_pct,
+    ROUND(SUM(net_pnl_clp), 0) AS capacity_net_pnl_clp,
+    ROUND(SAFE_DIVIDE(SUM(IF(net_pnl_clp > 0, net_pnl_clp, 0)), ABS(SUM(IF(net_pnl_clp < 0, net_pnl_clp, 0)))), 3) AS capacity_profit_factor,
+    ROUND(AVG(net_return_pct) * 100, 2) AS capacity_avg_net_return_pct
+  FROM ${ref("trading_v6_1_capacity_backtest")}
+  GROUP BY profile_id, evaluation_period
+), baseline AS (
+  SELECT
+    profile_id,
+    evaluation_period,
+    closed_trades AS baseline_closed_trades,
+    net_pnl_clp AS baseline_net_pnl_clp,
+    profit_factor AS baseline_profit_factor
+  FROM ${ref("trading_v6_1_profile_summary")}
+)
+
+SELECT
+  c.*,
+  b.baseline_closed_trades,
+  b.baseline_net_pnl_clp,
+  b.baseline_profit_factor,
+  c.capacity_closed_trades - COALESCE(b.baseline_closed_trades, 0) AS additional_closed_trades,
+  c.capacity_net_pnl_clp - COALESCE(b.baseline_net_pnl_clp, 0) AS pnl_delta_vs_v6_1,
+  CASE
+    WHEN c.evaluation_period = "OUT_OF_SAMPLE_2025_ONWARD"
+      AND c.capacity_closed_trades >= 15
+      AND c.capacity_net_pnl_clp > 0
+      AND c.capacity_profit_factor >= 1.15
+      AND c.capacity_net_pnl_clp > COALESCE(b.baseline_net_pnl_clp, 0)
+      THEN "MANUAL_REVIEW_ONLY"
+    ELSE "BACKTEST_ONLY"
+  END AS promotion_status,
+  "Solo aumenta capacidad entre perfiles; no modifica formula ni habilita ejecucion automatica." AS safety_policy,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM capacity c
+LEFT JOIN baseline b USING (profile_id, evaluation_period)
