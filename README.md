@@ -92,6 +92,7 @@ Para evitar sumar capital ficticio en operaciones incompatibles, el reporte prin
 - `trading_v5_high_turnover_*`: experimento separado sobre el benchmark G3 y V2. Simula hasta ocho cupos concurrentes, 10% maximo por cupo y salidas temporales de 3 dias para cripto o 5 para acciones. Es solo backtest y no es leido por Alpaca.
 - `trading_v6_1_profile_*`: experimento por perfiles independientes construido desde la consistencia V1-V5 y G1-G3. Evalua AAPL/V2, META/V2 y BTC/V3 por separado entre entrenamiento hasta 2024 y validacion 2025+. Solo AAPL/V2 cumple la puerta inicial; META/V2 y BTC/V3 siguen en sombra por muestra fuera de muestra insuficiente. Nunca suma sus PnL ni habilita Alpaca.
 - `trading_v6_1_aggressive_*`: contraste aislado de V6.1A. Baja solo el umbral LONG a 5.50 para AAPL/META y 5.75 para BTC, frente a 6.00 en la capa base. Conserva filtros tecnicos, riesgo, costos, stop, objetivos y una posicion independiente por perfil. Sirve para medir si las entradas adicionales mejoran el resultado; nunca habilita Alpaca ni sustituye V6.1.
+- `trading_v6_1_capacity_*`: contraste de capacidad. Conserva exactamente las senales LONG de V6.1, pero evalua una posicion secuencial por perfil en vez de depender del unico cupo global de la estrategia base. No duplica entradas abiertas por perfil ni cambia formula, costos, stop u objetivos. Es exclusivamente backtest.
 
 La ejecucion paper usa una capa separada de gobernanza:
 
