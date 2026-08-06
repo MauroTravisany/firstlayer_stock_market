@@ -1,0 +1,58 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v6_1_aggressive_summary",
+  description: "Comparacion auditable entre V6.1 base y V6.1A por perfil y periodo. V6.1A nunca se promueve automaticamente.",
+  tags: ["trading", "backtest", "v6_1_aggressive", "experiment", "audit"],
+  assertions: { nonNull: ["profile_id", "evaluation_period"], uniqueKey: ["profile_id", "evaluation_period"] },
+  dependencies: ["trading_v6_1_aggressive_backtest", "trading_v6_1_profile_backtest"]
+}
+
+WITH aggressive AS (
+  SELECT
+    profile_id,
+    ticker,
+    strategy_version,
+    evaluation_period,
+    COUNT(*) AS aggressive_closed_trades,
+    COUNTIF(is_win) AS aggressive_wins,
+    ROUND(SAFE_DIVIDE(COUNTIF(is_win), COUNT(*)) * 100, 2) AS aggressive_win_rate_pct,
+    ROUND(SUM(net_pnl_clp), 0) AS aggressive_net_pnl_clp,
+    ROUND(SAFE_DIVIDE(SUM(IF(net_pnl_clp > 0, net_pnl_clp, 0)), ABS(SUM(IF(net_pnl_clp < 0, net_pnl_clp, 0)))), 3) AS aggressive_profit_factor
+  FROM ${ref("trading_v6_1_aggressive_backtest")}
+  GROUP BY profile_id, ticker, strategy_version, evaluation_period
+), baseline AS (
+  SELECT
+    CASE
+      WHEN ticker = "AAPL" THEN "V6_1A_AAPL_V2"
+      WHEN ticker = "META" THEN "V6_1A_META_V2"
+      WHEN ticker = "BTC-USD" THEN "V6_1A_BTC_V3"
+    END AS profile_id,
+    evaluation_period,
+    COUNT(*) AS baseline_closed_trades,
+    ROUND(SUM(net_pnl_clp), 0) AS baseline_net_pnl_clp,
+    ROUND(SAFE_DIVIDE(SUM(IF(net_pnl_clp > 0, net_pnl_clp, 0)), ABS(SUM(IF(net_pnl_clp < 0, net_pnl_clp, 0)))), 3) AS baseline_profit_factor
+  FROM ${ref("trading_v6_1_profile_backtest")}
+  GROUP BY profile_id, evaluation_period
+)
+
+SELECT
+  a.*,
+  b.baseline_closed_trades,
+  b.baseline_net_pnl_clp,
+  b.baseline_profit_factor,
+  a.aggressive_closed_trades - COALESCE(b.baseline_closed_trades, 0) AS additional_closed_trades,
+  a.aggressive_net_pnl_clp - COALESCE(b.baseline_net_pnl_clp, 0) AS pnl_delta_vs_v6_1,
+  CASE
+    WHEN a.evaluation_period = "OUT_OF_SAMPLE_2025_ONWARD"
+      AND a.aggressive_closed_trades >= 15
+      AND a.aggressive_net_pnl_clp > 0
+      AND a.aggressive_profit_factor >= 1.15
+      AND a.aggressive_net_pnl_clp > COALESCE(b.baseline_net_pnl_clp, 0)
+      THEN "MANUAL_REVIEW_ONLY"
+    ELSE "BACKTEST_ONLY"
+  END AS promotion_status,
+  "Solo cambia el umbral de entrada; no se aplica a las estrategias activas ni a Alpaca." AS safety_policy,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM aggressive a
+LEFT JOIN baseline b USING (profile_id, evaluation_period)
