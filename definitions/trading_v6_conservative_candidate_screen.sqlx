@@ -50,7 +50,11 @@ SELECT
       AND oos_profit_factor >= 1.10 THEN "MANUAL_V6_1_REVIEW_ELIGIBLE"
     WHEN training_closed_trades >= 10
       AND training_net_pnl_clp > 0
-      AND training_profit_factor >= 1.10 THEN "SHADOW_PENDING_OOS_SAMPLE"
+      AND training_profit_factor >= 1.10
+      AND oos_closed_trades < 5 THEN "SHADOW_PENDING_OOS_SAMPLE"
+    WHEN training_closed_trades >= 10
+      AND training_net_pnl_clp > 0
+      AND training_profit_factor >= 1.10 THEN "OOS_REJECTED"
     ELSE "INSUFFICIENT_OR_UNPROVEN"
   END AS candidate_status,
   "Se requieren resultados positivos en entrenamiento y fuera de muestra. Esta tabla no agrega ningun ticker a V6.1 ni a Alpaca." AS safety_policy,
