@@ -1,0 +1,63 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v6_conservative_candidate_screen",
+  description: "Pantalla auditable de candidatos conservadores para V6.1. Evalua cada activo y version por separado; no modifica V6.1 ni Alpaca.",
+  tags: ["trading", "backtest", "v6_candidate", "experiment", "audit"],
+  bigquery: { clusterBy: ["ticker", "strategy_version", "candidate_status"] },
+  assertions: { nonNull: ["ticker", "strategy_version", "candidate_status"], uniqueKey: ["ticker", "strategy_version"] },
+  dependencies: ["trading_directional_strategy_backtest"]
+}
+
+WITH conservative_universe AS (
+  SELECT ticker
+  FROM ${ref("trading_watchlist")}
+  WHERE ticker IN ("KO", "MCD", "PG", "PEP", "WMT", "COST", "JNJ", "WM", "V", "MA")
+), period_metrics AS (
+  SELECT
+    b.ticker,
+    b.strategy_version,
+    CASE WHEN b.analysis_date < DATE "2025-01-01" THEN "TRAINING_TO_2024" ELSE "OUT_OF_SAMPLE_2025_ONWARD" END AS evaluation_period,
+    COUNT(*) AS closed_trades,
+    COUNTIF(b.is_win) AS wins,
+    ROUND(SUM(b.net_pnl_clp), 0) AS net_pnl_clp,
+    ROUND(SAFE_DIVIDE(SUM(IF(b.net_pnl_clp > 0, b.net_pnl_clp, 0)), ABS(SUM(IF(b.net_pnl_clp < 0, b.net_pnl_clp, 0)))), 3) AS profit_factor
+  FROM ${ref("trading_directional_strategy_backtest")} b
+  JOIN conservative_universe u USING (ticker)
+  WHERE b.outcome_date IS NOT NULL
+  GROUP BY b.ticker, b.strategy_version, evaluation_period
+), pivoted AS (
+  SELECT
+    ticker,
+    strategy_version,
+    COALESCE(MAX(IF(evaluation_period = "TRAINING_TO_2024", closed_trades, NULL)), 0) AS training_closed_trades,
+    COALESCE(MAX(IF(evaluation_period = "TRAINING_TO_2024", wins, NULL)), 0) AS training_wins,
+    COALESCE(MAX(IF(evaluation_period = "TRAINING_TO_2024", net_pnl_clp, NULL)), 0) AS training_net_pnl_clp,
+    COALESCE(MAX(IF(evaluation_period = "TRAINING_TO_2024", profit_factor, NULL)), 0) AS training_profit_factor,
+    COALESCE(MAX(IF(evaluation_period = "OUT_OF_SAMPLE_2025_ONWARD", closed_trades, NULL)), 0) AS oos_closed_trades,
+    COALESCE(MAX(IF(evaluation_period = "OUT_OF_SAMPLE_2025_ONWARD", wins, NULL)), 0) AS oos_wins,
+    COALESCE(MAX(IF(evaluation_period = "OUT_OF_SAMPLE_2025_ONWARD", net_pnl_clp, NULL)), 0) AS oos_net_pnl_clp,
+    COALESCE(MAX(IF(evaluation_period = "OUT_OF_SAMPLE_2025_ONWARD", profit_factor, NULL)), 0) AS oos_profit_factor
+  FROM period_metrics
+  GROUP BY ticker, strategy_version
+)
+
+SELECT
+  *,
+  ROUND(SAFE_DIVIDE(training_wins, training_closed_trades) * 100, 2) AS training_win_rate_pct,
+  ROUND(SAFE_DIVIDE(oos_wins, oos_closed_trades) * 100, 2) AS oos_win_rate_pct,
+  CASE
+    WHEN training_closed_trades >= 10
+      AND training_net_pnl_clp > 0
+      AND training_profit_factor >= 1.10
+      AND oos_closed_trades >= 5
+      AND oos_net_pnl_clp > 0
+      AND oos_profit_factor >= 1.10 THEN "MANUAL_V6_1_REVIEW_ELIGIBLE"
+    WHEN training_closed_trades >= 10
+      AND training_net_pnl_clp > 0
+      AND training_profit_factor >= 1.10 THEN "SHADOW_PENDING_OOS_SAMPLE"
+    ELSE "INSUFFICIENT_OR_UNPROVEN"
+  END AS candidate_status,
+  "Se requieren resultados positivos en entrenamiento y fuera de muestra. Esta tabla no agrega ningun ticker a V6.1 ni a Alpaca." AS safety_policy,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM pivoted
