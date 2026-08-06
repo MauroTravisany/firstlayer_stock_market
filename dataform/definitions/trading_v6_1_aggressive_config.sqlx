@@ -1,0 +1,17 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v6_1_aggressive_config",
+  description: "Parametros auditables de V6.1A. Relaja solo el umbral LONG de los perfiles V6.1; conserva tendencia, riesgo, costos y salidas.",
+  tags: ["trading", "backtest", "v6_1_aggressive", "experiment", "audit"]
+}
+
+SELECT *
+FROM UNNEST([
+  STRUCT("V6_1A_AAPL_V2" AS profile_id, "AAPL" AS ticker, "v2" AS strategy_version, 5.50 AS long_score_threshold,
+    "AAPL V2 con umbral LONG 5.50 versus 6.00 base; mantiene filtros tecnicos, riesgo y riesgo/beneficio." AS rationale),
+  STRUCT("V6_1A_META_V2", "META", "v2", 5.50,
+    "META V2 con umbral LONG 5.50 versus 6.00 base; no elimina filtros de tendencia ni riesgo de resultados."),
+  STRUCT("V6_1A_BTC_V3", "BTC-USD", "v3", 5.75,
+    "BTC V3 con umbral LONG 5.75 versus 6.00 base; preserva confirmacion de volumen, riesgo y costos.")
+])
