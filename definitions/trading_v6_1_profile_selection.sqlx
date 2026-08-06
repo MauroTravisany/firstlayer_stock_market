@@ -1,0 +1,66 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v6_1_profile_selection",
+  description: "V6.1 selecciona perfiles por activo usando V1-V5 y robustez G1-G3. No cambia pesos ni autoriza ejecucion en Alpaca.",
+  tags: ["trading", "backtest", "v6_1", "experiment", "audit"],
+  assertions: { nonNull: ["profile_id", "selection_status"], uniqueKey: ["profile_id"] },
+  dependencies: ["trading_directional_strategy_backtest"]
+}
+
+WITH profile_rules AS (
+  SELECT "V6_1_AAPL_V2" AS profile_id, "AAPL" AS ticker, "v2" AS strategy_version, "CORE_CANDIDATE" AS execution_lane,
+    "AAPL V2: historico y validacion positivos; requiere seguir en shadow antes de cualquier promocion." AS rationale
+  UNION ALL
+  SELECT "V6_1_META_V2", "META", "v2", "CORE_CANDIDATE",
+    "META V2: perfil mas robusto entre V1-V4 y ante perturbaciones G1-G3." 
+  UNION ALL
+  SELECT "V6_1_BTC_V3", "BTC-USD", "v3", "SHADOW_ONLY",
+    "BTC V3: consistente en historial y G1-G3, pero la muestra fuera de muestra aun es pequena."
+),
+period_metrics AS (
+  SELECT
+    r.profile_id,
+    CASE WHEN b.analysis_date < DATE "2025-01-01" THEN "TRAINING_TO_2024" ELSE "OUT_OF_SAMPLE_2025_ONWARD" END AS evaluation_period,
+    COUNT(*) AS closed_trades,
+    COUNTIF(b.is_win) AS wins,
+    ROUND(SUM(b.net_pnl_clp), 0) AS net_pnl_clp,
+    ROUND(SAFE_DIVIDE(SUM(IF(b.net_pnl_clp > 0, b.net_pnl_clp, 0)), ABS(SUM(IF(b.net_pnl_clp < 0, b.net_pnl_clp, 0)))), 3) AS profit_factor
+  FROM ${ref("trading_directional_strategy_backtest")} b
+  JOIN profile_rules r
+    ON r.ticker = b.ticker
+   AND r.strategy_version = b.strategy_version
+  WHERE b.outcome_date IS NOT NULL
+  GROUP BY r.profile_id, evaluation_period
+),
+scored AS (
+  SELECT
+    r.*,
+    COALESCE(MAX(IF(m.evaluation_period = "TRAINING_TO_2024", m.closed_trades, NULL)), 0) AS training_closed_trades,
+    COALESCE(MAX(IF(m.evaluation_period = "TRAINING_TO_2024", m.net_pnl_clp, NULL)), 0) AS training_net_pnl_clp,
+    COALESCE(MAX(IF(m.evaluation_period = "TRAINING_TO_2024", m.profit_factor, NULL)), 0) AS training_profit_factor,
+    COALESCE(MAX(IF(m.evaluation_period = "OUT_OF_SAMPLE_2025_ONWARD", m.closed_trades, NULL)), 0) AS oos_closed_trades,
+    COALESCE(MAX(IF(m.evaluation_period = "OUT_OF_SAMPLE_2025_ONWARD", m.net_pnl_clp, NULL)), 0) AS oos_net_pnl_clp,
+    COALESCE(MAX(IF(m.evaluation_period = "OUT_OF_SAMPLE_2025_ONWARD", m.profit_factor, NULL)), 0) AS oos_profit_factor
+  FROM profile_rules r
+  LEFT JOIN period_metrics m USING (profile_id)
+  GROUP BY r.profile_id, r.ticker, r.strategy_version, r.execution_lane, r.rationale
+)
+
+SELECT
+  *,
+  CASE
+    WHEN training_closed_trades >= 10
+      AND training_net_pnl_clp > 0
+      AND training_profit_factor >= 1.10
+      AND oos_closed_trades >= 5
+      AND oos_net_pnl_clp > 0
+      AND oos_profit_factor >= 1.10 THEN "SELECTED_FOR_V6_1"
+    WHEN training_closed_trades >= 10
+      AND training_net_pnl_clp > 0
+      AND training_profit_factor >= 1.10 THEN "SHADOW_PENDING_OOS_SAMPLE"
+    ELSE "EXCLUDED_FROM_V6_1"
+  END AS selection_status,
+  "La seleccion exige rentabilidad antes de 2025 y evidencia fuera de muestra. Nunca ejecuta Alpaca por si sola." AS selection_policy,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM scored
