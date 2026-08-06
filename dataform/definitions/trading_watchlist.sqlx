@@ -15,4 +15,14 @@ FROM UNNEST([
   STRUCT("COIN", "STOCK", "crypto_sensitive_stock", 18.0, 12.0, TRUE),
   STRUCT("BTC-USD", "CRYPTO", "crypto_major", 12.0, 8.0, TRUE),
   STRUCT("ETH-USD", "CRYPTO", "crypto_major", 14.0, 10.0, TRUE)
+  ,STRUCT("KO", "STOCK", "defensive_stock", 5.0, 5.0, TRUE)
+  ,STRUCT("MCD", "STOCK", "defensive_stock", 6.0, 5.0, TRUE)
+  ,STRUCT("PG", "STOCK", "defensive_stock", 5.0, 5.0, TRUE)
+  ,STRUCT("PEP", "STOCK", "defensive_stock", 5.0, 5.0, TRUE)
+  ,STRUCT("WMT", "STOCK", "defensive_stock", 5.0, 5.0, TRUE)
+  ,STRUCT("COST", "STOCK", "defensive_stock", 6.0, 5.0, TRUE)
+  ,STRUCT("JNJ", "STOCK", "defensive_stock", 5.0, 5.0, TRUE)
+  ,STRUCT("WM", "STOCK", "defensive_stock", 5.0, 5.0, TRUE)
+  ,STRUCT("V", "STOCK", "quality_financial_stock", 5.0, 5.0, TRUE)
+  ,STRUCT("MA", "STOCK", "quality_financial_stock", 5.0, 5.0, TRUE)
 ])
