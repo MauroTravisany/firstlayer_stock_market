@@ -3,7 +3,7 @@ config {
   schema: "acciones_dataset",
   name: "trading_directional_strategy_daily_summary",
   description: "Curva diaria independiente de cada estrategia v1-v4 del backtest secuencial. Los resultados no se suman entre estrategias.",
-  tags: ["trading", "paper", "directional", "backtest", "summary"],
+  tags: ["trading", "paper", "directional", "backtest", "summary", "daily"],
   bigquery: { partitionBy: "summary_date", clusterBy: ["strategy_version"] },
   assertions: {
     nonNull: ["summary_date", "strategy_version"],
