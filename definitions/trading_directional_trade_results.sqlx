@@ -3,7 +3,7 @@ config {
   schema: "acciones_dataset",
   name: "trading_directional_trade_results",
   description: "Backtest de resultados LONG y SHORT_SIMULATED de la capa direccional, con costos, stops y objetivos simetricos. max_holding_days se mide en sesiones observables.",
-  tags: ["trading", "paper", "directional", "results"],
+  tags: ["trading", "paper", "directional", "results", "daily"],
   bigquery: { partitionBy: "analysis_date", clusterBy: ["direction", "trade_status", "ticker"] },
   assertions: {
     nonNull: ["analysis_date", "ticker", "paper_trade_id", "direction"],
