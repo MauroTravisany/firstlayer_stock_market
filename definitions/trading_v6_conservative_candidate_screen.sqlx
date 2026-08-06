@@ -6,14 +6,10 @@ config {
   tags: ["trading", "backtest", "v6_candidate", "experiment", "audit"],
   bigquery: { clusterBy: ["ticker", "strategy_version", "candidate_status"] },
   assertions: { nonNull: ["ticker", "strategy_version", "candidate_status"], uniqueKey: ["ticker", "strategy_version"] },
-  dependencies: ["trading_directional_strategy_backtest"]
+  dependencies: ["trading_v6_conservative_candidate_backtest"]
 }
 
-WITH conservative_universe AS (
-  SELECT ticker
-  FROM ${ref("trading_watchlist")}
-  WHERE ticker IN ("KO", "MCD", "PG", "PEP", "WMT", "COST", "JNJ", "WM", "V", "MA")
-), period_metrics AS (
+WITH period_metrics AS (
   SELECT
     b.ticker,
     b.strategy_version,
@@ -22,8 +18,7 @@ WITH conservative_universe AS (
     COUNTIF(b.is_win) AS wins,
     ROUND(SUM(b.net_pnl_clp), 0) AS net_pnl_clp,
     ROUND(SAFE_DIVIDE(SUM(IF(b.net_pnl_clp > 0, b.net_pnl_clp, 0)), ABS(SUM(IF(b.net_pnl_clp < 0, b.net_pnl_clp, 0)))), 3) AS profit_factor
-  FROM ${ref("trading_directional_strategy_backtest")} b
-  JOIN conservative_universe u USING (ticker)
+  FROM ${ref("trading_v6_conservative_candidate_backtest")} b
   WHERE b.outcome_date IS NOT NULL
   GROUP BY b.ticker, b.strategy_version, evaluation_period
 ), pivoted AS (
