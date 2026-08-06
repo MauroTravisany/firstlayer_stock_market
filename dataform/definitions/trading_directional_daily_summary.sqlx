@@ -3,7 +3,7 @@ config {
   schema: "acciones_dataset",
   name: "trading_directional_daily_summary",
   description: "Resumen diario de backtests separados. v2 es solo referencia visual; v1-v4 nunca se suman. Los shorts simulados se reportan aparte y no afectan esta curva LONG.",
-  tags: ["trading", "paper", "directional", "summary"],
+  tags: ["trading", "paper", "directional", "summary", "daily"],
   bigquery: { partitionBy: "summary_date" },
   assertions: { nonNull: ["summary_date"], uniqueKey: ["summary_date"] },
   dependencies: ["trading_price_features", "trading_directional_signals", "trading_directional_trade_results", "trading_directional_strategy_daily_summary"]
