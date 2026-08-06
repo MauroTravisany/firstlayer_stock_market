@@ -1,0 +1,61 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_v6_conservative_candidate_backtest",
+  description: "Backtest secuencial independiente por ticker y version para evaluar candidatos conservadores V6. Evita sumar senales superpuestas.",
+  tags: ["trading", "backtest", "v6_candidate", "experiment", "audit"],
+  bigquery: { partitionBy: "analysis_date", clusterBy: ["ticker", "strategy_version"] },
+  assertions: { nonNull: ["ticker", "strategy_version", "analysis_date", "outcome_date", "paper_trade_id"], uniqueKey: ["ticker", "strategy_version", "paper_trade_id"] },
+  dependencies: ["trading_directional_trade_results", "trading_watchlist"]
+}
+
+-- Each ticker/version receives one sequential slot. This preserves the base V1-V4
+-- entry and exit formula while preventing overlapping signals from overstating PnL.
+WITH RECURSIVE conservative_universe AS (
+  SELECT ticker
+  FROM ${ref("trading_watchlist")}
+  WHERE ticker IN ("KO", "MCD", "PG", "PEP", "WMT", "COST", "JNJ", "WM", "V", "MA")
+), candidates AS (
+  SELECT
+    r.* EXCEPT (calculated_at),
+    ROW_NUMBER() OVER (
+      PARTITION BY r.ticker, r.strategy_version, r.analysis_date
+      ORDER BY r.setup_score DESC, r.signal_timestamp DESC
+    ) AS daily_rank
+  FROM ${ref("trading_directional_trade_results")} r
+  JOIN conservative_universe u USING (ticker)
+  WHERE r.direction = "LONG"
+    AND r.outcome_date IS NOT NULL
+), daily_candidates AS (
+  SELECT * EXCEPT (daily_rank)
+  FROM candidates
+  WHERE daily_rank = 1
+), seed AS (
+  SELECT
+    *,
+    ROW_NUMBER() OVER (PARTITION BY ticker, strategy_version ORDER BY analysis_date, signal_timestamp) AS seed_rank
+  FROM daily_candidates
+), sequential_trades AS (
+  (SELECT * EXCEPT (seed_rank) FROM seed WHERE seed_rank = 1)
+  UNION ALL
+  (SELECT next_trade.*
+   FROM sequential_trades previous_trade
+   JOIN daily_candidates next_trade
+     ON next_trade.ticker = previous_trade.ticker
+    AND next_trade.strategy_version = previous_trade.strategy_version
+    AND next_trade.analysis_date > previous_trade.outcome_date
+   LEFT JOIN daily_candidates earlier_trade
+     ON earlier_trade.ticker = previous_trade.ticker
+    AND earlier_trade.strategy_version = previous_trade.strategy_version
+    AND earlier_trade.analysis_date > previous_trade.outcome_date
+    AND earlier_trade.analysis_date < next_trade.analysis_date
+   WHERE earlier_trade.paper_trade_id IS NULL)
+)
+
+SELECT
+  *,
+  CASE WHEN analysis_date < DATE "2025-01-01" THEN "TRAINING_TO_2024" ELSE "OUT_OF_SAMPLE_2025_ONWARD" END AS evaluation_period,
+  "V6_CONSERVATIVE_INDEPENDENT_SEQUENTIAL" AS portfolio_model,
+  "Research backtest only. One open position per ticker/version; no Alpaca execution." AS safety_policy,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM sequential_trades
