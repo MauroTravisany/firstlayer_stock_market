@@ -411,6 +411,7 @@ def _validation_candidate_scores(client, config, run_id):
         ANY_VALUE(c.generation) AS generation,
         ANY_VALUE(c.asset_scope) AS asset_scope,
         ANY_VALUE(c.target_strategy_version) AS target_strategy_version,
+        ANY_VALUE(s.mechanical_verdict) AS mechanical_verdict,
         MAX(s.ticker_count) AS ticker_count,
         SUM(s.closed_trades) AS total_closed_trades,
         ROUND(AVG(s.final_return_pct), 2) AS avg_final_return_pct,
@@ -531,7 +532,8 @@ def _review(client, config, payload):
         raise RuntimeError("No candidate capital curves exist yet. Run Dataform after generating candidates.")
     best = candidates[0]
     eligible = [candidate for candidate in candidates if (
-        candidate["total_closed_trades"] >= MIN_VALIDATION_TRADES
+        candidate["mechanical_verdict"] == "ELIGIBLE_FOR_REVIEW"
+        and candidate["total_closed_trades"] >= MIN_VALIDATION_TRADES
         and candidate["avg_final_return_pct"] > 0
         and candidate["avg_profit_factor"] >= 1.10
         and candidate["worst_max_drawdown_pct"] <= 12
