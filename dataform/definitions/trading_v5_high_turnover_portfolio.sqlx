@@ -17,7 +17,7 @@ config {
 -- batch begins at least nine calendar days later, so positions cannot overlap.
 WITH candidates AS (
   SELECT
-    r.*,
+    r.* EXCEPT (batch_number, batch_start_date),
     c.initial_capital_clp,
     c.batch_cycle_days,
     DIV(DATE_DIFF(r.analysis_date, DATE "2019-01-01", DAY), c.batch_cycle_days) AS batch_number,
