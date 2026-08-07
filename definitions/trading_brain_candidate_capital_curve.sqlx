@@ -2,7 +2,7 @@ config {
   type: "table",
   schema: "acciones_dataset",
   name: "trading_brain_candidate_capital_curve",
-  description: "Curva de capital secuencial de $10.000.000 CLP por candidato y estrategia. Mantiene una sola posicion a la vez y no suma estrategias entre si.",
+  description: "Curva de capital secuencial de $10.000.000 CLP por candidato, grupo de activos y estrategia. Mantiene una sola posicion a la vez y no suma estrategias entre si.",
   tags: ["trading", "backtest", "brain", "audit", "daily"],
   bigquery: { partitionBy: "outcome_date", clusterBy: ["run_id", "candidate_id", "strategy_version"] },
   dependencies: ["trading_contextual_backtest_results"]
@@ -16,6 +16,8 @@ WITH RECURSIVE labeled AS (
     c.candidate_id,
     c.formula_version,
     c.candidate_status,
+    c.asset_scope,
+    c.target_strategy_version,
     r.strategy_version,
     r.ticker,
     r.analysis_date,
@@ -35,6 +37,8 @@ WITH RECURSIVE labeled AS (
   WHERE r.contextual_signal = "TRADE_LONG"
     AND r.trade_status != "OPEN"
     AND r.outcome_date IS NOT NULL
+    AND r.strategy_version = c.target_strategy_version
+    AND r.ticker IN UNNEST(c.asset_tickers)
 ),
 ranked_daily AS (
   SELECT
