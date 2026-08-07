@@ -1,0 +1,148 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "trading_brain_component_attribution",
+  description: "Auditoria descriptiva por componente del piloto del cerebro. Mide la asociacion entre cada componente de V2 y resultados cerrados; no infiere causalidad ni cambia produccion.",
+  tags: ["trading", "backtest", "brain", "audit", "daily"],
+  bigquery: {
+    clusterBy: ["asset_scope", "ticker", "component_name", "component_direction"]
+  },
+  dependencies: ["trading_brain_candidate_summary"]
+}
+
+-- Usa exclusivamente el baseline mas reciente de cada grupo. Las variantes se
+-- comparan despues contra esta evidencia, no contra una mezcla de estrategias.
+WITH latest_baseline AS (
+  SELECT * EXCEPT(baseline_rank)
+  FROM (
+    SELECT
+      candidate_id,
+      asset_scope,
+      target_strategy_version,
+      fear_weight,
+      monetary_weight,
+      earnings_weight,
+      company_lifecycle_weight,
+      quality_weight,
+      valuation_state_weight,
+      political_risk_weight,
+      crypto_cycle_weight,
+      ROW_NUMBER() OVER (PARTITION BY asset_scope ORDER BY created_at DESC) AS baseline_rank
+    FROM `stocks-437902.acciones_dataset.trading_brain_weight_candidates`
+    WHERE candidate_status = "BACKTEST_ONLY"
+      AND ENDS_WITH(candidate_id, "_baseline")
+  )
+  WHERE baseline_rank = 1
+),
+closed_trades AS (
+  SELECT
+    b.asset_scope,
+    r.ticker,
+    r.asset_type,
+    r.strategy_version,
+    r.analysis_date,
+    r.contextual_trade_id,
+    r.is_win,
+    r.net_return_pct,
+    r.net_pnl_clp,
+    r.trend_score * r.profile_trend_weight * r.variant_trend_weight AS trend_component,
+    r.momentum_score * r.profile_momentum_weight * r.variant_momentum_weight AS momentum_component,
+    r.volume_score * r.profile_volume_weight * r.variant_volume_weight AS volume_component,
+    r.volatility_score * r.profile_volatility_weight * r.variant_volatility_weight AS volatility_component,
+    r.regime_score * r.profile_regime_weight * r.variant_regime_weight AS regime_component,
+    r.macro_alignment_score AS macro_component,
+    r.factor_alignment_score AS factor_component,
+    r.earnings_event_score * (1 + b.earnings_weight) AS earnings_component,
+    r.fear_context_component * b.fear_weight AS fear_component,
+    r.monetary_context_component * b.monetary_weight AS monetary_component,
+    r.company_lifecycle_component * b.company_lifecycle_weight AS lifecycle_component,
+    r.quality_component * b.quality_weight AS quality_component,
+    r.valuation_state_component * b.valuation_state_weight AS valuation_component,
+    r.political_risk_component * b.political_risk_weight AS political_risk_component,
+    r.crypto_cycle_component * b.crypto_cycle_weight AS crypto_cycle_component
+  FROM ${ref("trading_contextual_backtest_results")} r
+  JOIN latest_baseline b
+    ON b.candidate_id = r.variant_id
+   AND b.target_strategy_version = r.strategy_version
+  WHERE r.contextual_signal = "TRADE_LONG"
+    AND r.trade_status != "OPEN"
+    AND r.outcome_date IS NOT NULL
+),
+components AS (
+  SELECT
+    t.* EXCEPT(
+      trend_component, momentum_component, volume_component, volatility_component,
+      regime_component, macro_component, factor_component, earnings_component,
+      fear_component, monetary_component, lifecycle_component, quality_component,
+      valuation_component, political_risk_component, crypto_cycle_component
+    ),
+    component.component_name,
+    component.component_value
+  FROM closed_trades t,
+  UNNEST([
+    STRUCT("TENDENCIA" AS component_name, trend_component AS component_value),
+    STRUCT("MOMENTUM", momentum_component),
+    STRUCT("VOLUMEN", volume_component),
+    STRUCT("VOLATILIDAD", volatility_component),
+    STRUCT("REGIMEN", regime_component),
+    STRUCT("MACRO", macro_component),
+    STRUCT("FACTORES", factor_component),
+    STRUCT("RESULTADOS", earnings_component),
+    STRUCT("MIEDO", fear_component),
+    STRUCT("MONETARIO", monetary_component),
+    STRUCT("CICLO_EMPRESA", lifecycle_component),
+    STRUCT("CALIDAD", quality_component),
+    STRUCT("VALORACION", valuation_component),
+    STRUCT("RIESGO_POLITICO", political_risk_component),
+    STRUCT("CICLO_CRIPTO", crypto_cycle_component)
+  ]) AS component
+),
+bucketed AS (
+  SELECT
+    *,
+    CASE
+      WHEN component_value >= 0.15 THEN "FAVORABLE"
+      WHEN component_value <= -0.15 THEN "ADVERSO"
+      ELSE "NEUTRO"
+    END AS component_direction
+  FROM components
+),
+component_average AS (
+  SELECT
+    asset_scope,
+    ticker,
+    component_name,
+    AVG(net_return_pct) AS component_average_return_pct
+  FROM bucketed
+  GROUP BY asset_scope, ticker, component_name
+)
+
+SELECT
+  b.asset_scope,
+  b.ticker,
+  b.asset_type,
+  b.strategy_version,
+  b.component_name,
+  b.component_direction,
+  COUNT(*) AS closed_trades,
+  COUNTIF(b.is_win) AS wins,
+  COUNTIF(NOT b.is_win) AS losses,
+  ROUND(SAFE_DIVIDE(COUNTIF(b.is_win), COUNT(*)) * 100, 2) AS win_rate_pct,
+  ROUND(AVG(b.component_value), 3) AS avg_component_value,
+  ROUND(AVG(b.net_return_pct) * 100, 2) AS avg_net_return_pct,
+  ROUND(SUM(b.net_pnl_clp), 0) AS net_pnl_clp,
+  ROUND((AVG(b.net_return_pct) - a.component_average_return_pct) * 100, 2) AS return_vs_component_average_pct,
+  CASE
+    WHEN COUNT(*) < 10 THEN "MUESTRA_INSUFICIENTE"
+    WHEN AVG(b.net_return_pct) > a.component_average_return_pct + 0.0025 THEN "APORTA_EVIDENCIA"
+    WHEN AVG(b.net_return_pct) < a.component_average_return_pct - 0.0025 THEN "REVISAR_O_PENALIZAR"
+    ELSE "SIN_EVIDENCIA_CLARA"
+  END AS component_assessment,
+  "DESCRIPTIVO_NO_CAUSAL" AS methodology_note,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM bucketed b
+JOIN component_average a
+  USING (asset_scope, ticker, component_name)
+GROUP BY
+  b.asset_scope, b.ticker, b.asset_type, b.strategy_version, b.component_name,
+  b.component_direction, a.component_average_return_pct
