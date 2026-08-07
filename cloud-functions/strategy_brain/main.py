@@ -259,7 +259,7 @@ def _parent_candidates(client, config, asset_scope, target_strategy_version, par
     return [dict(row.items()) for row in client.query(query, job_config=job_config).result()]
 
 
-def _optimization_state(client, config, asset_scope):
+def _optimization_state(client, config, asset_scope, exclude_run_id=None):
     """Read only completed audit rows; never infer convergence from an unfinished run."""
     query = f"""
       WITH latest_audit_per_generation AS (
@@ -270,6 +270,7 @@ def _optimization_state(client, config, asset_scope):
         FROM `{config['audits_table']}`
         WHERE generation IS NOT NULL
           AND asset_scope = @asset_scope
+          AND (@exclude_run_id IS NULL OR run_id != @exclude_run_id)
         GROUP BY run_id, generation
       )
       SELECT
@@ -281,7 +282,8 @@ def _optimization_state(client, config, asset_scope):
     rows = list(client.query(
         query,
         job_config=bigquery.QueryJobConfig(query_parameters=[
-            bigquery.ScalarQueryParameter("asset_scope", "STRING", asset_scope)
+            bigquery.ScalarQueryParameter("asset_scope", "STRING", asset_scope),
+            bigquery.ScalarQueryParameter("exclude_run_id", "STRING", exclude_run_id),
         ]),
     ).result())
     if not rows:
@@ -559,7 +561,7 @@ def _review(client, config, payload):
         )
     )
     outcome = "MATERIAL_IMPROVEMENT" if material_improvement else "NO_MATERIAL_IMPROVEMENT"
-    state = _optimization_state(client, config, asset_scope)
+    state = _optimization_state(client, config, asset_scope, exclude_run_id=run_id)
     converged = (
         current_generation >= MAX_GENERATIONS
         or (not material_improvement and state["consecutive_non_improving"] >= 1)
