@@ -2,7 +2,7 @@ config {
   type: "table",
   schema: "acciones_dataset",
   name: "trading_champion_challenger_scorecard",
-  description: "Scorecard auditable de campeon y challengers por perfil. No promociona ni modifica pesos automaticamente.",
+  description: "Scorecard auditable de campeon y challengers por perfil, con entrenamiento hasta 2024, validacion 2025 y prueba final desde 2026. No promociona ni modifica pesos automaticamente.",
   tags: ["trading", "paper", "daily", "champion", "audit"],
   bigquery: { clusterBy: ["ticker", "strategy_version", "model_role"] },
   dependencies: ["trading_directional_trade_results", "trading_champion_challenger_policy"]
@@ -16,7 +16,11 @@ WITH evaluated AS (
     p.execution_mode,
     p.policy_reason,
     CASE WHEN r.strategy_version = p.champion_strategy_version THEN "CHAMPION" ELSE "CHALLENGER_SHADOW" END AS model_role,
-    CASE WHEN r.analysis_date < DATE "2025-01-01" THEN "TRAINING_TO_2024" ELSE "OUT_OF_SAMPLE_2025_ONWARD" END AS evaluation_period
+    CASE
+      WHEN r.analysis_date < DATE "2025-01-01" THEN "TRAINING_TO_2024"
+      WHEN r.analysis_date < DATE "2026-01-01" THEN "VALIDATION_2025"
+      ELSE "FINAL_TEST_2026_ONWARD"
+    END AS evaluation_period
   FROM ${ref("trading_directional_trade_results")} r
   JOIN ${ref("trading_champion_challenger_policy")} p USING (ticker)
   WHERE r.direction = "LONG"
@@ -40,7 +44,7 @@ SELECT
   *,
   CASE
     WHEN model_role = "CHAMPION" AND execution_mode = "PAPER_CHAMPION" THEN "CONTROL_PAPER"
-    WHEN evaluation_period = "OUT_OF_SAMPLE_2025_ONWARD" AND closed_trades >= 60 AND net_pnl_clp > 0 AND profit_factor >= 1.10 THEN "CANDIDATO_A_REVISION_MANUAL"
+    WHEN evaluation_period = "FINAL_TEST_2026_ONWARD" AND closed_trades >= 15 AND net_pnl_clp > 0 AND profit_factor >= 1.10 THEN "CANDIDATO_A_REVISION_MANUAL"
     ELSE "SOLO_MEDICION"
   END AS promotion_gate,
   CURRENT_TIMESTAMP() AS calculated_at
