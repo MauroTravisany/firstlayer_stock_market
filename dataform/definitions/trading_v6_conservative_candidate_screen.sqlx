@@ -2,7 +2,7 @@ config {
   type: "table",
   schema: "acciones_dataset",
   name: "trading_v6_conservative_candidate_screen",
-  description: "Pantalla auditable de candidatos conservadores para V6.1. Evalua cada activo y version por separado; no modifica V6.1 ni Alpaca.",
+  description: "Pantalla auditable de candidatos conservadores para V6.1. Selecciona con entrenamiento hasta 2024 y validacion 2025; desde 2026 queda como prueba final independiente.",
   tags: ["trading", "backtest", "v6_candidate", "experiment", "audit"],
   bigquery: { clusterBy: ["ticker", "strategy_version", "candidate_status"] },
   assertions: { nonNull: ["ticker", "strategy_version", "candidate_status"], uniqueKey: ["ticker", "strategy_version"] },
@@ -13,7 +13,11 @@ WITH period_metrics AS (
   SELECT
     b.ticker,
     b.strategy_version,
-    CASE WHEN b.analysis_date < DATE "2025-01-01" THEN "TRAINING_TO_2024" ELSE "OUT_OF_SAMPLE_2025_ONWARD" END AS evaluation_period,
+    CASE
+      WHEN b.analysis_date < DATE "2025-01-01" THEN "TRAINING_TO_2024"
+      WHEN b.analysis_date < DATE "2026-01-01" THEN "VALIDATION_2025"
+      ELSE "FINAL_TEST_2026_ONWARD"
+    END AS evaluation_period,
     COUNT(*) AS closed_trades,
     COUNTIF(b.is_win) AS wins,
     ROUND(SUM(b.net_pnl_clp), 0) AS net_pnl_clp,
@@ -29,10 +33,14 @@ WITH period_metrics AS (
     COALESCE(MAX(IF(evaluation_period = "TRAINING_TO_2024", wins, NULL)), 0) AS training_wins,
     COALESCE(MAX(IF(evaluation_period = "TRAINING_TO_2024", net_pnl_clp, NULL)), 0) AS training_net_pnl_clp,
     COALESCE(MAX(IF(evaluation_period = "TRAINING_TO_2024", profit_factor, NULL)), 0) AS training_profit_factor,
-    COALESCE(MAX(IF(evaluation_period = "OUT_OF_SAMPLE_2025_ONWARD", closed_trades, NULL)), 0) AS oos_closed_trades,
-    COALESCE(MAX(IF(evaluation_period = "OUT_OF_SAMPLE_2025_ONWARD", wins, NULL)), 0) AS oos_wins,
-    COALESCE(MAX(IF(evaluation_period = "OUT_OF_SAMPLE_2025_ONWARD", net_pnl_clp, NULL)), 0) AS oos_net_pnl_clp,
-    COALESCE(MAX(IF(evaluation_period = "OUT_OF_SAMPLE_2025_ONWARD", profit_factor, NULL)), 0) AS oos_profit_factor
+    COALESCE(MAX(IF(evaluation_period = "VALIDATION_2025", closed_trades, NULL)), 0) AS validation_closed_trades,
+    COALESCE(MAX(IF(evaluation_period = "VALIDATION_2025", wins, NULL)), 0) AS validation_wins,
+    COALESCE(MAX(IF(evaluation_period = "VALIDATION_2025", net_pnl_clp, NULL)), 0) AS validation_net_pnl_clp,
+    COALESCE(MAX(IF(evaluation_period = "VALIDATION_2025", profit_factor, NULL)), 0) AS validation_profit_factor,
+    COALESCE(MAX(IF(evaluation_period = "FINAL_TEST_2026_ONWARD", closed_trades, NULL)), 0) AS final_test_closed_trades,
+    COALESCE(MAX(IF(evaluation_period = "FINAL_TEST_2026_ONWARD", wins, NULL)), 0) AS final_test_wins,
+    COALESCE(MAX(IF(evaluation_period = "FINAL_TEST_2026_ONWARD", net_pnl_clp, NULL)), 0) AS final_test_net_pnl_clp,
+    COALESCE(MAX(IF(evaluation_period = "FINAL_TEST_2026_ONWARD", profit_factor, NULL)), 0) AS final_test_profit_factor
   FROM period_metrics
   GROUP BY ticker, strategy_version
 )
@@ -40,23 +48,24 @@ WITH period_metrics AS (
 SELECT
   *,
   ROUND(SAFE_DIVIDE(training_wins, training_closed_trades) * 100, 2) AS training_win_rate_pct,
-  ROUND(SAFE_DIVIDE(oos_wins, oos_closed_trades) * 100, 2) AS oos_win_rate_pct,
+  ROUND(SAFE_DIVIDE(validation_wins, validation_closed_trades) * 100, 2) AS validation_win_rate_pct,
+  ROUND(SAFE_DIVIDE(final_test_wins, final_test_closed_trades) * 100, 2) AS final_test_win_rate_pct,
   CASE
     WHEN training_closed_trades >= 10
       AND training_net_pnl_clp > 0
       AND training_profit_factor >= 1.10
-      AND oos_closed_trades >= 5
-      AND oos_net_pnl_clp > 0
-      AND oos_profit_factor >= 1.10 THEN "MANUAL_V6_1_REVIEW_ELIGIBLE"
+      AND validation_closed_trades >= 5
+      AND validation_net_pnl_clp > 0
+      AND validation_profit_factor >= 1.10 THEN "VALIDATION_PASSED_FINAL_TEST_PENDING"
     WHEN training_closed_trades >= 10
       AND training_net_pnl_clp > 0
       AND training_profit_factor >= 1.10
-      AND oos_closed_trades < 5 THEN "SHADOW_PENDING_OOS_SAMPLE"
+      AND validation_closed_trades < 5 THEN "SHADOW_PENDING_VALIDATION_SAMPLE"
     WHEN training_closed_trades >= 10
       AND training_net_pnl_clp > 0
-      AND training_profit_factor >= 1.10 THEN "OOS_REJECTED"
+      AND training_profit_factor >= 1.10 THEN "VALIDATION_REJECTED"
     ELSE "INSUFFICIENT_OR_UNPROVEN"
   END AS candidate_status,
-  "Se requieren resultados positivos en entrenamiento y fuera de muestra. Esta tabla no agrega ningun ticker a V6.1 ni a Alpaca." AS safety_policy,
+  "La seleccion usa entrenamiento hasta 2024 y validacion 2025. Desde 2026 es prueba final bloqueada. Esta tabla no agrega ningun ticker a V6.1 ni a Alpaca." AS safety_policy,
   CURRENT_TIMESTAMP() AS calculated_at
 FROM pivoted

@@ -78,6 +78,15 @@ def count_submitted_today(config, analysis_date):
 def fetch_entry_candidates(config, analysis_date=None, limit=10, asset_scope="all"):
     client = bigquery.Client(project=config["project_id"])
     date_filter = "analysis_date = @analysis_date" if analysis_date else "analysis_date = (SELECT MAX(analysis_date) FROM " + _table_ref(config["signals_table"]) + ")"
+    # Daily signals are known after the session closes. Wait for the following
+    # completed session to keep live entries consistent with the audited model.
+    completed_session_filter = """
+      (
+        @asset_scope = "all"
+        OR (@asset_scope = "crypto" AND s.analysis_date < CURRENT_DATE("UTC"))
+        OR (@asset_scope = "equities" AND s.analysis_date < CURRENT_DATE("America/New_York"))
+      )
+    """
     query = f"""
     WITH latest_slot AS (
       SELECT analysis_date, MAX(signal_hour) AS signal_hour
@@ -120,6 +129,7 @@ def fetch_entry_candidates(config, analysis_date=None, limit=10, asset_scope="al
       AND s.execution_eligible = TRUE
       AND s.setup_score >= @min_setup_score
       AND ae.paper_trade_id IS NULL
+      AND {completed_session_filter}
       AND (
         @asset_scope = "all"
         OR (@asset_scope = "crypto" AND s.asset_type = "CRYPTO")

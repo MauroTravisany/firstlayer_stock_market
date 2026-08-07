@@ -2,7 +2,7 @@ config {
   type: "table",
   schema: "acciones_dataset",
   name: "trading_v6_1_profile_selection",
-  description: "V6.1 selecciona perfiles por activo usando V1-V5 y robustez G1-G3. No cambia pesos ni autoriza ejecucion en Alpaca.",
+  description: "V6.1 selecciona perfiles por activo usando entrenamiento hasta 2024 y validacion 2025. Desde 2026 queda bloqueado como prueba final independiente.",
   tags: ["trading", "backtest", "v6_1", "experiment", "audit"],
   assertions: { nonNull: ["profile_id", "selection_status"], uniqueKey: ["profile_id"] },
   dependencies: ["trading_directional_strategy_backtest"]
@@ -21,7 +21,11 @@ WITH profile_rules AS (
 period_metrics AS (
   SELECT
     r.profile_id,
-    CASE WHEN b.analysis_date < DATE "2025-01-01" THEN "TRAINING_TO_2024" ELSE "OUT_OF_SAMPLE_2025_ONWARD" END AS evaluation_period,
+    CASE
+      WHEN b.analysis_date < DATE "2025-01-01" THEN "TRAINING_TO_2024"
+      WHEN b.analysis_date < DATE "2026-01-01" THEN "VALIDATION_2025"
+      ELSE "FINAL_TEST_2026_ONWARD"
+    END AS evaluation_period,
     COUNT(*) AS closed_trades,
     COUNTIF(b.is_win) AS wins,
     ROUND(SUM(b.net_pnl_clp), 0) AS net_pnl_clp,
@@ -39,9 +43,12 @@ scored AS (
     COALESCE(MAX(IF(m.evaluation_period = "TRAINING_TO_2024", m.closed_trades, NULL)), 0) AS training_closed_trades,
     COALESCE(MAX(IF(m.evaluation_period = "TRAINING_TO_2024", m.net_pnl_clp, NULL)), 0) AS training_net_pnl_clp,
     COALESCE(MAX(IF(m.evaluation_period = "TRAINING_TO_2024", m.profit_factor, NULL)), 0) AS training_profit_factor,
-    COALESCE(MAX(IF(m.evaluation_period = "OUT_OF_SAMPLE_2025_ONWARD", m.closed_trades, NULL)), 0) AS oos_closed_trades,
-    COALESCE(MAX(IF(m.evaluation_period = "OUT_OF_SAMPLE_2025_ONWARD", m.net_pnl_clp, NULL)), 0) AS oos_net_pnl_clp,
-    COALESCE(MAX(IF(m.evaluation_period = "OUT_OF_SAMPLE_2025_ONWARD", m.profit_factor, NULL)), 0) AS oos_profit_factor
+    COALESCE(MAX(IF(m.evaluation_period = "VALIDATION_2025", m.closed_trades, NULL)), 0) AS validation_closed_trades,
+    COALESCE(MAX(IF(m.evaluation_period = "VALIDATION_2025", m.net_pnl_clp, NULL)), 0) AS validation_net_pnl_clp,
+    COALESCE(MAX(IF(m.evaluation_period = "VALIDATION_2025", m.profit_factor, NULL)), 0) AS validation_profit_factor,
+    COALESCE(MAX(IF(m.evaluation_period = "FINAL_TEST_2026_ONWARD", m.closed_trades, NULL)), 0) AS final_test_closed_trades,
+    COALESCE(MAX(IF(m.evaluation_period = "FINAL_TEST_2026_ONWARD", m.net_pnl_clp, NULL)), 0) AS final_test_net_pnl_clp,
+    COALESCE(MAX(IF(m.evaluation_period = "FINAL_TEST_2026_ONWARD", m.profit_factor, NULL)), 0) AS final_test_profit_factor
   FROM profile_rules r
   LEFT JOIN period_metrics m USING (profile_id)
   GROUP BY r.profile_id, r.ticker, r.strategy_version, r.execution_lane, r.rationale
@@ -53,14 +60,14 @@ SELECT
     WHEN training_closed_trades >= 10
       AND training_net_pnl_clp > 0
       AND training_profit_factor >= 1.10
-      AND oos_closed_trades >= 5
-      AND oos_net_pnl_clp > 0
-      AND oos_profit_factor >= 1.10 THEN "SELECTED_FOR_V6_1"
+      AND validation_closed_trades >= 5
+      AND validation_net_pnl_clp > 0
+      AND validation_profit_factor >= 1.10 THEN "SELECTED_FOR_V6_1"
     WHEN training_closed_trades >= 10
       AND training_net_pnl_clp > 0
-      AND training_profit_factor >= 1.10 THEN "SHADOW_PENDING_OOS_SAMPLE"
+      AND training_profit_factor >= 1.10 THEN "SHADOW_PENDING_VALIDATION_SAMPLE"
     ELSE "EXCLUDED_FROM_V6_1"
   END AS selection_status,
-  "La seleccion exige rentabilidad antes de 2025 y evidencia fuera de muestra. Nunca ejecuta Alpaca por si sola." AS selection_policy,
+  "La seleccion usa solo entrenamiento hasta 2024 y validacion 2025. Desde 2026 es prueba final bloqueada y nunca participa en la seleccion. Nunca ejecuta Alpaca por si sola." AS selection_policy,
   CURRENT_TIMESTAMP() AS calculated_at
 FROM scored
