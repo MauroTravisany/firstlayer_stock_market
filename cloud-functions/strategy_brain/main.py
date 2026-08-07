@@ -262,13 +262,21 @@ def _parent_candidates(client, config, asset_scope, target_strategy_version, par
 def _optimization_state(client, config, asset_scope):
     """Read only completed audit rows; never infer convergence from an unfinished run."""
     query = f"""
+      WITH latest_audit_per_generation AS (
+        SELECT
+          run_id,
+          generation,
+          ARRAY_AGG(generation_outcome IGNORE NULLS ORDER BY created_at DESC LIMIT 1)[SAFE_OFFSET(0)] AS generation_outcome
+        FROM `{config['audits_table']}`
+        WHERE generation IS NOT NULL
+          AND asset_scope = @asset_scope
+        GROUP BY run_id, generation
+      )
       SELECT
         MAX(generation) AS latest_generation,
         COUNTIF(generation_outcome = 'NO_MATERIAL_IMPROVEMENT') AS non_improving_generations,
         ARRAY_AGG(generation_outcome IGNORE NULLS ORDER BY generation DESC LIMIT 2) AS latest_outcomes
-      FROM `{config['audits_table']}`
-      WHERE generation IS NOT NULL
-        AND asset_scope = @asset_scope
+      FROM latest_audit_per_generation
     """
     rows = list(client.query(
         query,
