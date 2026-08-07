@@ -2,7 +2,7 @@ config {
   type: "table",
   schema: "acciones_dataset",
   name: "trading_v5_high_turnover_results",
-  description: "Resultados V5 derivados del benchmark estructural G3 y V2, con hasta ocho candidatos diarios y salidas mas cortas. Solo backtest.",
+  description: "Resultados V5 derivados del benchmark estructural G3 y V2, con hasta ocho posiciones por lote de 16 dias y salidas mas cortas. Solo backtest.",
   tags: ["trading", "backtest", "v5", "experiment", "daily"],
   bigquery: { partitionBy: "analysis_date", clusterBy: ["ticker", "trading_group", "trade_status"] },
   assertions: {
@@ -21,6 +21,8 @@ WITH config_values AS (
     c.initial_capital_clp,
     c.max_entries_per_day,
     c.max_entries_per_group_per_day,
+    c.max_concurrent_positions,
+    c.batch_cycle_days,
     c.max_position_pct,
     CASE WHEN r.asset_type = "CRYPTO" THEN c.crypto_max_holding_days ELSE c.stock_max_holding_days END AS v5_max_holding_days,
     ROW_NUMBER() OVER (
@@ -35,16 +37,34 @@ WITH config_values AS (
   CROSS JOIN config_values c
   WHERE r.strategy_version = "v2"
     AND r.trade_status != "OPEN"
-), selected_candidates AS (
+), candidate_batches AS (
   SELECT
     *,
-    TO_HEX(SHA256(CONCAT(structural_trade_id, "|", experiment_id))) AS v5_trade_id,
-    ROUND(LEAST(initial_capital_clp * max_position_pct, adaptive_position_notional_clp), 0) AS position_notional_clp,
-    adaptive_stop_loss AS stop_loss,
-    adaptive_take_profit_1 AS take_profit
+    DIV(DATE_DIFF(analysis_date, DATE "2019-01-01", DAY), batch_cycle_days) AS batch_number
   FROM base
-  WHERE daily_rank <= max_entries_per_day
-    AND group_daily_rank <= max_entries_per_group_per_day
+), batch_start_dates AS (
+  SELECT
+    batch_number,
+    MIN(analysis_date) AS batch_start_date
+  FROM candidate_batches
+  GROUP BY batch_number
+), selected_candidates AS (
+  SELECT
+    c.*,
+    b.batch_start_date,
+    TO_HEX(SHA256(CONCAT(c.structural_trade_id, "|", c.experiment_id))) AS v5_trade_id,
+    ROUND(LEAST(c.initial_capital_clp * c.max_position_pct, c.adaptive_position_notional_clp), 0) AS position_notional_clp,
+    c.adaptive_stop_loss AS stop_loss,
+    c.adaptive_take_profit_1 AS take_profit
+  FROM candidate_batches c
+  JOIN batch_start_dates b USING (batch_number)
+  WHERE c.analysis_date = b.batch_start_date
+    AND c.daily_rank <= c.max_entries_per_day
+    AND c.group_daily_rank <= c.max_entries_per_group_per_day
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY c.batch_number
+    ORDER BY c.contextual_setup_score DESC, c.contextual_technical_score DESC, c.ticker
+  ) <= c.max_concurrent_positions
 ), future_candidates AS (
   SELECT
     t.v5_trade_id,
@@ -108,6 +128,8 @@ SELECT
   trading_group,
   sector_profile,
   cycle_profile,
+  batch_number,
+  batch_start_date,
   daily_rank,
   group_daily_rank,
   contextual_setup_score AS setup_score,

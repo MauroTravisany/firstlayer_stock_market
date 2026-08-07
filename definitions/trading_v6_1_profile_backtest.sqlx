@@ -14,7 +14,11 @@ SELECT
   s.execution_lane,
   s.selection_status,
   s.rationale AS profile_rationale,
-  CASE WHEN b.analysis_date < DATE "2025-01-01" THEN "TRAINING_TO_2024" ELSE "OUT_OF_SAMPLE_2025_ONWARD" END AS evaluation_period,
+  CASE
+    WHEN b.analysis_date < DATE "2025-01-01" THEN "TRAINING_TO_2024"
+    WHEN b.analysis_date < DATE "2026-01-01" THEN "VALIDATION_2025"
+    ELSE "FINAL_TEST_2026_ONWARD"
+  END AS evaluation_period,
   b.* EXCEPT (portfolio_model, backtest_calculated_at),
   "V6_1_PROFILED_V2_V3_SHADOW" AS portfolio_model,
   "Perfil independiente; no representa una cartera combinada ni autoriza ejecucion automatica." AS experiment_policy,
@@ -24,4 +28,4 @@ JOIN ${ref("trading_v6_1_profile_selection")} s
   ON s.ticker = b.ticker
  AND s.strategy_version = b.strategy_version
 WHERE b.outcome_date IS NOT NULL
-  AND s.selection_status IN ("SELECTED_FOR_V6_1", "SHADOW_PENDING_OOS_SAMPLE")
+  AND s.selection_status IN ("SELECTED_FOR_V6_1", "SHADOW_PENDING_VALIDATION_SAMPLE")
