@@ -48,6 +48,7 @@ def main(request):
         from custom_function.alpaca_client import AlpacaPaperClient, is_crypto_position, normalize_symbol
         from custom_function.bq_operations import (
             ensure_positions_table,
+            count_observed_sessions,
             fetch_open_entries,
             fetch_unfinalized_orders,
             save_exit,
@@ -94,11 +95,33 @@ def main(request):
                 results.append({"symbol": position.get("symbol"), "status": "SKIPPED_MARKET_CLOSED"})
                 continue
             current_price = float(position.get("current_price") or 0)
-            stop_loss = float(entry.get("stop_loss") or 0)
-            take_profit = float(entry.get("take_profit_1") or 0)
-            reason = "STOP_LOSS" if stop_loss and current_price <= stop_loss else "TAKE_PROFIT_1" if take_profit and current_price >= take_profit else None
+            stop_loss = float(entry.get("consolidated_stop_loss") or entry.get("stop_loss") or 0)
+            take_profit = float(entry.get("consolidated_take_profit_1") or entry.get("take_profit_1") or 0)
+            max_holding_days = int(entry.get("consolidated_max_holding_days") or entry.get("max_holding_days") or 0)
+            entry_date = entry.get("oldest_analysis_date") or entry.get("analysis_date")
+            observed_sessions = count_observed_sessions(config, entry["ticker"], entry_date) if max_holding_days else 0
+            reason = (
+                "STOP_LOSS"
+                if stop_loss and current_price <= stop_loss
+                else "TAKE_PROFIT_1"
+                if take_profit and current_price >= take_profit
+                else "TIME_EXIT"
+                if max_holding_days and observed_sessions >= max_holding_days
+                else None
+            )
             if not reason:
-                results.append({"symbol": position.get("symbol"), "status": "HEALTHY", "current_price": current_price})
+                results.append(
+                    {
+                        "symbol": position.get("symbol"),
+                        "status": "HEALTHY",
+                        "current_price": current_price,
+                        "stop_loss": stop_loss,
+                        "take_profit_1": take_profit,
+                        "observed_sessions": observed_sessions,
+                        "max_holding_days": max_holding_days or None,
+                        "active_entry_count": entry.get("active_entry_count", 1),
+                    }
+                )
                 continue
             if exits >= config["max_exits_per_run"]:
                 results.append({"symbol": position.get("symbol"), "status": "SKIPPED_EXIT_LIMIT"})
@@ -109,8 +132,23 @@ def main(request):
                 status_code, request_id, response = 0, None, {"dry_run": True}
             else:
                 status_code, request_id, response = client.create_order(payload)
-            save_exit(config, entry, position, reason, payload, status_code, request_id, response, dry_run)
-            results.append({"symbol": position.get("symbol"), "reason": reason, "status": "DRY_RUN" if dry_run else ("SUBMITTED" if 200 <= status_code < 300 else "ERROR")})
+            tracked_entry = {
+                **entry,
+                "stop_loss": stop_loss,
+                "take_profit_1": take_profit,
+                "max_holding_days": max_holding_days or None,
+            }
+            save_exit(config, tracked_entry, position, reason, payload, status_code, request_id, response, dry_run)
+            results.append(
+                {
+                    "symbol": position.get("symbol"),
+                    "reason": reason,
+                    "status": "DRY_RUN" if dry_run else ("SUBMITTED" if 200 <= status_code < 300 else "ERROR"),
+                    "observed_sessions": observed_sessions,
+                    "max_holding_days": max_holding_days or None,
+                    "active_entry_count": entry.get("active_entry_count", 1),
+                }
+            )
             exits += 1
         return json.dumps({"status": "dry_run" if dry_run else "processed", "asset_scope": scope, "positions_checked": len(positions or []), "results": results}), 200, {"Content-Type": "application/json"}
     except Exception as exc:

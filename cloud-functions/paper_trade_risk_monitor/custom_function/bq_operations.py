@@ -10,22 +10,62 @@ def _table_ref(table):
 
 def fetch_open_entries(config):
     query = f"""
-    WITH entries AS (
-      SELECT *, ROW_NUMBER() OVER (PARTITION BY alpaca_symbol ORDER BY updated_at DESC) AS rn
-      FROM {_table_ref(config['executions_table'])}
-      WHERE order_intent = "ENTRY"
-        AND execution_status IN ("SUBMITTED", "FILLED", "ACCEPTED", "PENDING")
-    ), exits AS (
-      SELECT DISTINCT paper_trade_id
-      FROM {_table_ref(config['executions_table'])}
-      WHERE order_intent = "EXIT"
-        AND execution_status IN ("SUBMITTED", "FILLED", "ACCEPTED", "PENDING")
+    WITH active_entries AS (
+      SELECT e.*
+      FROM {_table_ref(config['executions_table'])} e
+      WHERE e.order_intent = "ENTRY"
+        AND e.execution_status IN ("SUBMITTED", "FILLED", "ACCEPTED", "PENDING")
+        AND NOT EXISTS (
+          SELECT 1
+          FROM {_table_ref(config['executions_table'])} x
+          WHERE x.order_intent = "EXIT"
+            AND x.execution_status IN ("SUBMITTED", "FILLED", "ACCEPTED", "PENDING")
+            AND x.alpaca_symbol = e.alpaca_symbol
+            AND x.created_at >= e.created_at
+        )
+    ), grouped AS (
+      SELECT
+        ARRAY_AGG(e ORDER BY e.updated_at DESC LIMIT 1)[OFFSET(0)] AS entry,
+        COUNT(*) AS active_entry_count,
+        MAX(e.stop_loss) AS consolidated_stop_loss,
+        MIN(e.take_profit_1) AS consolidated_take_profit_1,
+        MIN(e.analysis_date) AS oldest_analysis_date,
+        MIN(e.max_holding_days) AS consolidated_max_holding_days
+      FROM active_entries e
+      GROUP BY e.alpaca_symbol
     )
-    SELECT * EXCEPT (rn)
-    FROM entries
-    WHERE rn = 1 AND paper_trade_id NOT IN (SELECT paper_trade_id FROM exits)
+    SELECT
+      entry.*,
+      active_entry_count,
+      consolidated_stop_loss,
+      consolidated_take_profit_1,
+      oldest_analysis_date,
+      consolidated_max_holding_days
+    FROM grouped
     """
     return [dict(row) for row in bigquery.Client(project=config["project_id"]).query(query).result()]
+
+
+def count_observed_sessions(config, ticker, entry_date):
+    if not entry_date:
+        return 0
+    query = f"""
+    SELECT COUNT(DISTINCT fecha) AS observed_sessions
+    FROM {_table_ref(config['prices_table'])}
+    WHERE ticker = @ticker
+      AND fecha > @entry_date
+      AND fecha <= CURRENT_DATE("America/New_York")
+    """
+    params = [
+        bigquery.ScalarQueryParameter("ticker", "STRING", ticker),
+        bigquery.ScalarQueryParameter("entry_date", "DATE", entry_date),
+    ]
+    rows = list(
+        bigquery.Client(project=config["project_id"]).query(
+            query, job_config=bigquery.QueryJobConfig(query_parameters=params)
+        ).result()
+    )
+    return int(rows[0]["observed_sessions"] or 0) if rows else 0
 
 
 def ensure_positions_table(config):
@@ -154,13 +194,13 @@ def save_exit(config, entry, position, reason, payload, status_code, request_id,
       analysis_date, signal_timestamp, paper_trade_id, ticker, alpaca_symbol, asset_type, strategy_version,
       order_intent, client_order_id, alpaca_order_id, broker_environment, order_status, order_side, order_type,
       time_in_force, order_class, notional_usd, qty, theoretical_entry_price, stop_loss, take_profit_1,
-      setup_score, signal_reason, request_id, http_status, execution_status, error_message,
+      max_holding_days, setup_score, signal_reason, request_id, http_status, execution_status, error_message,
       order_payload_json, order_response_json, created_at, updated_at
     ) VALUES (
       @analysis_date, @signal_timestamp, @paper_trade_id, @ticker, @alpaca_symbol, @asset_type, @strategy_version,
       "EXIT", @client_order_id, @alpaca_order_id, "alpaca_paper", @order_status, "sell", "market",
       @time_in_force, "simple", @notional_usd, @qty, @theoretical_entry_price, @stop_loss, @take_profit_1,
-      @setup_score, @signal_reason, @request_id, @http_status, @execution_status, @error_message,
+      @max_holding_days, @setup_score, @signal_reason, @request_id, @http_status, @execution_status, @error_message,
       @order_payload_json, @order_response_json, @created_at, @updated_at
     )
     """
@@ -182,8 +222,14 @@ def save_exit(config, entry, position, reason, payload, status_code, request_id,
         bigquery.ScalarQueryParameter("theoretical_entry_price", "FLOAT64", float(entry.get("theoretical_entry_price") or 0)),
         bigquery.ScalarQueryParameter("stop_loss", "FLOAT64", float(entry.get("stop_loss") or 0)),
         bigquery.ScalarQueryParameter("take_profit_1", "FLOAT64", float(entry.get("take_profit_1") or 0)),
+        bigquery.ScalarQueryParameter("max_holding_days", "INT64", entry.get("max_holding_days")),
         bigquery.ScalarQueryParameter("setup_score", "FLOAT64", float(entry.get("setup_score") or 0)),
-        bigquery.ScalarQueryParameter("signal_reason", "STRING", f"Salida automatica por {reason}; precio_actual={position.get('current_price')}"),
+        bigquery.ScalarQueryParameter(
+            "signal_reason",
+            "STRING",
+            f"Salida automatica por {reason}; precio_actual={position.get('current_price')}; "
+            f"entradas_consolidadas={entry.get('active_entry_count', 1)}",
+        ),
         bigquery.ScalarQueryParameter("request_id", "STRING", request_id),
         bigquery.ScalarQueryParameter("http_status", "INT64", status_code),
         bigquery.ScalarQueryParameter("execution_status", "STRING", "DRY_RUN" if dry_run else ("SUBMITTED" if accepted else "ERROR")),

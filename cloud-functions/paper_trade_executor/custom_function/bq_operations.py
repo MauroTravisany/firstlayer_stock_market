@@ -37,6 +37,7 @@ def ensure_executions_table(config):
       theoretical_entry_price FLOAT64,
       stop_loss FLOAT64,
       take_profit_1 FLOAT64,
+      max_holding_days INT64,
       setup_score FLOAT64,
       signal_reason STRING,
       request_id STRING,
@@ -52,6 +53,10 @@ def ensure_executions_table(config):
     CLUSTER BY ticker, execution_status, client_order_id
     """
     client.query(query).result()
+    client.query(
+        f"ALTER TABLE {_table_ref(config['executions_table'])} "
+        "ADD COLUMN IF NOT EXISTS max_holding_days INT64"
+    ).result()
 
 
 def count_submitted_today(config, analysis_date):
@@ -100,6 +105,7 @@ def fetch_entry_candidates(config, analysis_date=None, limit=10, asset_scope="al
       s.theoretical_entry_price,
       s.stop_loss,
       s.take_profit_1,
+      s.max_holding_days,
       s.position_notional_clp,
       s.theoretical_quantity,
       s.usd_clp_assumption,
@@ -160,6 +166,7 @@ def save_execution(config, record):
         @theoretical_entry_price AS theoretical_entry_price,
         @stop_loss AS stop_loss,
         @take_profit_1 AS take_profit_1,
+        @max_holding_days AS max_holding_days,
         @setup_score AS setup_score,
         @signal_reason AS signal_reason,
         @request_id AS request_id,
@@ -179,19 +186,20 @@ def save_execution(config, record):
       execution_status = S.execution_status,
       error_message = S.error_message,
       order_response_json = S.order_response_json,
+      max_holding_days = S.max_holding_days,
       updated_at = S.touched_at
     WHEN NOT MATCHED THEN INSERT (
       analysis_date, signal_timestamp, paper_trade_id, ticker, alpaca_symbol, asset_type,
       strategy_version, order_intent, client_order_id, alpaca_order_id, broker_environment,
       order_status, order_side, order_type, time_in_force, order_class, notional_usd, qty,
-      theoretical_entry_price, stop_loss, take_profit_1, setup_score, signal_reason,
+      theoretical_entry_price, stop_loss, take_profit_1, max_holding_days, setup_score, signal_reason,
       request_id, http_status, execution_status, error_message, order_payload_json,
       order_response_json, created_at, updated_at
     ) VALUES (
       S.analysis_date, S.signal_timestamp, S.paper_trade_id, S.ticker, S.alpaca_symbol, S.asset_type,
       S.strategy_version, S.order_intent, S.client_order_id, S.alpaca_order_id, S.broker_environment,
       S.order_status, S.order_side, S.order_type, S.time_in_force, S.order_class, S.notional_usd, S.qty,
-      S.theoretical_entry_price, S.stop_loss, S.take_profit_1, S.setup_score, S.signal_reason,
+      S.theoretical_entry_price, S.stop_loss, S.take_profit_1, S.max_holding_days, S.setup_score, S.signal_reason,
       S.request_id, S.http_status, S.execution_status, S.error_message, S.order_payload_json,
       S.order_response_json, S.touched_at, S.touched_at
     )
@@ -218,6 +226,7 @@ def save_execution(config, record):
         bigquery.ScalarQueryParameter("theoretical_entry_price", "FLOAT64", record.get("theoretical_entry_price")),
         bigquery.ScalarQueryParameter("stop_loss", "FLOAT64", record.get("stop_loss")),
         bigquery.ScalarQueryParameter("take_profit_1", "FLOAT64", record.get("take_profit_1")),
+        bigquery.ScalarQueryParameter("max_holding_days", "INT64", record.get("max_holding_days")),
         bigquery.ScalarQueryParameter("setup_score", "FLOAT64", record.get("setup_score")),
         bigquery.ScalarQueryParameter("signal_reason", "STRING", str(record.get("signal_reason") or "")[:10000]),
         bigquery.ScalarQueryParameter("request_id", "STRING", record.get("request_id")),

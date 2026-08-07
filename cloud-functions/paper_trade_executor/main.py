@@ -189,6 +189,7 @@ def main(request):
                 "theoretical_entry_price": float(signal.get("theoretical_entry_price") or 0),
                 "stop_loss": float(signal.get("stop_loss") or 0),
                 "take_profit_1": float(signal.get("take_profit_1") or 0),
+                "max_holding_days": int(signal.get("max_holding_days") or 0) or None,
                 "setup_score": float(signal.get("setup_score") or 0),
                 "signal_reason": signal.get("signal_reason"),
                 "order_payload": payload,

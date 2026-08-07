@@ -375,8 +375,30 @@ jobs:
               --message-body "{}" \
               --attempt-deadline 300s
           fi
+          if gcloud scheduler jobs describe paper-trade-executor-crypto --location us-east1 >/dev/null 2>&1; then
+            gcloud scheduler jobs update http paper-trade-executor-crypto \
+              --location us-east1 \
+              --schedule "5 */4 * * *" \
+              --time-zone "UTC" \
+              --uri "${SERVICE_URL}?execute=true&asset_scope=crypto" \
+              --http-method POST \
+              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
+              --oidc-token-audience "${SERVICE_URL}" \
+              --message-body "{}" \
+              --attempt-deadline 300s
+          else
+            gcloud scheduler jobs create http paper-trade-executor-crypto \
+              --location us-east1 \
+              --schedule "5 */4 * * *" \
+              --time-zone "UTC" \
+              --uri "${SERVICE_URL}?execute=true&asset_scope=crypto" \
+              --http-method POST \
+              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
+              --oidc-token-audience "${SERVICE_URL}" \
+              --message-body "{}" \
+              --attempt-deadline 300s
+          fi
           gcloud scheduler jobs delete paper-trade-executor-intraday --location us-east1 --quiet || true
-          gcloud scheduler jobs delete paper-trade-executor-crypto --location us-east1 --quiet || true
 
       - name: Deploy Alpaca paper risk monitor to Cloud Run
         run: |
@@ -391,7 +413,7 @@ jobs:
               --timeout 120 \
               --concurrency 1 \
               --max-instances 1 \
-              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PAPER_EXECUTION_MODE=paper,ALPACA_EXECUTIONS_TABLE_ID=trading_alpaca_paper_executions,ALPACA_POSITIONS_TABLE_ID=trading_alpaca_paper_positions,ALPACA_MAX_EXITS_PER_RUN=3,ALPACA_REQUEST_TIMEOUT_SECONDS=20"
+              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PAPER_EXECUTION_MODE=paper,ALPACA_EXECUTIONS_TABLE_ID=trading_alpaca_paper_executions,ALPACA_POSITIONS_TABLE_ID=trading_alpaca_paper_positions,STOCK_PRICES_TABLE_ID=valores_acciones_recientes,ALPACA_MAX_EXITS_PER_RUN=3,ALPACA_REQUEST_TIMEOUT_SECONDS=20"
 
       - name: Configure Alpaca equity risk monitor scheduler
         run: |
