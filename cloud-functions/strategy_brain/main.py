@@ -13,11 +13,13 @@ from conf.conf import load_config
 
 logging.basicConfig(level=logging.INFO)
 
-FORMULA_VERSION = "brain-context-v1"
+FORMULA_VERSION = "brain-group-context-v2"
 INITIAL_CAPITAL_CLP = 10_000_000
-MAX_GENERATIONS = 6
+MAX_GENERATIONS = 4
 MAX_CONSECUTIVE_NON_IMPROVING_GENERATIONS = 2
 MIN_MATERIAL_RETURN_IMPROVEMENT_PCT = 2.0
+MAX_CANDIDATES_PER_GENERATION = 12
+MIN_VALIDATION_TRADES = 10
 WEIGHT_FIELDS = (
     "trend_weight",
     "momentum_weight",
@@ -33,6 +35,14 @@ WEIGHT_FIELDS = (
     "political_risk_weight",
     "crypto_cycle_weight",
 )
+
+ASSET_SCOPES = {
+    "MEGACAP_TECH": {
+        "tickers": ("AAPL", "META"),
+        "strategy_version": "v2",
+        "description": "Megacaps tecnologicas: AAPL y META con la estrategia V2.",
+    },
+}
 
 
 def _parse_date(value, field):
@@ -50,7 +60,8 @@ def _table_ddl(config):
           formula_version STRING NOT NULL, training_start DATE NOT NULL, training_end DATE NOT NULL,
           validation_start DATE NOT NULL, validation_end DATE NOT NULL, objective_definition STRING NOT NULL,
           data_quality_notes STRING, production_change_allowed BOOL NOT NULL,
-          generation INT64, parent_run_id STRING, generation_policy STRING
+          generation INT64, parent_run_id STRING, generation_policy STRING,
+          asset_scope STRING, target_strategy_version STRING
         ) CLUSTER BY status, formula_version
         """,
         f"""
@@ -64,7 +75,8 @@ def _table_ddl(config):
           valuation_state_weight FLOAT64 NOT NULL, political_risk_weight FLOAT64 NOT NULL,
           crypto_cycle_weight FLOAT64 NOT NULL, min_trade_score_add FLOAT64 NOT NULL,
           position_size_multiplier FLOAT64 NOT NULL, formula_expression STRING NOT NULL,
-          created_at TIMESTAMP NOT NULL, generation INT64, parent_candidate_id STRING
+          created_at TIMESTAMP NOT NULL, generation INT64, parent_candidate_id STRING,
+          asset_scope STRING, asset_tickers ARRAY<STRING>, target_strategy_version STRING
         ) CLUSTER BY run_id, candidate_status
         """,
         f"""
@@ -73,12 +85,15 @@ def _table_ddl(config):
           selected_candidates_json STRING NOT NULL, evidence_json STRING NOT NULL,
           ai_interpretation STRING, model_name STRING, production_change_allowed BOOL NOT NULL,
           generation INT64, generation_outcome STRING, material_improvement BOOL,
-          best_validation_score FLOAT64, convergence_reason STRING, promotion_recommendation STRING
+          best_validation_score FLOAT64, convergence_reason STRING, promotion_recommendation STRING,
+          asset_scope STRING, target_strategy_version STRING
         ) CLUSTER BY run_id, audit_status
         """,
         f"ALTER TABLE `{config['runs_table']}` ADD COLUMN IF NOT EXISTS generation INT64",
         f"ALTER TABLE `{config['runs_table']}` ADD COLUMN IF NOT EXISTS parent_run_id STRING",
         f"ALTER TABLE `{config['runs_table']}` ADD COLUMN IF NOT EXISTS generation_policy STRING",
+        f"ALTER TABLE `{config['runs_table']}` ADD COLUMN IF NOT EXISTS asset_scope STRING",
+        f"ALTER TABLE `{config['runs_table']}` ADD COLUMN IF NOT EXISTS target_strategy_version STRING",
         f"ALTER TABLE `{config['candidates_table']}` ADD COLUMN IF NOT EXISTS generation INT64",
         f"ALTER TABLE `{config['candidates_table']}` ADD COLUMN IF NOT EXISTS parent_candidate_id STRING",
         f"ALTER TABLE `{config['candidates_table']}` ADD COLUMN IF NOT EXISTS trend_weight FLOAT64",
@@ -86,12 +101,17 @@ def _table_ddl(config):
         f"ALTER TABLE `{config['candidates_table']}` ADD COLUMN IF NOT EXISTS volume_weight FLOAT64",
         f"ALTER TABLE `{config['candidates_table']}` ADD COLUMN IF NOT EXISTS volatility_weight FLOAT64",
         f"ALTER TABLE `{config['candidates_table']}` ADD COLUMN IF NOT EXISTS regime_weight FLOAT64",
+        f"ALTER TABLE `{config['candidates_table']}` ADD COLUMN IF NOT EXISTS asset_scope STRING",
+        f"ALTER TABLE `{config['candidates_table']}` ADD COLUMN IF NOT EXISTS asset_tickers ARRAY<STRING>",
+        f"ALTER TABLE `{config['candidates_table']}` ADD COLUMN IF NOT EXISTS target_strategy_version STRING",
         f"ALTER TABLE `{config['audits_table']}` ADD COLUMN IF NOT EXISTS generation INT64",
         f"ALTER TABLE `{config['audits_table']}` ADD COLUMN IF NOT EXISTS generation_outcome STRING",
         f"ALTER TABLE `{config['audits_table']}` ADD COLUMN IF NOT EXISTS material_improvement BOOL",
         f"ALTER TABLE `{config['audits_table']}` ADD COLUMN IF NOT EXISTS best_validation_score FLOAT64",
         f"ALTER TABLE `{config['audits_table']}` ADD COLUMN IF NOT EXISTS convergence_reason STRING",
         f"ALTER TABLE `{config['audits_table']}` ADD COLUMN IF NOT EXISTS promotion_recommendation STRING",
+        f"ALTER TABLE `{config['audits_table']}` ADD COLUMN IF NOT EXISTS asset_scope STRING",
+        f"ALTER TABLE `{config['audits_table']}` ADD COLUMN IF NOT EXISTS target_strategy_version STRING",
     ]
 
 
@@ -123,11 +143,19 @@ def _formula_expression(weights):
     )
 
 
-def _candidate_rows(run_id, baseline, windows, generation=1, parent_candidate_id=None):
+def _scope_definition(payload):
+    asset_scope = str(payload.get("asset_scope") or "MEGACAP_TECH").upper()
+    scope = ASSET_SCOPES.get(asset_scope)
+    if not scope:
+        raise ValueError(f"asset_scope must be one of: {', '.join(sorted(ASSET_SCOPES))}")
+    return asset_scope, scope
+
+
+def _candidate_rows(run_id, baseline, windows, scope_name, scope, generation=1, parent_candidate_id=None):
     candidates = [("baseline", "Control sin cambio", "Control para comparar cambios de pesos.", {})]
-    for field in WEIGHT_FIELDS:
-        candidates.append((f"{field}_down", f"Reducir {field}", "Prueba un ajuste conservador aislado.", {field: round(float(baseline[field]) - 0.25, 2)}))
-        candidates.append((f"{field}_up", f"Aumentar {field}", "Prueba un ajuste aislado con mayor sensibilidad.", {field: round(float(baseline[field]) + 0.25, 2)}))
+    for field in WEIGHT_FIELDS[:5]:
+        candidates.append((f"{field}_down", f"Reducir {field}", "Prueba local de sensibilidad tecnica.", {field: round(float(baseline[field]) - 0.15, 2)}))
+        candidates.append((f"{field}_up", f"Aumentar {field}", "Prueba local de sensibilidad tecnica.", {field: round(float(baseline[field]) + 0.15, 2)}))
     candidates += [
         ("threshold_up", "Exigir setup mayor", "Reduce sobreoperacion elevando el filtro de entrada.", {"min_trade_score_add": 0.25, "position_size_multiplier": 0.85}),
         ("risk_down", "Reducir exposicion", "Mantiene señales pero reduce notional para medir riesgo neto.", {"position_size_multiplier": 0.70}),
@@ -153,8 +181,11 @@ def _candidate_rows(run_id, baseline, windows, generation=1, parent_candidate_id
             "created_at": datetime.utcnow().isoformat(),
             "generation": generation,
             "parent_candidate_id": parent_candidate_id,
+            "asset_scope": scope_name,
+            "asset_tickers": list(scope["tickers"]),
+            "target_strategy_version": scope["strategy_version"],
         })
-    return records
+    return records[:MAX_CANDIDATES_PER_GENERATION]
 
 
 def _clamp_weights(weights):
@@ -168,7 +199,7 @@ def _clamp_weights(weights):
     return bounded
 
 
-def _parent_candidates(client, config, parent_run_id=None):
+def _parent_candidates(client, config, asset_scope, target_strategy_version, parent_run_id=None):
     query = f"""
       WITH audited_runs AS (
         SELECT DISTINCT run_id
@@ -176,20 +207,23 @@ def _parent_candidates(client, config, parent_run_id=None):
       ), scored AS (
         SELECT
           c.*,
-          AVG(s.profit_factor) AS avg_profit_factor,
-          AVG(s.avg_net_return_pct) AS avg_net_return_pct,
-          AVG(s.win_rate_pct) AS avg_win_rate_pct,
-          AVG(s.pnl_p05_clp) AS avg_pnl_p05_clp,
-          SUM(s.net_pnl_clp) AS total_net_pnl_clp,
-          SUM(s.closed_trades) AS total_closed_trades,
-          AVG(s.final_return_pct) AS avg_final_return_pct,
-          AVG(s.final_capital_clp) AS avg_final_capital_clp,
-          MAX(s.max_drawdown_pct) AS worst_max_drawdown_pct
+          s.profit_factor AS avg_profit_factor,
+          s.avg_net_return_pct,
+          s.win_rate_pct AS avg_win_rate_pct,
+          s.pnl_p05_clp AS avg_pnl_p05_clp,
+          s.net_pnl_clp AS total_net_pnl_clp,
+          s.closed_trades AS total_closed_trades,
+          s.final_return_pct AS avg_final_return_pct,
+          s.final_capital_clp AS avg_final_capital_clp,
+          s.max_drawdown_pct AS worst_max_drawdown_pct
         FROM `{config['candidates_table']}` c
         JOIN `{config['summary_table']}` s
           USING (run_id, candidate_id)
         JOIN audited_runs a USING (run_id)
         WHERE s.evaluation_split = "VALIDATION"
+          AND c.asset_scope = @asset_scope
+          AND c.target_strategy_version = @target_strategy_version
+          AND s.strategy_version = c.target_strategy_version
           AND (@parent_run_id IS NULL OR c.run_id = @parent_run_id)
         GROUP BY c.run_id, c.candidate_id, c.candidate_status, c.formula_version,
           c.candidate_label, c.candidate_reason, c.training_start, c.training_end,
@@ -198,11 +232,14 @@ def _parent_candidates(client, config, parent_run_id=None):
           c.volatility_weight, c.regime_weight, c.company_lifecycle_weight, c.quality_weight,
           c.valuation_state_weight, c.political_risk_weight, c.crypto_cycle_weight,
           c.min_trade_score_add, c.position_size_multiplier, c.formula_expression,
-          c.created_at, c.generation, c.parent_candidate_id
+          c.created_at, c.generation, c.parent_candidate_id, c.asset_scope,
+          c.asset_tickers, c.target_strategy_version, s.profit_factor,
+          s.avg_net_return_pct, s.win_rate_pct, s.pnl_p05_clp, s.net_pnl_clp,
+          s.closed_trades, s.final_return_pct, s.final_capital_clp, s.max_drawdown_pct
       )
       SELECT *
       FROM scored
-      WHERE total_closed_trades >= 80
+      WHERE total_closed_trades >= @min_validation_trades
       ORDER BY
         avg_final_return_pct DESC,
         worst_max_drawdown_pct ASC,
@@ -211,15 +248,18 @@ def _parent_candidates(client, config, parent_run_id=None):
         avg_pnl_p05_clp DESC,
         avg_win_rate_pct DESC,
         total_net_pnl_clp DESC
-      LIMIT 3
+      LIMIT 1
     """
     job_config = bigquery.QueryJobConfig(query_parameters=[
-        bigquery.ScalarQueryParameter("parent_run_id", "STRING", parent_run_id)
+        bigquery.ScalarQueryParameter("parent_run_id", "STRING", parent_run_id),
+        bigquery.ScalarQueryParameter("asset_scope", "STRING", asset_scope),
+        bigquery.ScalarQueryParameter("target_strategy_version", "STRING", target_strategy_version),
+        bigquery.ScalarQueryParameter("min_validation_trades", "INT64", MIN_VALIDATION_TRADES),
     ])
     return [dict(row.items()) for row in client.query(query, job_config=job_config).result()]
 
 
-def _optimization_state(client, config):
+def _optimization_state(client, config, asset_scope):
     """Read only completed audit rows; never infer convergence from an unfinished run."""
     query = f"""
       SELECT
@@ -228,8 +268,14 @@ def _optimization_state(client, config):
         ARRAY_AGG(generation_outcome IGNORE NULLS ORDER BY generation DESC LIMIT 2) AS latest_outcomes
       FROM `{config['audits_table']}`
       WHERE generation IS NOT NULL
+        AND asset_scope = @asset_scope
     """
-    rows = list(client.query(query).result())
+    rows = list(client.query(
+        query,
+        job_config=bigquery.QueryJobConfig(query_parameters=[
+            bigquery.ScalarQueryParameter("asset_scope", "STRING", asset_scope)
+        ]),
+    ).result())
     if not rows:
         return {"latest_generation": 0, "consecutive_non_improving": 0}
     row = dict(rows[0].items())
@@ -246,7 +292,7 @@ def _optimization_state(client, config):
     }
 
 
-def _iterative_candidate_rows(run_id, parents, windows, generation):
+def _iterative_candidate_rows(run_id, parents, windows, scope_name, scope, generation):
     candidates = []
     templates = (
         ("anchor", "Replica del mejor candidato", "Control local para medir si la siguiente generacion mejora al padre.", {}),
@@ -287,8 +333,11 @@ def _iterative_candidate_rows(run_id, parents, windows, generation):
                 "created_at": datetime.utcnow().isoformat(),
                 "generation": generation,
                 "parent_candidate_id": parent["candidate_id"],
+                "asset_scope": scope_name,
+                "asset_tickers": list(scope["tickers"]),
+                "target_strategy_version": scope["strategy_version"],
             })
-    return candidates
+    return candidates[:MAX_CANDIDATES_PER_GENERATION]
 
 
 def _generate(client, config, payload):
@@ -299,9 +348,10 @@ def _generate(client, config, payload):
     if not training_start <= training_end < validation_start <= validation_end:
         raise ValueError("Require training_start <= training_end < validation_start <= validation_end")
 
+    asset_scope, scope = _scope_definition(payload)
     run_id = payload.get("run_id") or f"brain-{datetime.utcnow():%Y%m%d%H%M%S}-{uuid.uuid4().hex[:6]}"
     windows = {"training_start": training_start, "training_end": training_end, "validation_start": validation_start, "validation_end": validation_end}
-    optimization = _optimization_state(client, config)
+    optimization = _optimization_state(client, config, asset_scope)
     if not payload.get("force") and (
         optimization["latest_generation"] >= MAX_GENERATIONS
         or optimization["consecutive_non_improving"] >= MAX_CONSECUTIVE_NON_IMPROVING_GENERATIONS
@@ -313,51 +363,55 @@ def _generate(client, config, payload):
             "consecutive_non_improving": optimization["consecutive_non_improving"],
         }
     requested_parent_run_id = payload.get("parent_run_id")
-    parents = _parent_candidates(client, config, requested_parent_run_id)
+    parents = _parent_candidates(client, config, asset_scope, scope["strategy_version"], requested_parent_run_id)
     if parents:
         generation = int(payload.get("generation_override") or (max(int(parent.get("generation") or 1) for parent in parents) + 1))
         parent_run_id = requested_parent_run_id or parents[0]["run_id"]
         generation_policy = (
             "Forced hypothesis retest around audited parents from the requested run."
             if requested_parent_run_id else
-            "Iterative local search around the three best audited validation candidates."
+            "Iterative local search around the best audited candidate in the selected asset group."
         )
-        candidates = _iterative_candidate_rows(run_id, parents, windows, generation)
+        candidates = _iterative_candidate_rows(run_id, parents, windows, asset_scope, scope, generation)
     else:
         baseline = _baseline(client, config)
         generation = 1
         parent_run_id = None
-        generation_policy = "Initial bounded exploration around the current baseline."
-        candidates = _candidate_rows(run_id, baseline, windows, generation=generation)
+        generation_policy = "Initial bounded exploration of twelve local variants for one asset group."
+        candidates = _candidate_rows(run_id, baseline, windows, asset_scope, scope, generation=generation)
     objective = (
-        "For each V1-V4 candidate, simulate a separate sequential one-slot CLP 10,000,000 portfolio. "
-        "Maximize validated final capital after costs while reducing maximum drawdown and tail loss. "
-        "Stop after two non-material generations or six total generations. Never auto-promote to production."
+        f"For {asset_scope} ({', '.join(scope['tickers'])}) using {scope['strategy_version']}, simulate a separate "
+        "sequential one-slot CLP 10,000,000 portfolio. Maximize validated final capital after costs while reducing "
+        "maximum drawdown and tail loss. Test at most twelve candidates per generation, stop after two non-material "
+        "generations or four total generations, and never auto-promote to production."
     )
     run_errors = client.insert_rows_json(config["runs_table"], [{
         "run_id": run_id, "created_at": datetime.utcnow().isoformat(), "status": "CANDIDATES_READY",
         "formula_version": FORMULA_VERSION, **{key: value.isoformat() for key, value in windows.items()}, "objective_definition": objective,
-        "data_quality_notes": "Capital model uses CLP 10,000,000 per V1-V4 with one sequential position and fixed bounded notional. Daily price history is broad; earnings/news/macro historical coverage must be audited before interpretation.",
+        "data_quality_notes": "The pilot is scoped to one asset group and one strategy. It uses CLP 10,000,000, one sequential position, fixed bounded notional and daily prices. Historical news coverage remains limited and is not optimized.",
         "production_change_allowed": False, "generation": generation, "parent_run_id": parent_run_id,
-        "generation_policy": generation_policy,
+        "generation_policy": generation_policy, "asset_scope": asset_scope,
+        "target_strategy_version": scope["strategy_version"],
     }])
     if run_errors:
         raise RuntimeError(f"Could not save run: {run_errors}")
     errors = client.insert_rows_json(config["candidates_table"], candidates)
     if errors:
         raise RuntimeError(f"Could not save candidates: {errors}")
-    return {"run_id": run_id, "generation": generation, "parent_run_id": parent_run_id, "candidate_count": len(candidates), "status": "CANDIDATES_READY", "capital_per_strategy_clp": INITIAL_CAPITAL_CLP, "next_step": "Run Dataform, then call phase=review with this run_id."}
+    return {"run_id": run_id, "generation": generation, "parent_run_id": parent_run_id, "asset_scope": asset_scope, "tickers": scope["tickers"], "strategy_version": scope["strategy_version"], "candidate_count": len(candidates), "status": "CANDIDATES_READY", "capital_per_strategy_clp": INITIAL_CAPITAL_CLP, "next_step": "Run the brain Dataform targets, then call phase=review once for this run."}
 
 
 def _validation_candidate_scores(client, config, run_id):
-    """Aggregate V1-V4 as independent $10 MM portfolios, never as one summed portfolio."""
+    """Score the target strategy inside one asset scope; never mix portfolios."""
     query = f"""
       SELECT
         s.run_id,
         s.candidate_id,
         ANY_VALUE(c.candidate_label) AS candidate_label,
         ANY_VALUE(c.generation) AS generation,
-        COUNT(DISTINCT s.strategy_version) AS strategy_count,
+        ANY_VALUE(c.asset_scope) AS asset_scope,
+        ANY_VALUE(c.target_strategy_version) AS target_strategy_version,
+        MAX(s.ticker_count) AS ticker_count,
         SUM(s.closed_trades) AS total_closed_trades,
         ROUND(AVG(s.final_return_pct), 2) AS avg_final_return_pct,
         ROUND(AVG(s.final_capital_clp), 0) AS avg_final_capital_clp,
@@ -377,6 +431,7 @@ def _validation_candidate_scores(client, config, run_id):
       JOIN `{config['candidates_table']}` c USING (run_id, candidate_id)
       WHERE s.run_id = @run_id
         AND s.evaluation_split = "VALIDATION"
+        AND s.strategy_version = c.target_strategy_version
       GROUP BY s.run_id, s.candidate_id
       ORDER BY risk_adjusted_score DESC, avg_final_return_pct DESC, worst_max_drawdown_pct ASC
     """
@@ -386,7 +441,7 @@ def _validation_candidate_scores(client, config, run_id):
     return [dict(row.items()) for row in client.query(query, job_config=job_config).result()]
 
 
-def _previous_best_score(client, config, run_id):
+def _previous_best_score(client, config, run_id, asset_scope, target_strategy_version):
     query = f"""
       WITH audited AS (
         SELECT DISTINCT run_id FROM `{config['audits_table']}` WHERE run_id != @run_id
@@ -404,7 +459,11 @@ def _previous_best_score(client, config, run_id):
             + 0.05 * (AVG(s.win_rate_pct) - 45) AS risk_adjusted_score
         FROM `{config['summary_table']}` s
         JOIN audited a USING (run_id)
+        JOIN `{config['candidates_table']}` c USING (run_id, candidate_id)
         WHERE s.evaluation_split = "VALIDATION"
+          AND c.asset_scope = @asset_scope
+          AND c.target_strategy_version = @target_strategy_version
+          AND s.strategy_version = c.target_strategy_version
         GROUP BY s.run_id, s.candidate_id
       )
       SELECT * FROM scored
@@ -412,7 +471,9 @@ def _previous_best_score(client, config, run_id):
       LIMIT 1
     """
     job_config = bigquery.QueryJobConfig(query_parameters=[
-        bigquery.ScalarQueryParameter("run_id", "STRING", run_id)
+        bigquery.ScalarQueryParameter("run_id", "STRING", run_id),
+        bigquery.ScalarQueryParameter("asset_scope", "STRING", asset_scope),
+        bigquery.ScalarQueryParameter("target_strategy_version", "STRING", target_strategy_version),
     ])
     rows = list(client.query(query, job_config=job_config).result())
     return dict(rows[0].items()) if rows else None
@@ -420,22 +481,43 @@ def _previous_best_score(client, config, run_id):
 
 def _review(client, config, payload):
     run_id = payload.get("run_id")
+    requested_scope, requested_scope_definition = _scope_definition(payload)
     if not run_id:
         latest = list(client.query(
             f"""
             SELECT r.run_id
             FROM `{config['runs_table']}` r
             WHERE r.status = 'CANDIDATES_READY'
+              AND r.asset_scope = @asset_scope
               AND NOT EXISTS (
                 SELECT 1 FROM `{config['audits_table']}` a WHERE a.run_id = r.run_id
               )
             ORDER BY r.created_at DESC
             LIMIT 1
-            """
+            """,
+            job_config=bigquery.QueryJobConfig(query_parameters=[
+                bigquery.ScalarQueryParameter("asset_scope", "STRING", requested_scope)
+            ])
         ).result())
         if not latest:
             raise ValueError("run_id is required when no candidate run exists")
         run_id = latest[0]["run_id"]
+    scope_rows = list(client.query(
+        f"""
+        SELECT asset_scope, target_strategy_version
+        FROM `{config['candidates_table']}`
+        WHERE run_id = @run_id
+        QUALIFY ROW_NUMBER() OVER (ORDER BY created_at) = 1
+        """,
+        job_config=bigquery.QueryJobConfig(query_parameters=[
+            bigquery.ScalarQueryParameter("run_id", "STRING", run_id)
+        ])
+    ).result())
+    if not scope_rows or not scope_rows[0]["asset_scope"]:
+        raise ValueError("This run has no asset scope. Generate a new scoped run before reviewing it.")
+    asset_scope = scope_rows[0]["asset_scope"]
+    target_strategy_version = scope_rows[0]["target_strategy_version"]
+    scope = ASSET_SCOPES.get(asset_scope, requested_scope_definition)
     query = f"""
       SELECT * FROM `{config['summary_table']}`
       WHERE run_id = @run_id AND evaluation_split = 'VALIDATION'
@@ -449,14 +531,13 @@ def _review(client, config, payload):
         raise RuntimeError("No candidate capital curves exist yet. Run Dataform after generating candidates.")
     best = candidates[0]
     eligible = [candidate for candidate in candidates if (
-        candidate["strategy_count"] == 4
-        and candidate["total_closed_trades"] >= 80
+        candidate["total_closed_trades"] >= MIN_VALIDATION_TRADES
         and candidate["avg_final_return_pct"] > 0
         and candidate["avg_profit_factor"] >= 1.10
         and candidate["worst_max_drawdown_pct"] <= 12
         and candidate["worst_pnl_p05_clp"] > -250000
     )]
-    previous_best = _previous_best_score(client, config, run_id)
+    previous_best = _previous_best_score(client, config, run_id, asset_scope, target_strategy_version)
     current_generation = int(best.get("generation") or 1)
     reference = previous_best
     if reference is None:
@@ -468,7 +549,7 @@ def _review(client, config, payload):
         )
     )
     outcome = "MATERIAL_IMPROVEMENT" if material_improvement else "NO_MATERIAL_IMPROVEMENT"
-    state = _optimization_state(client, config)
+    state = _optimization_state(client, config, asset_scope)
     converged = (
         current_generation >= MAX_GENERATIONS
         or (not material_improvement and state["consecutive_non_improving"] >= 1)
@@ -486,11 +567,13 @@ def _review(client, config, payload):
         "Eres auditor de backtesting. Responde en espanol y solo interpreta los datos. "
         "No autorices cambios productivos ni prometas retornos. Cada V1-V4 tiene una cartera independiente de CLP 10.000.000; no las sumes. "
         "Prioriza capital final neto de costos, drawdown maximo, profit factor, cola de perdidas y muestra. "
+        "El experimento es solo para el grupo " + asset_scope + " (" + ", ".join(scope["tickers"]) + ") y la estrategia " + target_strategy_version + ". "
         "Devuelve JSON con conclusion, risks, proposed_candidate_ids y evidence.\n"
         + json.dumps({"strategy_rows": rows, "candidate_scores": candidates, "previous_best": previous_best}, default=str, ensure_ascii=True)
     )
     ai_text = None
-    if config.get("openai_api_key"):
+    ai_review_called = bool(payload.get("ai_review", True)) and bool(config.get("ai_review_enabled", True)) and bool(config.get("openai_api_key"))
+    if ai_review_called:
         from openai import OpenAI
         ai_text = OpenAI(api_key=config["openai_api_key"], timeout=90).responses.create(model=config["openai_model"], input=prompt).output_text
     selected = [{"candidate_id": row["candidate_id"], "promotion": promotion} for row in eligible]
@@ -502,14 +585,17 @@ def _review(client, config, payload):
         "generation": current_generation, "generation_outcome": outcome,
         "material_improvement": material_improvement, "best_validation_score": best["risk_adjusted_score"],
         "convergence_reason": convergence_reason, "promotion_recommendation": promotion,
+        "asset_scope": asset_scope, "target_strategy_version": target_strategy_version,
     }])
     if errors:
         raise RuntimeError(f"Could not save audit: {errors}")
     return {
         "run_id": run_id, "generation": current_generation, "status": "REVIEW_SAVED",
+        "asset_scope": asset_scope, "tickers": scope["tickers"], "strategy_version": target_strategy_version,
         "eligible_count": len(eligible), "material_improvement": material_improvement,
         "converged": converged, "promotion_recommendation": promotion,
-        "production_change_allowed": False, "best_candidate": best, "results": rows,
+        "production_change_allowed": False, "ai_review_called": ai_review_called,
+        "best_candidate": best, "results": rows,
     }
 
 

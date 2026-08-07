@@ -7,7 +7,7 @@ config {
 }
 
 WITH static_variants AS (
-SELECT *
+SELECT *, CAST(NULL AS ARRAY<STRING>) AS asset_tickers
 FROM UNNEST([
   STRUCT(
     "baseline_actual" AS variant_id,
@@ -90,6 +90,7 @@ SELECT
   COALESCE(momentum_weight, 1.00) AS momentum_weight,
   COALESCE(volume_weight, 1.00) AS volume_weight,
   COALESCE(volatility_weight, 1.00) AS volatility_weight,
-  COALESCE(regime_weight, 1.00) AS regime_weight
+  COALESCE(regime_weight, 1.00) AS regime_weight,
+  asset_tickers
 FROM `stocks-437902.acciones_dataset.trading_brain_weight_candidates`
 WHERE candidate_status = "BACKTEST_ONLY"

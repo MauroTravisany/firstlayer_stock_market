@@ -2,7 +2,7 @@ config {
   type: "table",
   schema: "acciones_dataset",
   name: "trading_brain_candidate_summary",
-  description: "Resultados auditables por corrida, candidato y estrategia del cerebro. Solo utiliza PnL neto de costos y permanece en modo backtest-only.",
+  description: "Resultados auditables por corrida, candidato, grupo de activos y estrategia del cerebro. Solo utiliza PnL neto de costos y permanece en modo backtest-only.",
   tags: ["trading", "backtest", "brain", "audit", "daily"],
   bigquery: {
     clusterBy: ["run_id", "strategy_version", "evaluation_split"]
@@ -58,7 +58,7 @@ aggregated AS (
 SELECT
   *,
   CASE
-    WHEN closed_trades < 20 THEN "INSUFFICIENT_DATA"
+    WHEN closed_trades < 10 THEN "INSUFFICIENT_DATA"
     WHEN final_capital_clp > initial_capital_clp
       AND profit_factor >= 1.10
       AND win_rate_pct >= 45

@@ -265,7 +265,7 @@ jobs:
               --memory 1Gi \
               --concurrency 1 \
               --max-instances 1 \
-              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},OPENAI_MODEL=gpt-5-mini"
+              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},OPENAI_MODEL=gpt-5-mini,BRAIN_AI_REVIEW_ENABLED=true"
 
       - name: Configure strategy brain candidate scheduler
         run: |
@@ -285,7 +285,7 @@ jobs:
               --http-method POST \
               --oidc-service-account-email "${SERVICE_ACCOUNT}" \
               --oidc-token-audience "${SERVICE_URL}" \
-              --message-body '{"phase":"generate"}' \
+              --message-body '{"phase":"generate","asset_scope":"MEGACAP_TECH"}' \
               --attempt-deadline 900s
           else
             gcloud scheduler jobs create http strategy-brain-generate \
@@ -296,7 +296,7 @@ jobs:
               --http-method POST \
               --oidc-service-account-email "${SERVICE_ACCOUNT}" \
               --oidc-token-audience "${SERVICE_URL}" \
-              --message-body '{"phase":"generate"}' \
+              --message-body '{"phase":"generate","asset_scope":"MEGACAP_TECH"}' \
               --attempt-deadline 900s
           fi
 
@@ -313,7 +313,7 @@ jobs:
               --http-method POST \
               --oidc-service-account-email "${SERVICE_ACCOUNT}" \
               --oidc-token-audience "${SERVICE_URL}" \
-              --message-body '{"phase":"review"}' \
+              --message-body '{"phase":"review","asset_scope":"MEGACAP_TECH","ai_review":true}' \
               --attempt-deadline 900s
           else
             gcloud scheduler jobs create http strategy-brain-review \
@@ -324,7 +324,7 @@ jobs:
               --http-method POST \
               --oidc-service-account-email "${SERVICE_ACCOUNT}" \
               --oidc-token-audience "${SERVICE_URL}" \
-              --message-body '{"phase":"review"}' \
+              --message-body '{"phase":"review","asset_scope":"MEGACAP_TECH","ai_review":true}' \
               --attempt-deadline 900s
           fi
 

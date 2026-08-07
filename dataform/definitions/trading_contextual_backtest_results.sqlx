@@ -109,6 +109,7 @@ scored AS (
    AND c.signal_hour = s.signal_hour
    AND c.ticker = s.ticker
   CROSS JOIN ${ref("trading_backtest_context_variants")} v
+  WHERE v.asset_tickers IS NULL OR s.ticker IN UNNEST(v.asset_tickers)
 ),
 variant_signals AS (
   SELECT
