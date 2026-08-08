@@ -1,197 +1,264 @@
+# FirstLayer Stock Market
 
-# Primera capa de ingesta de datos para sistema de acciones bursátiles (proceso diario)
+Plataforma personal de investigación cuantitativa, análisis de cartera, generación de señales, backtesting, alertas y ejecución controlada en **Alpaca Paper** sobre Google Cloud.
 
-## Proyecto de Integración de Google Cloud Functions con BigQuery y Google Cloud Storage
+> **Estado de seguridad:** las políticas de champion/challenger deben permanecer en `SHADOW_ONLY` mientras se implementa y verifica el programa audit-grade. El repositorio no autoriza dinero real ni promoción automática de estrategias.
 
-Este proyecto representa la primera capa de un pipeline ETL (**Extract, Transform, Load**) diseñado para extraer datos financieros desde fuentes externas, realizar transformaciones básicas, y cargar los datos en **Google Cloud Storage** y **BigQuery** para análisis posterior.
+## Objetivos
 
-### Fases del pipeline:
+- Recolectar precios, fundamentales, earnings, macro y contexto externo.
+- Transformar datos en series y features reproducibles con Dataform/BigQuery.
+- Analizar valoración, calidad, momentum, riesgo y cambios de estado.
+- Comparar estrategias mediante backtesting con costos y capital separado.
+- Probar hipótesis y candidatos sin modificar reglas ejecutables.
+- Generar análisis IA y alertas con trazabilidad.
+- Validar operación únicamente en Alpaca Paper bajo controles de riesgo.
 
-#### 1. Extract (Extracción):
-Los datos de acciones financieras son extraídos utilizando la API de **yfinance**, que proporciona información en tiempo real y datos históricos de los precios de las acciones.
+## Programa audit-grade
 
-#### 2. Transform (Transformación):
-Durante la extracción de los datos, se realizan transformaciones básicas, como el cálculo de la volatilidad y la generación de un ID único basado en un hash de los valores.
+El repositorio contiene una especificación completa para elevar la plataforma a un estándar auditable y reproducible:
 
-#### 3. Load (Carga):
-Los datos transformados se almacenan en **Google Cloud Storage** como archivos JSON. Simultáneamente, los datos se cargan en **Google BigQuery**, lo que permite realizar análisis y consultas avanzadas sobre los datos.
+- [Programa de transformación](docs/audit-grade/README.md)
+- [Arquitectura objetivo](docs/audit-grade/01_target_architecture.md)
+- [Contratos point-in-time](docs/audit-grade/02_data_contracts_and_point_in_time.md)
+- [Validación cuantitativa](docs/audit-grade/03_quant_validation_standard.md)
+- [Seguridad del executor](docs/audit-grade/04_execution_safety_standard.md)
+- [Pruebas, CI y reproducibilidad](docs/audit-grade/05_testing_ci_reproducibility.md)
+- [Backlog de implementación](docs/audit-grade/06_implementation_backlog.md)
+- [Prompts secuenciales para Codex](docs/audit-grade/07_codex_execution_prompts.md)
+- [Matriz de trazabilidad](docs/audit-grade/08_traceability_matrix.md)
+- [Gates de promoción](docs/audit-grade/09_release_and_promotion_gates.md)
+- [Operabilidad y runbooks](docs/audit-grade/10_operability_runbooks.md)
+- [Scorecard 10/10](docs/audit-grade/11_scorecard_10_of_10.md)
+- [Optimización por activo](docs/audit-grade/12_per_asset_optimization_protocol.md)
 
-### Evolución futura:
+Cualquier agente de código debe leer [AGENTS.md](AGENTS.md) antes de modificar el repositorio.
 
-Este pipeline está diseñado para ser escalable y modular. En futuras iteraciones, se pueden agregar nuevas fuentes de datos, realizar transformaciones más complejas, o incluso automatizar análisis financieros avanzados.
+## Arquitectura actual
 
-- **Ejecución programada**: Configurar **Cloud Scheduler** para que ejecute el pipeline de forma automática en intervalos regulares (diarios o por hora).
-- **Enriquecimiento de datos**: Agregar más fuentes de datos o combinar los datos con datasets externos.
-- **Orquestación avanzada**: Integrar un sistema de orquestación como **Apache Airflow** o **Google Cloud Composer** para gestionar pipelines más complejos.
+```text
+Yahoo Finance / GDELT / Alpaca Paper / OpenAI
+                    |
+                    v
+Cloud Run services
+  - stockdaily
+  - stockmacrodata
+  - stockfinancial
+  - stockaianalysis
+  - papertradingalerts
+  - strategybrain
+  - paper trade executor
+  - paper risk monitor
+                    |
+                    v
+BigQuery + Cloud Storage
+                    |
+                    v
+Dataform
+  - valoración y estados de empresa
+  - features de precio y contexto
+  - señales V1–V4
+  - backtesting y curvas
+  - champion/challenger
+  - Strategy Brain
+                    |
+          +---------+----------+
+          |                    |
+          v                    v
+Evidence dashboard       Discord/alertas
+                               |
+                               v
+                         Alpaca Paper
+```
 
-## Requisitos Previos
+## Componentes
 
-Antes de comenzar, asegúrate de tener configurado lo siguiente:
+### Ingesta de precios
 
-### Herramientas necesarias:
+`cloud-functions/daily_stocks/`
 
-- **Google Cloud SDK** instalado y configurado.
-- **Terraform** instalado (v1.0 o superior).
-- Cuenta de **Google Cloud** con los siguientes servicios habilitados:
-  - Google Cloud Functions
-  - Google Cloud Storage
-  - BigQuery
-  - Google Secret Manager
+- acciones recientes e historia diaria;
+- cripto con consolidación de frecuencia;
+- carga idempotente en BigQuery;
+- registro de calidad.
 
-### Configuración de Google Cloud:
+### Fundamentales
 
-Autenticarse en Google Cloud:
+`cloud-functions/financial_data/`
+
+- estados financieros trimestrales;
+- ratios snapshots;
+- calidad de cobertura;
+- universo de cartera y peers.
+
+### Macro, noticias y earnings
+
+`cloud-functions/macro_data/`
+
+- factores de mercado;
+- noticias agregadas por tema;
+- calendario/sorpresa de resultados;
+- contexto reciente para análisis y señales.
+
+### Análisis IA
+
+`cloud-functions/daily_ai_analysis/`
+
+- salida JSON estructurada;
+- contraste externo mediante web search;
+- análisis de compra, venta, riesgo y calidad de datos;
+- resumen diario y semanal;
+- almacenamiento de fuentes y confianza.
+
+### Paper trading y alertas
+
+`cloud-functions/paper_trading_alerts/`
+
+- resumen de señales/resultados;
+- feedback diario y revisión semanal;
+- alertas Discord/webhook;
+- sugerencias experimentales limitadas a backtest/shadow.
+
+### Strategy Brain
+
+`cloud-functions/strategy_brain/`
+
+- genera candidatos acotados;
+- evalúa resultados históricos;
+- registra candidatos, generaciones y auditorías;
+- nunca debe promover automáticamente una regla.
+
+### Ejecución Paper
+
+`cloud-functions/paper_trade_executor/`  
+`cloud-functions/paper_trade_risk_monitor/`
+
+- integración con Alpaca Paper;
+- entradas y monitoreo de posiciones;
+- stops, take profit y time exits;
+- límites configurables y registros de ejecución.
+
+El programa audit-grade exige outbox, reconciliación, fail-closed y kill switches antes de habilitar cualquier `PAPER_CHAMPION`.
+
+### Dataform
+
+`dataform/definitions/`
+
+Contiene modelos para:
+
+- perfiles de activos y peers;
+- valoración y estados;
+- features diarias;
+- contexto macro/earnings;
+- señales de paper trading;
+- backtests direccionales y contextuales;
+- Strategy Brain;
+- champion/challenger;
+- vistas de dashboard.
+
+### Dashboard
+
+`dashboard/`
+
+Dashboard Evidence estático construido desde snapshots exportados desde BigQuery. Su publicación y exposición de datos debe revisarse como parte del programa de seguridad.
+
+### Infraestructura
+
+- `.github/workflows/`: CI/CD y schedulers configurados durante deploy.
+- `terraform/`: infraestructura parcial actual.
+- Google Cloud: Cloud Run, BigQuery, Cloud Storage, Secret Manager, Scheduler y Dataform.
+
+## Estados de seguridad
+
+| Estado | Uso |
+|---|---|
+| `RESEARCH_ONLY` | Investigación sin señales ejecutables. |
+| `BACKTEST_ONLY` | Historia y experimentos. |
+| `SHADOW_ONLY` | Señales actuales sin órdenes. |
+| `PAPER_CANDIDATE` | Observación candidata. |
+| `PAPER_CHAMPION` | Único estado potencialmente consumible por Alpaca Paper. |
+| `LIVE_*` | No habilitado por este repositorio actualmente. |
+
+## Principios no negociables
+
+- Ningún backtest garantiza retornos futuros.
+- Las estrategias V1–V4 mantienen capital independiente y no se suman.
+- Toda información histórica debe respetar disponibilidad point-in-time.
+- Ejecución y retornos deben distinguir precios raw/adjusted.
+- Cada experimento debe fijar código, datos, configuración y metodología.
+- La IA puede explicar o proponer hipótesis; no puede aprobar parámetros ni ejecución.
+- Un deploy verde no demuestra validez cuantitativa.
+- Un resultado positivo no autoriza paper ni dinero real.
+
+## Verificación local básica
+
+Mientras se implementa el nuevo CI, los checks mínimos existentes son:
 
 ```bash
-gcloud auth login
-gcloud auth application-default login
+python -m compileall -q \
+  cloud-functions/daily_stocks \
+  cloud-functions/financial_data \
+  cloud-functions/macro_data \
+  cloud-functions/daily_ai_analysis \
+  cloud-functions/paper_trading_alerts \
+  cloud-functions/paper_trade_executor \
+  cloud-functions/paper_trade_risk_monitor \
+  cloud-functions/strategy_brain
 ```
 
-Crear un proyecto de Google Cloud:
+Dataform:
 
 ```bash
-gcloud projects create your-project-id --name="Your Project Name"
+cd dataform
+npm install
+# La compilación completa requiere la herramienta/entorno Dataform configurado.
 ```
 
-Seleccionar tu proyecto activo:
+Dashboard:
 
 ```bash
-gcloud config set project your-project-id
+cd dashboard
+npm install --legacy-peer-deps
+npm run sources:strict
+npm run build:strict
 ```
 
-Habilitar las APIs necesarias:
+No ejecutar deploys ni llamadas de broker desde una rama de desarrollo.
 
-```bash
-gcloud services enable cloudfunctions.googleapis.com     bigquery.googleapis.com     storage.googleapis.com     secretmanager.googleapis.com
+## Estructura
+
+```text
+.github/workflows/        CI/CD
+auditoria_M*.md           auditorías históricas
+cloud-functions/          servicios Cloud Run
+dashboard/                Evidence dashboard
+dataform/                  modelos BigQuery/Dataform
+docs/                     documentación operativa
+docs/audit-grade/         programa de transformación
+looker_studio/            integración histórica de visualización
+terraform/                infraestructura como código parcial
+AGENTS.md                  reglas obligatorias para agentes
 ```
 
-## Instalación y configuración del sistema
+## Resultados históricos
 
-### 1. Clonar el repositorio
+Los resultados anteriores a la implementación completa de point-in-time, corporate actions, backtest realista, aislamiento de corridas y validación nested walk-forward deben tratarse como:
 
-Clona este repositorio en tu máquina local:
-
-```bash
-git clone https://github.com/MauroTravisany/firstlayer_stock_market.git
-cd firstlayer_stock_market
+```text
+LEGACY_PRE_AUDIT_GRADE
+NOT_ELIGIBLE_FOR_PROMOTION
 ```
 
-### 2. Configuración de Google Secret Manager
+Se preservan para auditoría, pero deben recalcularse antes de usarlos como evidencia.
 
-Crear los secretos en **Google Secret Manager** para almacenar la información sensible como el nombre del bucket, el ID del proyecto, el dataset de BigQuery, etc. Puedes hacer esto desde la consola de Google Cloud o desde la CLI:
+## Seguridad
 
-```bash
-echo "your-bucket-name" > bucket_name.txt
-gcloud secrets create bucket_name --data-file=bucket_name.txt
+- No guardar secretos, API keys, webhooks ni credenciales en el repositorio.
+- Usar Secret Manager y, como objetivo, Workload Identity Federation.
+- Mantener Alpaca en Paper.
+- Mantener políticas ejecutables deshabilitadas hasta pasar los gates.
+- Revisar [el estándar de ejecución](docs/audit-grade/04_execution_safety_standard.md) antes de tocar el broker.
 
-echo "your-project-id" > project_id.txt
-gcloud secrets create project_id --data-file=project_id.txt
+## Aviso
 
-echo "your-dataset-id" > dataset_id.txt
-gcloud secrets create dataset_id --data-file=dataset_id.txt
-
-echo "your-table-id" > table_id.txt
-gcloud secrets create table_id --data-file=table_id.txt
-```
-
-Otorgar permisos a la cuenta de servicio de **Cloud Functions**:
-
-```bash
-gcloud projects add-iam-policy-binding your-project-id     --member="serviceAccount:your-project-id@appspot.gserviceaccount.com"     --role="roles/secretmanager.secretAccessor"
-```
-
-### 3. Configuración de Terraform
-
-importante, configurar variables de entorno para **Terraform**:
-
-Antes de ejecutar Terraform, asegúrate de definir las variables necesarias en un archivo `terraform.tfvars` en el directorio `terraform/`:
-
-```hcl
-project_id  = "your-project-id"
-region      = "us-central1"
-bucket_name = "your-bucket-name"
-dataset_id  = "your-dataset-id"
-table_id    = "your-table-id"
-repo_name   = "your-repo-name"
-```
-
-Inicializar Terraform:
-
-```bash
-cd terraform/
-terraform init
-```
-
-Aplicar la configuración de Terraform:
-
-```bash
-terraform apply -auto-approve
-```
-
-### 4. Despliegue de Cloud Functions
-
-Desplegar **Cloud Functions** manualmente (si no lo haces con Terraform):
-
-```bash
-gcloud functions deploy function1     --runtime python310     --trigger-http     --source ./cloud-functions/function1     --region us-central1     --entry-point main
-```
-
-### 5. Ejecutar localmente (opcional)
-
-Si prefieres hacer pruebas locales antes de desplegar a Google Cloud:
-
-Configurar variables de entorno locales:
-
-En PowerShell:
-
-```powershell
-$env:PROJECT_ID="your-project-id"
-$env:TICKERS="AAPL,GOOGL,MSFT"
-$env:TARGET_DATE="2024-10-10"
-```
-
-En cmd:
-
-```cmd
-set PROJECT_ID=your-project-id
-set TICKERS=AAPL,GOOGL,MSFT
-set TARGET_DATE=2024-10-10
-```
-
-Ejecutar el código localmente:
-
-```bash
-python cloud-functions/daily_stocks/main.py
-```
-
-### 6. Automatización del Despliegue (CI/CD)
-
-Puedes integrar **GitHub Actions** o **Google Cloud Build** para automatizar el despliegue continuo (CI/CD). Un ejemplo de configuración de **GitHub Actions** se incluye en el archivo `.github/workflows/deploy.yml` para realizar el despliegue automático de **Cloud Functions** y **Terraform** cada vez que realices un push al repositorio.
-
-## Estructura del repositorio
-
-```bash
-/firstlayer_stock_market
-│
-├── /cloud-functions             # Código de Google Cloud Functions
-│   ├── /daily_stocks               # Primer Google Cloud Function
-│   │   ├── main.py              # Código Python para la función
-│   │   ├── requirements.txt     # Dependencias Python
-│   │   └── conf.py              # Configuraciones
-│   ├── /function2               # Otra Cloud Function (si es necesaria)
-│   └── /tests                   # Pruebas unitarias para las funciones
-│
-├── /terraform                   # Archivos de configuración de Terraform
-│   ├── main.tf                  # Configuración principal de Terraform
-│   ├── variables.tf             # Variables de Terraform
-│   ├── outputs.tf               # Salidas de Terraform (outputs)
-│   └── provider.tf              # Configuración del proveedor de Google Cloud
-│
-├── README.md                    # Documentación del repositorio
-└── .gitignore                   # Ignorar archivos innecesarios (por ejemplo, .env o secrets)
-```
-
-## Notas adicionales:
-
-- **Seguridad**: Evita almacenar credenciales directamente en el código o el repositorio. Utiliza **Google Secret Manager** para manejar datos sensibles.
-- **Errores comunes**: Asegúrate de haber dado los permisos adecuados a las cuentas de servicio y de haber habilitado todas las APIs necesarias en Google Cloud.
+Este proyecto es una plataforma de investigación y no constituye recomendación financiera personalizada. La calidad del sistema se mide por la corrección y auditabilidad del proceso, no por promesas de rentabilidad.
