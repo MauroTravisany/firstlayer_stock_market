@@ -78,6 +78,6 @@ SELECT
   FALSE AS promotion_eligible,
   "NOT_ELIGIBLE_FOR_PROMOTION" AS promotion_block_reason,
   results_checksum,
-  TIMESTAMP("2026-08-08T13:24:41.448420Z") AS bigquery_snapshot_as_of_utc,
-  TIMESTAMP("2026-08-08T13:25:30.649486Z") AS registry_captured_at_utc
+  TIMESTAMP("2026-08-08T15:17:29.785999Z") AS bigquery_snapshot_as_of_utc,
+  TIMESTAMP("2026-08-08T15:18:30.508163Z") AS registry_captured_at_utc
 FROM frozen_results

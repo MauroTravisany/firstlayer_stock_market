@@ -1,19 +1,11 @@
 {
   "baseline_git_sha": "f7c27dbf6b4293e4ba2755a642d2f616d98b3844",
   "baseline_ref": "legacy-pre-audit-grade-2026-08",
-  "bigquery_snapshot_as_of_utc": "2026-08-08T13:24:41.448420Z",
+  "bigquery_snapshot_as_of_utc": "2026-08-08T15:17:29.785999Z",
   "capture_atomicity": {
-    "bigquery": "SYSTEM_TIME_AS_OF_WITH_RECORDED_LIVE_FALLBACKS",
-    "bigquery_live_fallback_tables": [
-      "trading_brain_ai_audits",
-      "trading_brain_candidate_capital_curve",
-      "trading_brain_candidate_summary",
-      "trading_brain_runs",
-      "trading_brain_weight_candidates",
-      "trading_champion_challenger_policy",
-      "trading_champion_challenger_signals",
-      "trading_directional_strategy_backtest"
-    ],
+    "bigquery": "SINGLE_SYSTEM_TIME_AS_OF",
+    "bigquery_live_fallback_tables": [],
+    "bigquery_live_fallbacks": [],
     "non_atomic_surfaces": [
       "Cloud Scheduler REST inventory",
       "Cloud Run REST inventory",
@@ -21,8 +13,8 @@
     ],
     "repository": "IMMUTABLE_GIT_COMMIT"
   },
-  "capture_completed_at_utc": "2026-08-08T13:25:30.649486Z",
-  "capture_started_at_utc": "2026-08-08T13:24:41.448420Z",
+  "capture_completed_at_utc": "2026-08-08T15:18:30.508163Z",
+  "capture_started_at_utc": "2026-08-08T15:17:29.785999Z",
   "classification": "LEGACY_PRE_AUDIT_GRADE",
   "cloud": {
     "dataform_release": {
@@ -344,7 +336,7 @@
           "minBackoffDuration": "5s"
         },
         "schedule": "0 1 * * 6",
-        "state": "ENABLED",
+        "state": "PAUSED",
         "timeZone": "America/Santiago"
       },
       {
@@ -366,7 +358,7 @@
           "minBackoffDuration": "5s"
         },
         "schedule": "0 13 * * 0",
-        "state": "ENABLED",
+        "state": "PAUSED",
         "timeZone": "America/Santiago"
       }
     ],
@@ -1140,25 +1132,14 @@
       "source_table": "trading_brain_candidate_summary"
     }
   ],
-  "manifest_checksum": "64df9194d6059b290480c42ea0604ddcd5083097917d99c1af97fe612f1564e2",
+  "manifest_checksum": "4e7dd4d04d90b79d28cc5852c514087dc6298a9a6d6e48191f58a98ad45644f2",
   "operating_state": {
     "broker": "ALPACA_PAPER",
     "policy": "SHADOW_ONLY",
     "real_execution_enabled": false,
     "research": "BACKTEST_ONLY"
   },
-  "operational_blockers": [
-    {
-      "affected_resources": [
-        "strategy-brain-generate",
-        "strategy-brain-review"
-      ],
-      "blocker_id": "WP00_STRATEGY_BRAIN_NOT_PAUSED",
-      "observed_state": "ENABLED",
-      "promotion_eligible": false,
-      "required_state": "PAUSED_OR_LEGACY_RESEARCH"
-    }
-  ],
+  "operational_blockers": [],
   "policy": {
     "alpaca_execution_modes": [
       "paper"
@@ -4639,7 +4620,7 @@
   },
   "schema_version": "audit-grade-baseline/v1",
   "section_checksums": {
-    "cloud": "6deb951c325522997e7c26e7aa57c62f4a5fd39da07b0cf5980fd412c7a30b3e",
+    "cloud": "7271864c0c23e9e5caac7138e5e1ff9a213d3491a967434ffe34dadc56f27a78",
     "legacy_results": "f5c78974ac7ac38c2e2f823ec47f09840059ff6c39a41846253e99f46d66d5f2",
     "policy": "627aec8fab066e4082978b4059f88e2602ce680acf91ccffe14e5433aa158939",
     "repository": "3ffc87c467b91dcefbdb504b76d5c81bdfbb90d1b86df48106e9f333699d1f32"

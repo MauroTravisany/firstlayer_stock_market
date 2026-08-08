@@ -3,8 +3,17 @@
   "baseline_ref": "legacy-pre-audit-grade-2026-08",
   "bigquery_snapshot_as_of_utc": "<ISO-8601-UTC>",
   "capture_atomicity": {
-    "bigquery": "SINGLE_SYSTEM_TIME_AS_OF_OR_RECORDED_FALLBACKS",
-    "bigquery_live_fallback_tables": [],
+    "bigquery": "SYSTEM_TIME_AS_OF_WITH_RECORDED_LIVE_FALLBACKS",
+    "bigquery_live_fallback_tables": ["<table-id>"],
+    "bigquery_live_fallbacks": [
+      {
+        "source_table": "<table-id>",
+        "source_type": "VIEW",
+        "fallback_reason": "TIME_TRAVEL_UNSUPPORTED_FOR_VIEW",
+        "exception_type": null,
+        "error_code": null
+      }
+    ],
     "non_atomic_surfaces": [
       "Cloud Scheduler REST inventory",
       "Cloud Run REST inventory",

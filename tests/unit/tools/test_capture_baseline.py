@@ -1,22 +1,30 @@
 import copy
+import contextlib
+import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tools.capture_baseline import (
     LEGACY_CLASSIFICATION,
     CONFIGURATION_TABLES,
     RESULT_FAMILIES,
     BaselineValidationError,
+    BaselineReadinessError,
     BigQueryReader,
     CloudInventoryReader,
     ReadOnlyViolation,
     assert_read_only_command,
     build_manifest,
     capture_configuration,
+    main,
     sanitize,
     render_sqlx_query,
     validate_manifest,
+    validate_manifest_readiness,
+    validate_manifest_structure,
 )
 
 
@@ -201,6 +209,245 @@ class CaptureBaselineTest(unittest.TestCase):
         ):
             with self.assertRaises(ReadOnlyViolation):
                 assert_read_only_command(command)
+
+    def test_structure_allows_a_registered_operational_blocker(self):
+        blocked = copy.deepcopy(self.inputs)
+        blocked["cloud"]["schedulers"][0]["state"] = "ENABLED"
+        manifest = build_manifest(**blocked)
+
+        validate_manifest_structure(manifest)
+
+        with self.assertRaises(BaselineReadinessError):
+            validate_manifest_readiness(manifest)
+
+    def test_readiness_accepts_manifest_without_operational_blockers(self):
+        manifest = build_manifest(**self.inputs)
+
+        validate_manifest_structure(manifest)
+        validate_manifest_readiness(manifest)
+
+    def test_verify_cli_reports_structure_valid_with_blocker(self):
+        blocked = copy.deepcopy(self.inputs)
+        blocked["cloud"]["schedulers"][0]["state"] = "ENABLED"
+        manifest = build_manifest(**blocked)
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "manifest.json"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            output = io.StringIO()
+            with mock.patch(
+                "tools.capture_baseline.capture_live_baseline", return_value=manifest
+            ), contextlib.redirect_stdout(output):
+                exit_code = main(["--verify", str(path)])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("BASELINE_STRUCTURE_VALID", output.getvalue())
+
+    def test_verify_cli_strict_reports_not_ready_with_blocker(self):
+        blocked = copy.deepcopy(self.inputs)
+        blocked["cloud"]["schedulers"][0]["state"] = "ENABLED"
+        manifest = build_manifest(**blocked)
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "manifest.json"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            error = io.StringIO()
+            output = io.StringIO()
+            with mock.patch(
+                "tools.capture_baseline.capture_live_baseline", return_value=manifest
+            ), contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+                exit_code = main(["--verify", str(path), "--strict"])
+
+        self.assertEqual(exit_code, 3)
+        self.assertIn("BASELINE_NOT_READY", error.getvalue())
+
+    def test_verify_cli_strict_reports_ready_without_blockers(self):
+        manifest = build_manifest(**self.inputs)
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "manifest.json"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            output = io.StringIO()
+            with mock.patch(
+                "tools.capture_baseline.capture_live_baseline", return_value=manifest
+            ), contextlib.redirect_stdout(output):
+                exit_code = main(["--verify", str(path), "--strict"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("BASELINE_READY", output.getvalue())
+
+    def test_view_uses_explicit_live_fallback(self):
+        class Metadata:
+            table_type = "VIEW"
+
+        class QueryJob:
+            def result(self):
+                return []
+
+        class Client:
+            def __init__(self):
+                self.queries = []
+
+            def get_table(self, table_reference):
+                self.table_reference = table_reference
+                return Metadata()
+
+            def query(self, sql, **_kwargs):
+                self.queries.append(sql)
+                return QueryJob()
+
+        client = Client()
+        reader = BigQueryReader("stocks-437902", "us-east1", client=client)
+
+        reader.rows_at_snapshot(
+            "SELECT * FROM t FOR SYSTEM_TIME AS OF TIMESTAMP('2026-08-08T00:00:00Z')",
+            "SELECT * FROM t",
+            "source_view",
+            "stocks-437902.acciones_dataset.source_view",
+        )
+
+        self.assertEqual(client.queries, ["SELECT * FROM t"])
+        self.assertEqual(
+            reader.snapshot_fallbacks,
+            [
+                {
+                    "source_table": "source_view",
+                    "source_type": "VIEW",
+                    "fallback_reason": "TIME_TRAVEL_UNSUPPORTED_FOR_VIEW",
+                    "exception_type": None,
+                    "error_code": None,
+                }
+            ],
+        )
+
+    def test_base_table_uses_snapshot_query(self):
+        class Metadata:
+            table_type = "TABLE"
+
+        class QueryJob:
+            def result(self):
+                return []
+
+        class Client:
+            def __init__(self):
+                self.queries = []
+
+            def get_table(self, _table_reference):
+                return Metadata()
+
+            def query(self, sql, **_kwargs):
+                self.queries.append(sql)
+                return QueryJob()
+
+        client = Client()
+        reader = BigQueryReader("stocks-437902", "us-east1", client=client)
+
+        reader.rows_at_snapshot(
+            "SELECT snapshot",
+            "SELECT live",
+            "source_table",
+            "stocks-437902.acciones_dataset.source_table",
+        )
+
+        self.assertEqual(client.queries, ["SELECT snapshot"])
+        self.assertEqual(reader.snapshot_fallbacks, [])
+
+    def test_unsupported_source_type_fails(self):
+        class Metadata:
+            table_type = "EXTERNAL"
+
+        class Client:
+            def get_table(self, _table_reference):
+                return Metadata()
+
+        reader = BigQueryReader("stocks-437902", "us-east1", client=Client())
+
+        with self.assertRaises(BaselineValidationError):
+            reader.rows_at_snapshot("SELECT 1", "SELECT 1", "t", "p.d.t")
+
+    def test_snapshot_metadata_permission_error_fails(self):
+        class Client:
+            def get_table(self, _table_reference):
+                raise PermissionError("denied")
+
+        reader = BigQueryReader("stocks-437902", "us-east1", client=Client())
+
+        with self.assertRaises(PermissionError):
+            reader.rows_at_snapshot("SELECT 1", "SELECT 1", "t", "p.d.t")
+
+    def test_snapshot_metadata_authentication_error_fails(self):
+        class AuthenticationError(Exception):
+            pass
+
+        class Client:
+            def get_table(self, _table_reference):
+                raise AuthenticationError("invalid credentials")
+
+        reader = BigQueryReader("stocks-437902", "us-east1", client=Client())
+
+        with self.assertRaises(AuthenticationError):
+            reader.rows_at_snapshot("SELECT 1", "SELECT 1", "t", "p.d.t")
+
+    def test_snapshot_metadata_network_error_fails(self):
+        class Client:
+            def get_table(self, _table_reference):
+                raise ConnectionError("network unavailable")
+
+        reader = BigQueryReader("stocks-437902", "us-east1", client=Client())
+
+        with self.assertRaises(ConnectionError):
+            reader.rows_at_snapshot("SELECT 1", "SELECT 1", "t", "p.d.t")
+
+    def test_snapshot_sql_error_fails(self):
+        class Metadata:
+            table_type = "TABLE"
+
+        class SqlError(Exception):
+            pass
+
+        class Client:
+            def get_table(self, _table_reference):
+                return Metadata()
+
+            def query(self, _sql, **_kwargs):
+                raise SqlError("invalid query")
+
+        reader = BigQueryReader("stocks-437902", "us-east1", client=Client())
+
+        with self.assertRaises(SqlError):
+            reader.rows_at_snapshot("SELECT bad", "SELECT 1", "t", "p.d.t")
+
+    def test_snapshot_timeout_fails(self):
+        class Metadata:
+            table_type = "TABLE"
+
+        class Client:
+            def get_table(self, _table_reference):
+                return Metadata()
+
+            def query(self, _sql, **_kwargs):
+                raise TimeoutError("timed out")
+
+        reader = BigQueryReader("stocks-437902", "us-east1", client=Client())
+
+        with self.assertRaises(TimeoutError):
+            reader.rows_at_snapshot("SELECT 1", "SELECT 1", "t", "p.d.t")
+
+    def test_snapshot_unexpected_error_fails(self):
+        class Metadata:
+            table_type = "TABLE"
+
+        class Client:
+            def get_table(self, _table_reference):
+                return Metadata()
+
+            def query(self, _sql, **_kwargs):
+                raise RuntimeError("unexpected")
+
+        reader = BigQueryReader("stocks-437902", "us-east1", client=Client())
+
+        with self.assertRaises(RuntimeError):
+            reader.rows_at_snapshot("SELECT 1", "SELECT 1", "t", "p.d.t")
 
     def test_bigquery_reader_rejects_mutation_before_client_call(self):
         class FailingClient:

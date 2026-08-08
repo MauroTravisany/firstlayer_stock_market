@@ -40,6 +40,10 @@ class BaselineValidationError(ValueError):
     """Raised when the captured state violates the WP-00 safety contract."""
 
 
+class BaselineReadinessError(BaselineValidationError):
+    """Raised when a structurally valid baseline still has operational blockers."""
+
+
 class ReadOnlyViolation(ValueError):
     """Raised before a command capable of mutating state can run."""
 
@@ -245,8 +249,8 @@ def build_manifest(
     return manifest
 
 
-def validate_manifest(manifest: dict[str, Any]) -> None:
-    """Fail closed unless the captured baseline remains non-promotable and shadow-only."""
+def validate_manifest_structure(manifest: dict[str, Any]) -> None:
+    """Validate integrity and safety shape while allowing registered blockers."""
 
     errors: list[str] = []
     if manifest.get("schema_version") != SCHEMA_VERSION:
@@ -379,6 +383,26 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
         raise BaselineValidationError("; ".join(errors))
 
 
+def validate_manifest_readiness(manifest: dict[str, Any]) -> None:
+    """Require valid structure and no operational blockers before closing WP-00."""
+
+    validate_manifest_structure(manifest)
+    blockers = manifest.get("operational_blockers", [])
+    if blockers:
+        blocker_ids = sorted(
+            str(blocker.get("blocker_id", "UNKNOWN_BLOCKER")) for blocker in blockers
+        )
+        raise BaselineReadinessError(
+            f"operational blockers remain: {', '.join(blocker_ids)}"
+        )
+
+
+def validate_manifest(manifest: dict[str, Any]) -> None:
+    """Backward-compatible alias for structural validation."""
+
+    validate_manifest_structure(manifest)
+
+
 _MUTATING_SQL = re.compile(
     r"\b(ALTER|CALL|CREATE|DELETE|DROP|EXPORT|GRANT|INSERT|LOAD|MERGE|REPLACE|REVOKE|TRUNCATE|UPDATE)\b",
     re.IGNORECASE,
@@ -493,7 +517,20 @@ class BigQueryReader:
                 _http=build_authorized_session(),
             )
         self.client = client
-        self.snapshot_fallback_tables: set[str] = set()
+        self._source_type_cache: dict[str, str] = {}
+        self.snapshot_fallbacks: list[dict[str, Any]] = []
+
+    def source_type(self, table_reference: str) -> str:
+        if table_reference not in self._source_type_cache:
+            metadata = self.client.get_table(table_reference)
+            raw_type = str(getattr(metadata, "table_type", "")).upper()
+            normalized = {"TABLE": "BASE TABLE", "VIEW": "VIEW"}.get(raw_type)
+            if normalized is None:
+                raise BaselineValidationError(
+                    f"unsupported BigQuery source type for {table_reference}: {raw_type or 'UNKNOWN'}"
+                )
+            self._source_type_cache[table_reference] = normalized
+        return self._source_type_cache[table_reference]
 
     def rows(self, sql: str) -> list[dict[str, Any]]:
         assert_read_only_sql(sql)
@@ -505,16 +542,30 @@ class BigQueryReader:
         snapshot_sql: str,
         fallback_sql: str,
         source_table: str,
+        table_reference: str,
     ) -> list[dict[str, Any]]:
-        """Use BigQuery time travel, recording explicit fallback for unsupported views."""
+        """Choose snapshot or explicit live view read from trusted metadata."""
 
-        if source_table in self.snapshot_fallback_tables:
-            return self.rows(fallback_sql)
-        try:
+        source_type = self.source_type(table_reference)
+        if source_type == "BASE TABLE":
             return self.rows(snapshot_sql)
-        except Exception:
-            self.snapshot_fallback_tables.add(source_table)
+        if source_type == "VIEW":
+            if not any(
+                row["source_table"] == source_table for row in self.snapshot_fallbacks
+            ):
+                self.snapshot_fallbacks.append(
+                    {
+                        "source_table": source_table,
+                        "source_type": source_type,
+                        "fallback_reason": "TIME_TRAVEL_UNSUPPORTED_FOR_VIEW",
+                        "exception_type": None,
+                        "error_code": None,
+                    }
+                )
             return self.rows(fallback_sql)
+        raise BaselineValidationError(
+            f"unsupported BigQuery source type for {source_table}: {source_type}"
+        )
 
     def dry_run(self, sql: str) -> int:
         assert_read_only_sql(sql)
@@ -764,7 +815,12 @@ def _rows_from_source(
     rows_at_snapshot = getattr(reader, "rows_at_snapshot", None)
     if rows_at_snapshot is None:
         return reader.rows(snapshot_sql)
-    return rows_at_snapshot(snapshot_sql, fallback_sql, table_id)
+    return rows_at_snapshot(
+        snapshot_sql,
+        fallback_sql,
+        table_id,
+        table.strip("`"),
+    )
 
 
 def render_sqlx_query(path: Path, project_id: str, dataset_id: str) -> str:
@@ -874,7 +930,7 @@ WHERE {predicate}
             snapshot_as_of_utc=snapshot_as_of_utc,
             sql_template=f"""
 SELECT TO_HEX(SHA256(TO_JSON_STRING(t))) AS row_hash
-FROM {{source}} AS t
+FROM (SELECT * FROM {{source}}) AS t
 WHERE {predicate}
 ORDER BY row_hash
 """.strip(),
@@ -1047,7 +1103,11 @@ def capture_live_baseline(
         "configuration_checksum": checksum(configuration),
     }
     capture_completed_at_utc = utc_timestamp()
-    fallback_tables = sorted(bq.snapshot_fallback_tables)
+    snapshot_fallbacks = sorted(
+        bq.snapshot_fallbacks,
+        key=lambda row: str(row.get("source_table", "")),
+    )
+    fallback_tables = [row["source_table"] for row in snapshot_fallbacks]
     capture_atomicity = {
         "bigquery": (
             "SINGLE_SYSTEM_TIME_AS_OF"
@@ -1055,6 +1115,7 @@ def capture_live_baseline(
             else "SYSTEM_TIME_AS_OF_WITH_RECORDED_LIVE_FALLBACKS"
         ),
         "bigquery_live_fallback_tables": fallback_tables,
+        "bigquery_live_fallbacks": snapshot_fallbacks,
         "non_atomic_surfaces": [
             "Cloud Scheduler REST inventory",
             "Cloud Run REST inventory",
@@ -1104,6 +1165,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="compare the captured checksum with an existing manifest instead of writing",
     )
     parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="with --verify, fail unless the baseline has no operational blockers",
+    )
+    parser.add_argument(
         "--dry-run-registry",
         action="store_true",
         help="BigQuery dry-run legacy_result_registry.sqlx and exit without capture",
@@ -1119,6 +1185,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     try:
+        if args.strict and not args.verify:
+            raise ValueError("--strict requires --verify")
         if args.dry_run_registry:
             query = render_sqlx_query(
                 args.repo_root.resolve()
@@ -1143,7 +1211,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         if args.verify:
             expected = json.loads(args.verify.read_text(encoding="utf-8"))
-            validate_manifest(expected)
+            validate_manifest_structure(expected)
             if expected.get("manifest_checksum") != manifest.get("manifest_checksum"):
                 print(
                     "BASELINE_DRIFT "
@@ -1152,7 +1220,19 @@ def main(argv: Sequence[str] | None = None) -> int:
                     file=sys.stderr,
                 )
                 return 2
-            print(f"BASELINE_VERIFIED checksum={manifest['manifest_checksum']}")
+            print(
+                "BASELINE_STRUCTURE_VALID "
+                f"checksum={manifest['manifest_checksum']} "
+                f"operational_blockers={len(manifest.get('operational_blockers', []))}"
+            )
+            if args.strict:
+                try:
+                    validate_manifest_readiness(expected)
+                    validate_manifest_readiness(manifest)
+                except BaselineReadinessError as exc:
+                    print(f"BASELINE_NOT_READY: {exc}", file=sys.stderr)
+                    return 3
+                print(f"BASELINE_READY checksum={manifest['manifest_checksum']}")
             return 0
         write_manifest(args.output, manifest)
         print(f"BASELINE_CAPTURED path={args.output} checksum={manifest['manifest_checksum']}")

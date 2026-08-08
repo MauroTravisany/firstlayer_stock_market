@@ -3,7 +3,7 @@ import json
 import unittest
 from pathlib import Path
 
-from tools.capture_baseline import validate_manifest
+from tools.capture_baseline import validate_manifest, validate_manifest_readiness
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -91,25 +91,25 @@ class Wp00SafetyInvariantTest(unittest.TestCase):
         self.assertIn(manifest["baseline_git_sha"], registry)
         self.assertIn(manifest["bigquery_snapshot_as_of_utc"], registry)
 
-    def test_enabled_strategy_brain_schedulers_are_recorded_as_blocker(self):
+    def test_committed_manifest_is_ready_and_strategy_brain_is_paused(self):
         manifest = json.loads(
             self.read("docs/audit-grade/evidence/baseline_manifest.json")
         )
 
+        validate_manifest_readiness(manifest)
+        self.assertEqual(manifest["operational_blockers"], [])
+        scheduler_states = {
+            row["name"].rsplit("/", 1)[-1]: row["state"]
+            for row in manifest["cloud"]["schedulers"]
+            if row["name"].rsplit("/", 1)[-1]
+            in {"strategy-brain-generate", "strategy-brain-review"}
+        }
         self.assertEqual(
-            manifest["operational_blockers"],
-            [
-                {
-                    "affected_resources": [
-                        "strategy-brain-generate",
-                        "strategy-brain-review",
-                    ],
-                    "blocker_id": "WP00_STRATEGY_BRAIN_NOT_PAUSED",
-                    "observed_state": "ENABLED",
-                    "promotion_eligible": False,
-                    "required_state": "PAUSED_OR_LEGACY_RESEARCH",
-                }
-            ],
+            scheduler_states,
+            {
+                "strategy-brain-generate": "PAUSED",
+                "strategy-brain-review": "PAUSED",
+            },
         )
 
     def test_example_manifest_is_valid_json_and_non_promotable(self):
