@@ -1,0 +1,97 @@
+{
+  "baseline_git_sha": "<40-character-git-sha>",
+  "baseline_ref": "legacy-pre-audit-grade-2026-08",
+  "bigquery_snapshot_as_of_utc": "<ISO-8601-UTC>",
+  "capture_atomicity": {
+    "bigquery": "SYSTEM_TIME_AS_OF_WITH_RECORDED_LIVE_FALLBACKS",
+    "bigquery_live_fallback_tables": ["<table-id>"],
+    "bigquery_live_fallbacks": [
+      {
+        "source_table": "<table-id>",
+        "source_type": "VIEW",
+        "fallback_reason": "TIME_TRAVEL_UNSUPPORTED_FOR_VIEW",
+        "exception_type": null,
+        "error_code": null
+      }
+    ],
+    "non_atomic_surfaces": [
+      "Cloud Scheduler REST inventory",
+      "Cloud Run REST inventory",
+      "Dataform release REST inventory"
+    ],
+    "repository": "IMMUTABLE_GIT_COMMIT"
+  },
+  "capture_completed_at_utc": "<ISO-8601-UTC>",
+  "capture_started_at_utc": "<ISO-8601-UTC>",
+  "classification": "LEGACY_PRE_AUDIT_GRADE",
+  "cloud": {
+    "dataform_release": {
+      "gitCommitish": "<dataform-branch>",
+      "name": "projects/<project>/locations/<location>/repositories/<repository>/releaseConfigs/<release>"
+    },
+    "schedulers": [],
+    "services": []
+  },
+  "legacy_results": [
+    {
+      "baseline_git_sha": "<40-character-git-sha>",
+      "data_snapshot_approximation": "READ_ONLY_LIVE_TABLE_STATE; sorted SHA256 of every selected row; not an immutable point-in-time snapshot",
+      "date_end": "<YYYY-MM-DD-or-null>",
+      "date_start": "<YYYY-MM-DD-or-null>",
+      "known_defects": [
+        "<known-defect>"
+      ],
+      "legacy_classification": "LEGACY_PRE_AUDIT_GRADE",
+      "promotion_block_reason": "NOT_ELIGIBLE_FOR_PROMOTION",
+      "promotion_eligible": false,
+      "result_family": "<result-family>",
+      "results_checksum": "<sha256>",
+      "row_count": 0,
+      "source_table": "<table-id>"
+    }
+  ],
+  "manifest_checksum": "<sha256-of-canonical-manifest-without-this-field>",
+  "operating_state": {
+    "broker": "ALPACA_PAPER",
+    "policy": "SHADOW_ONLY",
+    "real_execution_enabled": false,
+    "research": "BACKTEST_ONLY"
+  },
+  "operational_blockers": [],
+  "policy": {
+    "alpaca_execution_modes": [
+      "paper"
+    ],
+    "policy_checksum": "<sha256>",
+    "production_change_allowed_values": [
+      false
+    ],
+    "rows": [
+      {
+        "champion_strategy_version": "v2",
+        "execution_mode": "SHADOW_ONLY",
+        "ticker": "AAPL"
+      }
+    ],
+    "strategy_brain_statuses": [
+      "BACKTEST_ONLY"
+    ]
+  },
+  "promotion_eligible": false,
+  "repository": {
+    "configuration": {},
+    "configuration_checksum": "<sha256>",
+    "git": {
+      "baseline_ref": "legacy-pre-audit-grade-2026-08",
+      "git_sha": "<40-character-git-sha>",
+      "tracked_configuration_files": []
+    }
+  },
+  "schema_version": "audit-grade-baseline/v1",
+  "section_checksums": {
+    "cloud": "<sha256>",
+    "legacy_results": "<sha256>",
+    "policy": "<sha256>",
+    "repository": "<sha256>"
+  }
+}
