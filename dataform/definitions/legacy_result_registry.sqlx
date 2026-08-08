@@ -1,0 +1,182 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "legacy_result_registry",
+  description: "Registro inmutable por reconstruccion de resultados anteriores al programa audit-grade. Conserva historia y bloquea cualquier promocion.",
+  tags: ["audit", "baseline", "legacy", "governance"],
+  assertions: {
+    nonNull: ["result_family", "source_table", "baseline_git_sha", "legacy_classification", "results_checksum"],
+    uniqueKey: ["result_family", "source_table"],
+    rowConditions: [
+      "legacy_classification = 'LEGACY_PRE_AUDIT_GRADE'",
+      "promotion_eligible = FALSE"
+    ]
+  },
+  dependencies: [
+    "trading_directional_strategy_backtest",
+    "trading_brain_candidate_summary",
+    "trading_brain_candidate_capital_curve",
+    "trading_champion_challenger_policy",
+    "trading_champion_challenger_signals"
+  ]
+}
+
+WITH directional AS (
+  SELECT
+    CONCAT("DIRECTIONAL_", UPPER(strategy_version)) AS result_family,
+    "trading_directional_strategy_backtest" AS source_table,
+    MIN(analysis_date) AS date_start,
+    MAX(outcome_date) AS date_end,
+    COUNT(*) AS row_count,
+    TO_HEX(SHA256(CONCAT(
+      CAST(COUNT(*) AS STRING), "|",
+      COALESCE(CAST(BIT_XOR(FARM_FINGERPRINT(TO_JSON_STRING(t))) AS STRING), "0")
+    ))) AS results_checksum,
+    [
+      "financial available_at is not audit-grade",
+      "raw/adjusted prices and corporate actions are not canonical",
+      "gap-aware fills and locked final test are not implemented"
+    ] AS known_defects
+  FROM ${ref("trading_directional_strategy_backtest")} AS t
+  WHERE strategy_version IN ("v1", "v2", "v3", "v4")
+  GROUP BY strategy_version
+),
+brain_runs AS (
+  SELECT
+    "STRATEGY_BRAIN_RUNS" AS result_family,
+    "trading_brain_runs" AS source_table,
+    MIN(DATE(created_at)) AS date_start,
+    MAX(DATE(created_at)) AS date_end,
+    COUNT(*) AS row_count,
+    TO_HEX(SHA256(CONCAT(
+      CAST(COUNT(*) AS STRING), "|",
+      COALESCE(CAST(BIT_XOR(FARM_FINGERPRINT(TO_JSON_STRING(t))) AS STRING), "0")
+    ))) AS results_checksum,
+    [
+      "candidate/run isolation awaits WP-06 verification",
+      "legacy adaptive validation is not promotion evidence"
+    ] AS known_defects
+  FROM `stocks-437902.acciones_dataset.trading_brain_runs` AS t
+),
+brain_candidates AS (
+  SELECT
+    "STRATEGY_BRAIN_CANDIDATES" AS result_family,
+    "trading_brain_weight_candidates" AS source_table,
+    MIN(DATE(created_at)) AS date_start,
+    MAX(DATE(created_at)) AS date_end,
+    COUNT(*) AS row_count,
+    TO_HEX(SHA256(CONCAT(
+      CAST(COUNT(*) AS STRING), "|",
+      COALESCE(CAST(BIT_XOR(FARM_FINGERPRINT(TO_JSON_STRING(t))) AS STRING), "0")
+    ))) AS results_checksum,
+    [
+      "candidate/run isolation awaits WP-06 verification",
+      "legacy adaptive validation is not promotion evidence"
+    ] AS known_defects
+  FROM `stocks-437902.acciones_dataset.trading_brain_weight_candidates` AS t
+),
+brain_audits AS (
+  SELECT
+    "STRATEGY_BRAIN_AUDITS" AS result_family,
+    "trading_brain_ai_audits" AS source_table,
+    MIN(DATE(created_at)) AS date_start,
+    MAX(DATE(created_at)) AS date_end,
+    COUNT(*) AS row_count,
+    TO_HEX(SHA256(CONCAT(
+      CAST(COUNT(*) AS STRING), "|",
+      COALESCE(CAST(BIT_XOR(FARM_FINGERPRINT(TO_JSON_STRING(t))) AS STRING), "0")
+    ))) AS results_checksum,
+    [
+      "AI interpretation is non-independent legacy evidence",
+      "legacy adaptive validation is not promotion evidence"
+    ] AS known_defects
+  FROM `stocks-437902.acciones_dataset.trading_brain_ai_audits` AS t
+),
+brain_summary AS (
+  SELECT
+    "STRATEGY_BRAIN_SUMMARY" AS result_family,
+    "trading_brain_candidate_summary" AS source_table,
+    MIN(DATE(calculated_at)) AS date_start,
+    MAX(DATE(calculated_at)) AS date_end,
+    COUNT(*) AS row_count,
+    TO_HEX(SHA256(CONCAT(
+      CAST(COUNT(*) AS STRING), "|",
+      COALESCE(CAST(BIT_XOR(FARM_FINGERPRINT(TO_JSON_STRING(t))) AS STRING), "0")
+    ))) AS results_checksum,
+    [
+      "capital and candidate isolation await WP-05/WP-06 verification",
+      "no locked final test exists"
+    ] AS known_defects
+  FROM ${ref("trading_brain_candidate_summary")} AS t
+),
+brain_curve AS (
+  SELECT
+    "STRATEGY_BRAIN_CAPITAL_CURVE" AS result_family,
+    "trading_brain_candidate_capital_curve" AS source_table,
+    MIN(analysis_date) AS date_start,
+    MAX(outcome_date) AS date_end,
+    COUNT(*) AS row_count,
+    TO_HEX(SHA256(CONCAT(
+      CAST(COUNT(*) AS STRING), "|",
+      COALESCE(CAST(BIT_XOR(FARM_FINGERPRINT(TO_JSON_STRING(t))) AS STRING), "0")
+    ))) AS results_checksum,
+    [
+      "capital and candidate isolation await WP-05/WP-06 verification",
+      "no locked final test exists"
+    ] AS known_defects
+  FROM ${ref("trading_brain_candidate_capital_curve")} AS t
+),
+policy AS (
+  SELECT
+    "CHAMPION_CHALLENGER_POLICY" AS result_family,
+    "trading_champion_challenger_policy" AS source_table,
+    CAST(NULL AS DATE) AS date_start,
+    CAST(NULL AS DATE) AS date_end,
+    COUNT(*) AS row_count,
+    TO_HEX(SHA256(CONCAT(
+      CAST(COUNT(*) AS STRING), "|",
+      COALESCE(CAST(BIT_XOR(FARM_FINGERPRINT(TO_JSON_STRING(t))) AS STRING), "0")
+    ))) AS results_checksum,
+    ["policy snapshot predates independent promotion gates"] AS known_defects
+  FROM ${ref("trading_champion_challenger_policy")} AS t
+),
+signals AS (
+  SELECT
+    "CURRENT_SHADOW_SIGNALS" AS result_family,
+    "trading_champion_challenger_signals" AS source_table,
+    MIN(analysis_date) AS date_start,
+    MAX(analysis_date) AS date_end,
+    COUNT(*) AS row_count,
+    TO_HEX(SHA256(CONCAT(
+      CAST(COUNT(*) AS STRING), "|",
+      COALESCE(CAST(BIT_XOR(FARM_FINGERPRINT(TO_JSON_STRING(t))) AS STRING), "0")
+    ))) AS results_checksum,
+    ["signals inherit legacy data and execution-model limitations"] AS known_defects
+  FROM ${ref("trading_champion_challenger_signals")} AS t
+),
+all_legacy AS (
+  SELECT * FROM directional
+  UNION ALL SELECT * FROM brain_runs
+  UNION ALL SELECT * FROM brain_candidates
+  UNION ALL SELECT * FROM brain_audits
+  UNION ALL SELECT * FROM brain_summary
+  UNION ALL SELECT * FROM brain_curve
+  UNION ALL SELECT * FROM policy
+  UNION ALL SELECT * FROM signals
+)
+
+SELECT
+  result_family,
+  source_table,
+  date_start,
+  date_end,
+  row_count,
+  "f7c27dbf6b4293e4ba2755a642d2f616d98b3844" AS baseline_git_sha,
+  "READ_ONLY_LIVE_TABLE_STATE; aggregate row fingerprint; not an immutable point-in-time snapshot" AS data_snapshot_approximation,
+  known_defects,
+  "LEGACY_PRE_AUDIT_GRADE" AS legacy_classification,
+  FALSE AS promotion_eligible,
+  "NOT_ELIGIBLE_FOR_PROMOTION" AS promotion_block_reason,
+  results_checksum,
+  CURRENT_TIMESTAMP() AS registry_calculated_at
+FROM all_legacy

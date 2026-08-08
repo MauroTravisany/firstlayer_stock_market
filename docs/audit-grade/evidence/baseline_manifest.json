@@ -1,0 +1,4349 @@
+{
+  "baseline_git_sha": "f7c27dbf6b4293e4ba2755a642d2f616d98b3844",
+  "baseline_ref": "legacy-pre-audit-grade-2026-08",
+  "classification": "LEGACY_PRE_AUDIT_GRADE",
+  "cloud": {
+    "dataform_release": {
+      "codeCompilationConfig": {
+        "defaultDatabase": "stocks-437902",
+        "defaultLocation": "us-east1",
+        "defaultSchema": "acciones_dataset"
+      },
+      "cronSchedule": null,
+      "gitCommitish": "dataform-production",
+      "name": "projects/stocks-437902/locations/us-east1/repositories/portfolio-valuation/releaseConfigs/production",
+      "recentScheduledReleaseRecords": null,
+      "releaseCompilationResult": "projects/stocks-437902/locations/us-east1/repositories/portfolio-valuation/compilationResults/bf2f0c4d-3260-4e4b-ba31-3f679ffa5109",
+      "timeZone": null
+    },
+    "schedulers": [
+      {
+        "attemptDeadline": "300s",
+        "httpTarget": {
+          "body_sha256": "c5af4592cc1201a3bb0f9790e52f87dca74fafa1750a1eec3535687a2d6b5778",
+          "httpMethod": "POST",
+          "oidcToken": {
+            "audience": "https://papertradeexecutor-vlh7dkmyuq-ue.a.run.app",
+            "serviceAccountEmail": "stock-alert-runner@stocks-437902.iam.gserviceaccount.com"
+          },
+          "uri": "https://papertradeexecutor-vlh7dkmyuq-ue.a.run.app/?execute=true&asset_scope=crypto"
+        },
+        "name": "projects/stocks-437902/locations/us-east1/jobs/paper-trade-executor-crypto",
+        "retryConfig": {
+          "maxBackoffDuration": "3600s",
+          "maxDoublings": 5,
+          "maxRetryDuration": "0s",
+          "minBackoffDuration": "5s"
+        },
+        "schedule": "5 */4 * * *",
+        "state": "ENABLED",
+        "timeZone": "UTC"
+      },
+      {
+        "attemptDeadline": "300s",
+        "httpTarget": {
+          "body_sha256": "c5af4592cc1201a3bb0f9790e52f87dca74fafa1750a1eec3535687a2d6b5778",
+          "httpMethod": "POST",
+          "oidcToken": {
+            "audience": "https://papertradeexecutor-vlh7dkmyuq-ue.a.run.app",
+            "serviceAccountEmail": "stock-alert-runner@stocks-437902.iam.gserviceaccount.com"
+          },
+          "uri": "https://papertradeexecutor-vlh7dkmyuq-ue.a.run.app/?execute=true&asset_scope=equities"
+        },
+        "name": "projects/stocks-437902/locations/us-east1/jobs/paper-trade-executor-equities",
+        "retryConfig": {
+          "maxBackoffDuration": "3600s",
+          "maxDoublings": 5,
+          "maxRetryDuration": "0s",
+          "minBackoffDuration": "5s"
+        },
+        "schedule": "55 */4 * * 1-5",
+        "state": "ENABLED",
+        "timeZone": "America/Santiago"
+      },
+      {
+        "attemptDeadline": "120s",
+        "httpTarget": {
+          "body_sha256": "c5af4592cc1201a3bb0f9790e52f87dca74fafa1750a1eec3535687a2d6b5778",
+          "httpMethod": "POST",
+          "oidcToken": {
+            "audience": "https://papertraderiskmonitor-vlh7dkmyuq-ue.a.run.app",
+            "serviceAccountEmail": "stock-alert-runner@stocks-437902.iam.gserviceaccount.com"
+          },
+          "uri": "https://papertraderiskmonitor-vlh7dkmyuq-ue.a.run.app/?execute=true&asset_scope=crypto"
+        },
+        "name": "projects/stocks-437902/locations/us-east1/jobs/paper-trade-risk-crypto",
+        "retryConfig": {
+          "maxBackoffDuration": "3600s",
+          "maxDoublings": 5,
+          "maxRetryDuration": "0s",
+          "minBackoffDuration": "5s"
+        },
+        "schedule": "*/30 * * * *",
+        "state": "ENABLED",
+        "timeZone": "UTC"
+      },
+      {
+        "attemptDeadline": "120s",
+        "httpTarget": {
+          "body_sha256": "c5af4592cc1201a3bb0f9790e52f87dca74fafa1750a1eec3535687a2d6b5778",
+          "httpMethod": "POST",
+          "oidcToken": {
+            "audience": "https://papertraderiskmonitor-vlh7dkmyuq-ue.a.run.app",
+            "serviceAccountEmail": "stock-alert-runner@stocks-437902.iam.gserviceaccount.com"
+          },
+          "uri": "https://papertraderiskmonitor-vlh7dkmyuq-ue.a.run.app/?execute=true&asset_scope=equities"
+        },
+        "name": "projects/stocks-437902/locations/us-east1/jobs/paper-trade-risk-equities",
+        "retryConfig": {
+          "maxBackoffDuration": "3600s",
+          "maxDoublings": 5,
+          "maxRetryDuration": "0s",
+          "minBackoffDuration": "5s"
+        },
+        "schedule": "*/15 9-16 * * 1-5",
+        "state": "ENABLED",
+        "timeZone": "America/New_York"
+      },
+      {
+        "attemptDeadline": "300s",
+        "httpTarget": {
+          "body_sha256": "c5af4592cc1201a3bb0f9790e52f87dca74fafa1750a1eec3535687a2d6b5778",
+          "httpMethod": "POST",
+          "oidcToken": {
+            "audience": "https://papertradingalerts-vlh7dkmyuq-ue.a.run.app",
+            "serviceAccountEmail": "stock-alert-runner@stocks-437902.iam.gserviceaccount.com"
+          },
+          "uri": "https://papertradingalerts-vlh7dkmyuq-ue.a.run.app/"
+        },
+        "name": "projects/stocks-437902/locations/us-east1/jobs/paper-trading-daily-summary",
+        "retryConfig": {
+          "maxBackoffDuration": "3600s",
+          "maxDoublings": 5,
+          "maxRetryDuration": "0s",
+          "minBackoffDuration": "5s"
+        },
+        "schedule": "40 21 * * *",
+        "state": "ENABLED",
+        "timeZone": "America/Santiago"
+      },
+      {
+        "attemptDeadline": "300s",
+        "httpTarget": {
+          "body_sha256": "c5af4592cc1201a3bb0f9790e52f87dca74fafa1750a1eec3535687a2d6b5778",
+          "httpMethod": "POST",
+          "oidcToken": {
+            "audience": "https://papertradingalerts-vlh7dkmyuq-ue.a.run.app",
+            "serviceAccountEmail": "stock-alert-runner@stocks-437902.iam.gserviceaccount.com"
+          },
+          "uri": "https://papertradingalerts-vlh7dkmyuq-ue.a.run.app/?review_type=weekly_global_summary"
+        },
+        "name": "projects/stocks-437902/locations/us-east1/jobs/paper-trading-weekly-global-summary",
+        "retryConfig": {
+          "maxBackoffDuration": "3600s",
+          "maxDoublings": 5,
+          "maxRetryDuration": "0s",
+          "minBackoffDuration": "5s"
+        },
+        "schedule": "20 22 * * 5",
+        "state": "ENABLED",
+        "timeZone": "America/Santiago"
+      },
+      {
+        "attemptDeadline": "300s",
+        "httpTarget": {
+          "body_sha256": "c5af4592cc1201a3bb0f9790e52f87dca74fafa1750a1eec3535687a2d6b5778",
+          "httpMethod": "POST",
+          "oidcToken": {
+            "audience": "https://papertradingalerts-vlh7dkmyuq-ue.a.run.app",
+            "serviceAccountEmail": "stock-alert-runner@stocks-437902.iam.gserviceaccount.com"
+          },
+          "uri": "https://papertradingalerts-vlh7dkmyuq-ue.a.run.app/?review_type=weekly_strategy"
+        },
+        "name": "projects/stocks-437902/locations/us-east1/jobs/paper-trading-weekly-strategy-review",
+        "retryConfig": {
+          "maxBackoffDuration": "3600s",
+          "maxDoublings": 5,
+          "maxRetryDuration": "0s",
+          "minBackoffDuration": "5s"
+        },
+        "schedule": "5 22 * * 5",
+        "state": "ENABLED",
+        "timeZone": "America/Santiago"
+      },
+      {
+        "attemptDeadline": "1800s",
+        "httpTarget": {
+          "body_sha256": "c5af4592cc1201a3bb0f9790e52f87dca74fafa1750a1eec3535687a2d6b5778",
+          "httpMethod": "POST",
+          "oidcToken": {
+            "audience": "https://stockaianalysis-vlh7dkmyuq-ue.a.run.app/",
+            "serviceAccountEmail": "stock-alert-runner@stocks-437902.iam.gserviceaccount.com"
+          },
+          "uri": "https://stockaianalysis-vlh7dkmyuq-ue.a.run.app/?analysis_scope=candidates&send_alert=true"
+        },
+        "name": "projects/stocks-437902/locations/us-east1/jobs/stock-ai-analysis-daily",
+        "retryConfig": {
+          "maxBackoffDuration": "3600s",
+          "maxDoublings": 5,
+          "maxRetryDuration": "0s",
+          "minBackoffDuration": "5s"
+        },
+        "schedule": "45 20 * * 1-5",
+        "state": "ENABLED",
+        "timeZone": "America/Santiago"
+      },
+      {
+        "attemptDeadline": "1800s",
+        "httpTarget": {
+          "body_sha256": "c5af4592cc1201a3bb0f9790e52f87dca74fafa1750a1eec3535687a2d6b5778",
+          "httpMethod": "POST",
+          "oidcToken": {
+            "audience": "https://stockaianalysis-vlh7dkmyuq-ue.a.run.app/",
+            "serviceAccountEmail": "stock-alert-runner@stocks-437902.iam.gserviceaccount.com"
+          },
+          "uri": "https://stockaianalysis-vlh7dkmyuq-ue.a.run.app/?analysis_scope=remaining&send_alert=false"
+        },
+        "name": "projects/stocks-437902/locations/us-east1/jobs/stock-ai-analysis-remaining",
+        "retryConfig": {
+          "maxBackoffDuration": "3600s",
+          "maxDoublings": 5,
+          "maxRetryDuration": "0s",
+          "minBackoffDuration": "5s"
+        },
+        "schedule": "20 21 * * 1-5",
+        "state": "ENABLED",
+        "timeZone": "America/Santiago"
+      },
+      {
+        "attemptDeadline": "1800s",
+        "httpTarget": {
+          "body_sha256": "c5af4592cc1201a3bb0f9790e52f87dca74fafa1750a1eec3535687a2d6b5778",
+          "httpMethod": "POST",
+          "oidcToken": {
+            "audience": "https://stockaianalysis-vlh7dkmyuq-ue.a.run.app/",
+            "serviceAccountEmail": "stock-alert-runner@stocks-437902.iam.gserviceaccount.com"
+          },
+          "uri": "https://stockaianalysis-vlh7dkmyuq-ue.a.run.app/?summary_type=weekly"
+        },
+        "name": "projects/stocks-437902/locations/us-east1/jobs/stock-ai-weekly-summary",
+        "retryConfig": {
+          "maxBackoffDuration": "3600s",
+          "maxDoublings": 5,
+          "maxRetryDuration": "0s",
+          "minBackoffDuration": "5s"
+        },
+        "schedule": "15 21 * * 5",
+        "state": "ENABLED",
+        "timeZone": "America/Santiago"
+      },
+      {
+        "attemptDeadline": "900s",
+        "httpTarget": {
+          "body_sha256": "c5af4592cc1201a3bb0f9790e52f87dca74fafa1750a1eec3535687a2d6b5778",
+          "httpMethod": "POST",
+          "oidcToken": {
+            "audience": "https://stockdaily-vlh7dkmyuq-ue.a.run.app/",
+            "serviceAccountEmail": "stock-alert-runner@stocks-437902.iam.gserviceaccount.com"
+          },
+          "uri": "https://stockdaily-vlh7dkmyuq-ue.a.run.app/?send_alert=false"
+        },
+        "name": "projects/stocks-437902/locations/us-east1/jobs/stockdaily-daily",
+        "retryConfig": {
+          "maxBackoffDuration": "3600s",
+          "maxDoublings": 5,
+          "maxRetryDuration": "0s",
+          "minBackoffDuration": "5s"
+        },
+        "schedule": "0 */4 * * *",
+        "state": "ENABLED",
+        "timeZone": "America/Santiago"
+      },
+      {
+        "attemptDeadline": "900s",
+        "httpTarget": {
+          "body_sha256": "c5af4592cc1201a3bb0f9790e52f87dca74fafa1750a1eec3535687a2d6b5778",
+          "httpMethod": "POST",
+          "oidcToken": {
+            "audience": "https://stockfinancial-vlh7dkmyuq-ue.a.run.app",
+            "serviceAccountEmail": "stock-alert-runner@stocks-437902.iam.gserviceaccount.com"
+          },
+          "uri": "https://stockfinancial-vlh7dkmyuq-ue.a.run.app/"
+        },
+        "name": "projects/stocks-437902/locations/us-east1/jobs/stockfinancial-daily",
+        "retryConfig": {
+          "maxBackoffDuration": "3600s",
+          "maxDoublings": 5,
+          "maxRetryDuration": "0s",
+          "minBackoffDuration": "5s"
+        },
+        "schedule": "30 19 * * 1-5",
+        "state": "ENABLED",
+        "timeZone": "America/Santiago"
+      },
+      {
+        "attemptDeadline": "300s",
+        "httpTarget": {
+          "body_sha256": "c5af4592cc1201a3bb0f9790e52f87dca74fafa1750a1eec3535687a2d6b5778",
+          "httpMethod": "POST",
+          "oidcToken": {
+            "audience": "https://stockmacrodata-vlh7dkmyuq-ue.a.run.app",
+            "serviceAccountEmail": "stock-alert-runner@stocks-437902.iam.gserviceaccount.com"
+          },
+          "uri": "https://stockmacrodata-vlh7dkmyuq-ue.a.run.app/"
+        },
+        "name": "projects/stocks-437902/locations/us-east1/jobs/stockmacrodata-intraday",
+        "retryConfig": {
+          "maxBackoffDuration": "3600s",
+          "maxDoublings": 5,
+          "maxRetryDuration": "0s",
+          "minBackoffDuration": "5s"
+        },
+        "schedule": "10 */4 * * *",
+        "state": "ENABLED",
+        "timeZone": "America/Santiago"
+      },
+      {
+        "attemptDeadline": "900s",
+        "httpTarget": {
+          "body_sha256": "046aa2225a5e9e70fc39202c6e1b9e260827dac10bf1455801562a966c71e716",
+          "httpMethod": "POST",
+          "oidcToken": {
+            "audience": "https://strategybrain-vlh7dkmyuq-ue.a.run.app",
+            "serviceAccountEmail": "stock-alert-runner@stocks-437902.iam.gserviceaccount.com"
+          },
+          "uri": "https://strategybrain-vlh7dkmyuq-ue.a.run.app/"
+        },
+        "name": "projects/stocks-437902/locations/us-east1/jobs/strategy-brain-generate",
+        "retryConfig": {
+          "maxBackoffDuration": "3600s",
+          "maxDoublings": 5,
+          "maxRetryDuration": "0s",
+          "minBackoffDuration": "5s"
+        },
+        "schedule": "0 1 * * 6",
+        "state": "ENABLED",
+        "timeZone": "America/Santiago"
+      },
+      {
+        "attemptDeadline": "900s",
+        "httpTarget": {
+          "body_sha256": "0418e8fa1debd8eb311f1c8c7e10d8b64aacaec8d45f9b5dc8254b9457a4a2fd",
+          "httpMethod": "POST",
+          "oidcToken": {
+            "audience": "https://strategybrain-vlh7dkmyuq-ue.a.run.app",
+            "serviceAccountEmail": "stock-alert-runner@stocks-437902.iam.gserviceaccount.com"
+          },
+          "uri": "https://strategybrain-vlh7dkmyuq-ue.a.run.app/"
+        },
+        "name": "projects/stocks-437902/locations/us-east1/jobs/strategy-brain-review",
+        "retryConfig": {
+          "maxBackoffDuration": "3600s",
+          "maxDoublings": 5,
+          "maxRetryDuration": "0s",
+          "minBackoffDuration": "5s"
+        },
+        "schedule": "0 13 * * 0",
+        "state": "ENABLED",
+        "timeZone": "America/Santiago"
+      }
+    ],
+    "services": [
+      {
+        "generation": "39",
+        "ingress": "INGRESS_TRAFFIC_ALL",
+        "invokerIamDisabled": null,
+        "latestReadyRevision": "projects/stocks-437902/locations/us-east1/services/papertradeexecutor/revisions/papertradeexecutor-00039-vqn",
+        "name": "projects/stocks-437902/locations/us-east1/services/papertradeexecutor",
+        "template": {
+          "containers": [
+            {
+              "args": [
+                "main.py"
+              ],
+              "command": [
+                "python"
+              ],
+              "env": [
+                {
+                  "name": "PROJECT_ID",
+                  "value": "stocks-437902"
+                },
+                {
+                  "name": "PAPER_EXECUTION_MODE",
+                  "value": "paper"
+                },
+                {
+                  "name": "TRADING_SIGNALS_TABLE_ID",
+                  "value": "trading_champion_challenger_signals"
+                },
+                {
+                  "name": "TRADING_RESULTS_TABLE_ID",
+                  "value": "trading_directional_trade_results"
+                },
+                {
+                  "name": "ALPACA_EXECUTIONS_TABLE_ID",
+                  "value": "trading_alpaca_paper_executions"
+                },
+                {
+                  "name": "ALPACA_EQUITY_ORDER_CLASS",
+                  "value": "simple"
+                },
+                {
+                  "name": "ALPACA_ENABLE_CRYPTO_ORDERS",
+                  "value": "true"
+                },
+                {
+                  "name": "ALPACA_MAX_ORDERS_PER_RUN",
+                  "value": "3"
+                },
+                {
+                  "name": "ALPACA_MAX_ORDERS_PER_DAY",
+                  "value": "5"
+                },
+                {
+                  "name": "ALPACA_MAX_OPEN_POSITIONS",
+                  "value": "5"
+                },
+                {
+                  "name": "ALPACA_MAX_NOTIONAL_USD",
+                  "value": "10"
+                },
+                {
+                  "name": "ALPACA_MIN_SETUP_SCORE",
+                  "value": "0"
+                },
+                {
+                  "name": "ALPACA_REQUEST_TIMEOUT_SECONDS",
+                  "value": "20"
+                }
+              ],
+              "image": "us-east1-docker.pkg.dev/stocks-437902/cloud-run-source-deploy/papertradeexecutor@sha256:a4331fcf105df99068457c6c90d267dd3aa88fcbbc5952977e6b79d9385344c8",
+              "name": null,
+              "resources": {
+                "cpuIdle": true,
+                "limits": {
+                  "cpu": "1000m",
+                  "memory": "512Mi"
+                },
+                "startupCpuBoost": true
+              }
+            }
+          ],
+          "maxInstanceRequestConcurrency": 1,
+          "scaling": {
+            "maxInstanceCount": 1
+          },
+          "serviceAccount": "10359734256-compute@developer.gserviceaccount.com",
+          "timeout": "300s"
+        },
+        "updateTime": "2026-08-08T05:00:39.470007Z",
+        "uri": "https://papertradeexecutor-vlh7dkmyuq-ue.a.run.app"
+      },
+      {
+        "generation": "41",
+        "ingress": "INGRESS_TRAFFIC_ALL",
+        "invokerIamDisabled": null,
+        "latestReadyRevision": "projects/stocks-437902/locations/us-east1/services/papertraderiskmonitor/revisions/papertraderiskmonitor-00041-dd5",
+        "name": "projects/stocks-437902/locations/us-east1/services/papertraderiskmonitor",
+        "template": {
+          "containers": [
+            {
+              "args": [
+                "main.py"
+              ],
+              "command": [
+                "python"
+              ],
+              "env": [
+                {
+                  "name": "PROJECT_ID",
+                  "value": "stocks-437902"
+                },
+                {
+                  "name": "PAPER_EXECUTION_MODE",
+                  "value": "paper"
+                },
+                {
+                  "name": "ALPACA_EXECUTIONS_TABLE_ID",
+                  "value": "trading_alpaca_paper_executions"
+                },
+                {
+                  "name": "ALPACA_POSITIONS_TABLE_ID",
+                  "value": "trading_alpaca_paper_positions"
+                },
+                {
+                  "name": "STOCK_PRICES_TABLE_ID",
+                  "value": "valores_acciones_recientes"
+                },
+                {
+                  "name": "ALPACA_MAX_EXITS_PER_RUN",
+                  "value": "3"
+                },
+                {
+                  "name": "ALPACA_REQUEST_TIMEOUT_SECONDS",
+                  "value": "20"
+                }
+              ],
+              "image": "us-east1-docker.pkg.dev/stocks-437902/cloud-run-source-deploy/papertraderiskmonitor@sha256:70665150ca0bc0cd3c8e359f9101fe8a29fb7e064eec4a38508093f19257c6a4",
+              "name": null,
+              "resources": {
+                "cpuIdle": true,
+                "limits": {
+                  "cpu": "1000m",
+                  "memory": "512Mi"
+                },
+                "startupCpuBoost": true
+              }
+            }
+          ],
+          "maxInstanceRequestConcurrency": 1,
+          "scaling": {
+            "maxInstanceCount": 1
+          },
+          "serviceAccount": "10359734256-compute@developer.gserviceaccount.com",
+          "timeout": "120s"
+        },
+        "updateTime": "2026-08-08T05:02:13.534637Z",
+        "uri": "https://papertraderiskmonitor-vlh7dkmyuq-ue.a.run.app"
+      },
+      {
+        "generation": "54",
+        "ingress": "INGRESS_TRAFFIC_ALL",
+        "invokerIamDisabled": null,
+        "latestReadyRevision": "projects/stocks-437902/locations/us-east1/services/papertradingalerts/revisions/papertradingalerts-00054-sdg",
+        "name": "projects/stocks-437902/locations/us-east1/services/papertradingalerts",
+        "template": {
+          "containers": [
+            {
+              "args": [
+                "main.py"
+              ],
+              "command": [
+                "python"
+              ],
+              "env": [
+                {
+                  "name": "PROJECT_ID",
+                  "value": "stocks-437902"
+                },
+                {
+                  "name": "OPENAI_MODEL",
+                  "value": "gpt-5-mini"
+                },
+                {
+                  "name": "ALERT_WEBHOOK_TYPE",
+                  "value": "<redacted>"
+                },
+                {
+                  "name": "TRADING_SUMMARY_TABLE_ID",
+                  "value": "trading_directional_daily_summary"
+                },
+                {
+                  "name": "TRADING_SIGNALS_TABLE_ID",
+                  "value": "trading_directional_signals"
+                },
+                {
+                  "name": "TRADING_RESULTS_TABLE_ID",
+                  "value": "trading_directional_trade_results"
+                },
+                {
+                  "name": "ALPACA_EXECUTIONS_TABLE_ID",
+                  "value": "trading_alpaca_paper_executions"
+                },
+                {
+                  "name": "ALPACA_POSITIONS_TABLE_ID",
+                  "value": "trading_alpaca_paper_positions"
+                },
+                {
+                  "name": "TRADING_ALERTS_TABLE_ID",
+                  "value": "trading_alerts_sent"
+                },
+                {
+                  "name": "TRADING_FEEDBACK_TABLE_ID",
+                  "value": "trading_ai_feedback_daily"
+                },
+                {
+                  "name": "TRADING_WEEKLY_REVIEW_TABLE_ID",
+                  "value": "trading_weekly_ai_strategy_review"
+                },
+                {
+                  "name": "TRADING_AI_FEEDBACK",
+                  "value": "true"
+                },
+                {
+                  "name": "TRADING_PROMPT_VERSION",
+                  "value": "paper-trading-feedback-v2"
+                }
+              ],
+              "image": "us-east1-docker.pkg.dev/stocks-437902/cloud-run-source-deploy/papertradingalerts@sha256:080e84a95753a63c5f12d763b978c402ca4c81ab38f0cf49300e704506e1d929",
+              "name": null,
+              "resources": {
+                "cpuIdle": true,
+                "limits": {
+                  "cpu": "1000m",
+                  "memory": "512Mi"
+                },
+                "startupCpuBoost": true
+              }
+            }
+          ],
+          "maxInstanceRequestConcurrency": 1,
+          "scaling": {
+            "maxInstanceCount": 1
+          },
+          "serviceAccount": "10359734256-compute@developer.gserviceaccount.com",
+          "timeout": "300s"
+        },
+        "updateTime": "2026-08-08T04:57:50.190065Z",
+        "uri": "https://papertradingalerts-vlh7dkmyuq-ue.a.run.app"
+      },
+      {
+        "generation": "96",
+        "ingress": "INGRESS_TRAFFIC_ALL",
+        "invokerIamDisabled": null,
+        "latestReadyRevision": "projects/stocks-437902/locations/us-east1/services/stockaianalysis/revisions/stockaianalysis-00096-njl",
+        "name": "projects/stocks-437902/locations/us-east1/services/stockaianalysis",
+        "template": {
+          "containers": [
+            {
+              "args": [
+                "-m",
+                "functions_framework",
+                "--target=main",
+                "--host=0.0.0.0",
+                "--port=8080"
+              ],
+              "command": [
+                "python"
+              ],
+              "env": [
+                {
+                  "name": "PROJECT_ID",
+                  "value": "stocks-437902"
+                },
+                {
+                  "name": "OPENAI_MODEL",
+                  "value": "gpt-5-mini"
+                },
+                {
+                  "name": "ALERT_WEBHOOK_TYPE",
+                  "value": "<redacted>"
+                },
+                {
+                  "name": "PROMPT_VERSION",
+                  "value": "portfolio-ai-v7"
+                },
+                {
+                  "name": "AI_MAX_TICKERS",
+                  "value": "12"
+                },
+                {
+                  "name": "AI_ANALYSIS_TABLE_ID",
+                  "value": "portfolio_ai_analysis_daily"
+                },
+                {
+                  "name": "AI_SUMMARY_TABLE_ID",
+                  "value": "portfolio_ai_summary_daily"
+                },
+                {
+                  "name": "STATUS_CHANGES_TABLE_ID",
+                  "value": "portfolio_company_status_changes"
+                }
+              ],
+              "image": "us-east1-docker.pkg.dev/stocks-437902/cloud-run-source-deploy/stockaianalysis@sha256:989fef81bf9901b6e4d4340539f34ce803e0dfd4e74dc15523269ae8d084b95e",
+              "name": null,
+              "resources": {
+                "cpuIdle": true,
+                "limits": {
+                  "cpu": "1000m",
+                  "memory": "1Gi"
+                },
+                "startupCpuBoost": true
+              }
+            }
+          ],
+          "maxInstanceRequestConcurrency": 1,
+          "scaling": {
+            "maxInstanceCount": 1
+          },
+          "serviceAccount": "10359734256-compute@developer.gserviceaccount.com",
+          "timeout": "1800s"
+        },
+        "updateTime": "2026-08-08T04:56:43.916166Z",
+        "uri": "https://stockaianalysis-vlh7dkmyuq-ue.a.run.app"
+      },
+      {
+        "generation": "210",
+        "ingress": "INGRESS_TRAFFIC_ALL",
+        "invokerIamDisabled": null,
+        "latestReadyRevision": "projects/stocks-437902/locations/us-east1/services/stockdaily/revisions/stockdaily-00210-qbs",
+        "name": "projects/stocks-437902/locations/us-east1/services/stockdaily",
+        "template": {
+          "containers": [
+            {
+              "args": [
+                "main.py"
+              ],
+              "command": [
+                "python"
+              ],
+              "env": [
+                {
+                  "name": "PROJECT_ID",
+                  "value": "stocks-437902"
+                },
+                {
+                  "name": "PORTFOLIO_TABLE_ID",
+                  "value": "portfolio_assets"
+                },
+                {
+                  "name": "DATA_QUALITY_TABLE_ID",
+                  "value": "pipeline_data_quality_daily"
+                },
+                {
+                  "name": "ALERT_WEBHOOK_TYPE",
+                  "value": "<redacted>"
+                },
+                {
+                  "name": "TIME_ZONE",
+                  "value": "America/Santiago"
+                },
+                {
+                  "name": "YAHOO_REQUEST_TIMEOUT_SECONDS",
+                  "value": "30"
+                }
+              ],
+              "image": "us-east1-docker.pkg.dev/stocks-437902/cloud-run-source-deploy/stockdaily@sha256:ace12b9c4ad5f50768fc6fcb09f39255069064f2e412403b708fa1af03c0a573",
+              "name": null,
+              "resources": {
+                "cpuIdle": true,
+                "limits": {
+                  "cpu": "1000m",
+                  "memory": "512Mi"
+                },
+                "startupCpuBoost": true
+              }
+            }
+          ],
+          "maxInstanceRequestConcurrency": 1,
+          "scaling": {
+            "maxInstanceCount": 1
+          },
+          "serviceAccount": "10359734256-compute@developer.gserviceaccount.com",
+          "timeout": "900s"
+        },
+        "updateTime": "2026-08-08T04:51:42.979233Z",
+        "uri": "https://stockdaily-vlh7dkmyuq-ue.a.run.app"
+      },
+      {
+        "generation": "83",
+        "ingress": "INGRESS_TRAFFIC_ALL",
+        "invokerIamDisabled": null,
+        "latestReadyRevision": "projects/stocks-437902/locations/us-east1/services/stockfinancial/revisions/stockfinancial-00083-k8c",
+        "name": "projects/stocks-437902/locations/us-east1/services/stockfinancial",
+        "template": {
+          "containers": [
+            {
+              "args": null,
+              "command": null,
+              "env": [
+                {
+                  "name": "PROJECT_ID",
+                  "value": "stocks-437902"
+                },
+                {
+                  "name": "PORTFOLIO_TABLE_ID",
+                  "value": "portfolio_assets"
+                },
+                {
+                  "name": "PEER_UNIVERSE_TABLE_ID",
+                  "value": "peer_universe"
+                },
+                {
+                  "name": "DATA_QUALITY_TABLE_ID",
+                  "value": "pipeline_data_quality_daily"
+                },
+                {
+                  "name": "ALERT_WEBHOOK_TYPE",
+                  "value": "<redacted>"
+                },
+                {
+                  "name": "TIME_ZONE",
+                  "value": "America/Santiago"
+                },
+                {
+                  "name": "FINANCIAL_STATEMENTS_TABLE_ID",
+                  "value": "financial_statements"
+                },
+                {
+                  "name": "FINANCIAL_RATIOS_TABLE_ID",
+                  "value": "financial_ratios_snapshot"
+                }
+              ],
+              "image": "us-east1-docker.pkg.dev/stocks-437902/cloud-run-source-deploy/stockfinancial@sha256:f188e77d6e1928ee3b703bb7578ab7f3e77ed2c2e8c1fe02ea18c4697f185f52",
+              "name": null,
+              "resources": {
+                "cpuIdle": true,
+                "limits": {
+                  "cpu": "1000m",
+                  "memory": "512Mi"
+                },
+                "startupCpuBoost": true
+              }
+            }
+          ],
+          "maxInstanceRequestConcurrency": 1,
+          "scaling": {
+            "maxInstanceCount": 1
+          },
+          "serviceAccount": "10359734256-compute@developer.gserviceaccount.com",
+          "timeout": "900s"
+        },
+        "updateTime": "2026-08-08T04:55:17.701693Z",
+        "uri": "https://stockfinancial-vlh7dkmyuq-ue.a.run.app"
+      },
+      {
+        "generation": "41",
+        "ingress": "INGRESS_TRAFFIC_ALL",
+        "invokerIamDisabled": null,
+        "latestReadyRevision": "projects/stocks-437902/locations/us-east1/services/stockmacrodata/revisions/stockmacrodata-00041-g9w",
+        "name": "projects/stocks-437902/locations/us-east1/services/stockmacrodata",
+        "template": {
+          "containers": [
+            {
+              "args": [
+                "main.py"
+              ],
+              "command": [
+                "python"
+              ],
+              "env": [
+                {
+                  "name": "PROJECT_ID",
+                  "value": "stocks-437902"
+                },
+                {
+                  "name": "MACRO_MARKET_TABLE_ID",
+                  "value": "macro_market_snapshot"
+                },
+                {
+                  "name": "MACRO_NEWS_TABLE_ID",
+                  "value": "macro_news_signal"
+                },
+                {
+                  "name": "MACRO_EARNINGS_TABLE_ID",
+                  "value": "macro_earnings_calendar"
+                },
+                {
+                  "name": "PORTFOLIO_TABLE_ID",
+                  "value": "portfolio_assets"
+                },
+                {
+                  "name": "TIME_ZONE",
+                  "value": "America/Santiago"
+                },
+                {
+                  "name": "GDELT_TIMESPAN",
+                  "value": "4H"
+                },
+                {
+                  "name": "GDELT_MAX_RECORDS",
+                  "value": "75"
+                }
+              ],
+              "image": "us-east1-docker.pkg.dev/stocks-437902/cloud-run-source-deploy/stockmacrodata@sha256:e855fa35fbabda522ad63ffba5ded342ace0a4a4d5b82e41db59dd22c47246d0",
+              "name": null,
+              "resources": {
+                "cpuIdle": true,
+                "limits": {
+                  "cpu": "1000m",
+                  "memory": "512Mi"
+                },
+                "startupCpuBoost": true
+              }
+            }
+          ],
+          "maxInstanceRequestConcurrency": 1,
+          "scaling": {
+            "maxInstanceCount": 1
+          },
+          "serviceAccount": "10359734256-compute@developer.gserviceaccount.com",
+          "timeout": "300s"
+        },
+        "updateTime": "2026-08-08T04:53:22.765043Z",
+        "uri": "https://stockmacrodata-vlh7dkmyuq-ue.a.run.app"
+      },
+      {
+        "generation": "43",
+        "ingress": "INGRESS_TRAFFIC_ALL",
+        "invokerIamDisabled": null,
+        "latestReadyRevision": "projects/stocks-437902/locations/us-east1/services/strategybrain/revisions/strategybrain-00043-vhl",
+        "name": "projects/stocks-437902/locations/us-east1/services/strategybrain",
+        "template": {
+          "containers": [
+            {
+              "args": [
+                "main.py"
+              ],
+              "command": [
+                "python"
+              ],
+              "env": [
+                {
+                  "name": "PROJECT_ID",
+                  "value": "stocks-437902"
+                },
+                {
+                  "name": "OPENAI_MODEL",
+                  "value": "gpt-5-mini"
+                },
+                {
+                  "name": "BRAIN_AI_REVIEW_ENABLED",
+                  "value": "true"
+                }
+              ],
+              "image": "us-east1-docker.pkg.dev/stocks-437902/cloud-run-source-deploy/strategybrain@sha256:ef7b7a64e42456066955e7064567ef08d8db0c964ba4f7758f65a7ce722a1d85",
+              "name": null,
+              "resources": {
+                "cpuIdle": true,
+                "limits": {
+                  "cpu": "1000m",
+                  "memory": "1Gi"
+                },
+                "startupCpuBoost": true
+              }
+            }
+          ],
+          "maxInstanceRequestConcurrency": 1,
+          "scaling": {
+            "maxInstanceCount": 1
+          },
+          "serviceAccount": "10359734256-compute@developer.gserviceaccount.com",
+          "timeout": "900s"
+        },
+        "updateTime": "2026-08-08T04:59:18.139199Z",
+        "uri": "https://strategybrain-vlh7dkmyuq-ue.a.run.app"
+      }
+    ]
+  },
+  "legacy_results": [
+    {
+      "baseline_git_sha": "f7c27dbf6b4293e4ba2755a642d2f616d98b3844",
+      "data_snapshot_approximation": "READ_ONLY_LIVE_TABLE_STATE; sorted SHA256 of every selected row; not an immutable point-in-time snapshot",
+      "date_end": null,
+      "date_start": null,
+      "known_defects": [
+        "policy snapshot predates independent promotion gates"
+      ],
+      "legacy_classification": "LEGACY_PRE_AUDIT_GRADE",
+      "promotion_block_reason": "NOT_ELIGIBLE_FOR_PROMOTION",
+      "promotion_eligible": false,
+      "result_family": "CHAMPION_CHALLENGER_POLICY",
+      "results_checksum": "01304b485d75334f265d0b41f28db72c1f65de3004ab12a1e822873e57bf2523",
+      "row_count": 6,
+      "source_table": "trading_champion_challenger_policy"
+    },
+    {
+      "baseline_git_sha": "f7c27dbf6b4293e4ba2755a642d2f616d98b3844",
+      "data_snapshot_approximation": "READ_ONLY_LIVE_TABLE_STATE; sorted SHA256 of every selected row; not an immutable point-in-time snapshot",
+      "date_end": "2026-08-08",
+      "date_start": "2019-01-01",
+      "known_defects": [
+        "signals inherit legacy data and execution-model limitations"
+      ],
+      "legacy_classification": "LEGACY_PRE_AUDIT_GRADE",
+      "promotion_block_reason": "NOT_ELIGIBLE_FOR_PROMOTION",
+      "promotion_eligible": false,
+      "result_family": "CURRENT_SHADOW_SIGNALS",
+      "results_checksum": "83b571a0706f5849da45370e303270072b506425eb95dbd2c3e94cf84f2a9fac",
+      "row_count": 50480,
+      "source_table": "trading_champion_challenger_signals"
+    },
+    {
+      "baseline_git_sha": "f7c27dbf6b4293e4ba2755a642d2f616d98b3844",
+      "data_snapshot_approximation": "READ_ONLY_LIVE_TABLE_STATE; sorted SHA256 of every selected row; not an immutable point-in-time snapshot",
+      "date_end": "2026-07-31",
+      "date_start": "2019-01-09",
+      "known_defects": [
+        "financial available_at is not audit-grade",
+        "raw/adjusted prices and corporate actions are not canonical",
+        "gap-aware fills and locked final test are not implemented"
+      ],
+      "legacy_classification": "LEGACY_PRE_AUDIT_GRADE",
+      "promotion_block_reason": "NOT_ELIGIBLE_FOR_PROMOTION",
+      "promotion_eligible": false,
+      "result_family": "DIRECTIONAL_V1",
+      "results_checksum": "791cff8a5e2c3ac25e466ff92e00f084839e9f2e754fc265388e16cb0a56308f",
+      "row_count": 220,
+      "source_table": "trading_directional_strategy_backtest"
+    },
+    {
+      "baseline_git_sha": "f7c27dbf6b4293e4ba2755a642d2f616d98b3844",
+      "data_snapshot_approximation": "READ_ONLY_LIVE_TABLE_STATE; sorted SHA256 of every selected row; not an immutable point-in-time snapshot",
+      "date_end": "2026-07-31",
+      "date_start": "2019-01-31",
+      "known_defects": [
+        "financial available_at is not audit-grade",
+        "raw/adjusted prices and corporate actions are not canonical",
+        "gap-aware fills and locked final test are not implemented"
+      ],
+      "legacy_classification": "LEGACY_PRE_AUDIT_GRADE",
+      "promotion_block_reason": "NOT_ELIGIBLE_FOR_PROMOTION",
+      "promotion_eligible": false,
+      "result_family": "DIRECTIONAL_V2",
+      "results_checksum": "08991aaac721e8478e5db203f3374201fa7f3c897476fa82f1b6e89308e1e131",
+      "row_count": 124,
+      "source_table": "trading_directional_strategy_backtest"
+    },
+    {
+      "baseline_git_sha": "f7c27dbf6b4293e4ba2755a642d2f616d98b3844",
+      "data_snapshot_approximation": "READ_ONLY_LIVE_TABLE_STATE; sorted SHA256 of every selected row; not an immutable point-in-time snapshot",
+      "date_end": "2026-07-29",
+      "date_start": "2019-01-31",
+      "known_defects": [
+        "financial available_at is not audit-grade",
+        "raw/adjusted prices and corporate actions are not canonical",
+        "gap-aware fills and locked final test are not implemented"
+      ],
+      "legacy_classification": "LEGACY_PRE_AUDIT_GRADE",
+      "promotion_block_reason": "NOT_ELIGIBLE_FOR_PROMOTION",
+      "promotion_eligible": false,
+      "result_family": "DIRECTIONAL_V3",
+      "results_checksum": "6ad107aa3277ce4e727200b6efd0cd3ef0a3736feacb04ece1731947ae3873cb",
+      "row_count": 76,
+      "source_table": "trading_directional_strategy_backtest"
+    },
+    {
+      "baseline_git_sha": "f7c27dbf6b4293e4ba2755a642d2f616d98b3844",
+      "data_snapshot_approximation": "READ_ONLY_LIVE_TABLE_STATE; sorted SHA256 of every selected row; not an immutable point-in-time snapshot",
+      "date_end": "2026-07-31",
+      "date_start": "2019-01-31",
+      "known_defects": [
+        "financial available_at is not audit-grade",
+        "raw/adjusted prices and corporate actions are not canonical",
+        "gap-aware fills and locked final test are not implemented"
+      ],
+      "legacy_classification": "LEGACY_PRE_AUDIT_GRADE",
+      "promotion_block_reason": "NOT_ELIGIBLE_FOR_PROMOTION",
+      "promotion_eligible": false,
+      "result_family": "DIRECTIONAL_V4",
+      "results_checksum": "e23c2c4438a70cd2dc41552e705b8820d0f50bceff9d9d51c0e605df429ecd2c",
+      "row_count": 56,
+      "source_table": "trading_directional_strategy_backtest"
+    },
+    {
+      "baseline_git_sha": "f7c27dbf6b4293e4ba2755a642d2f616d98b3844",
+      "data_snapshot_approximation": "READ_ONLY_LIVE_TABLE_STATE; sorted SHA256 of every selected row; not an immutable point-in-time snapshot",
+      "date_end": "2026-08-07",
+      "date_start": "2026-08-04",
+      "known_defects": [
+        "candidate/run isolation and final-test separation await WP-06/WP-07",
+        "legacy adaptive validation is not promotion evidence"
+      ],
+      "legacy_classification": "LEGACY_PRE_AUDIT_GRADE",
+      "promotion_block_reason": "NOT_ELIGIBLE_FOR_PROMOTION",
+      "promotion_eligible": false,
+      "result_family": "STRATEGY_BRAIN_AUDITS",
+      "results_checksum": "0fa017b782cf89aac324fcdb158d8888edfd6713994bd9fb4f7e2c4bdca3504b",
+      "row_count": 10,
+      "source_table": "trading_brain_ai_audits"
+    },
+    {
+      "baseline_git_sha": "f7c27dbf6b4293e4ba2755a642d2f616d98b3844",
+      "data_snapshot_approximation": "READ_ONLY_LIVE_TABLE_STATE; sorted SHA256 of every selected row; not an immutable point-in-time snapshot",
+      "date_end": "2026-08-08",
+      "date_start": "2026-08-04",
+      "known_defects": [
+        "candidate/run isolation and final-test separation await WP-06/WP-07",
+        "legacy adaptive validation is not promotion evidence"
+      ],
+      "legacy_classification": "LEGACY_PRE_AUDIT_GRADE",
+      "promotion_block_reason": "NOT_ELIGIBLE_FOR_PROMOTION",
+      "promotion_eligible": false,
+      "result_family": "STRATEGY_BRAIN_CANDIDATES",
+      "results_checksum": "c2e35224d7b095758996071f6566165ff1e51c58b44f6af7fabfada7865125ca",
+      "row_count": 136,
+      "source_table": "trading_brain_weight_candidates"
+    },
+    {
+      "baseline_git_sha": "f7c27dbf6b4293e4ba2755a642d2f616d98b3844",
+      "data_snapshot_approximation": "READ_ONLY_LIVE_TABLE_STATE; sorted SHA256 of every selected row; not an immutable point-in-time snapshot",
+      "date_end": "2026-07-31",
+      "date_start": "2019-01-31",
+      "known_defects": [
+        "candidate/run isolation and final-test separation await WP-06/WP-07",
+        "legacy adaptive validation is not promotion evidence"
+      ],
+      "legacy_classification": "LEGACY_PRE_AUDIT_GRADE",
+      "promotion_block_reason": "NOT_ELIGIBLE_FOR_PROMOTION",
+      "promotion_eligible": false,
+      "result_family": "STRATEGY_BRAIN_CAPITAL_CURVE",
+      "results_checksum": "8c6ed538503fb91ed2e4a7f2585448aeabae9f7369ccd93bf863ef62468fa41d",
+      "row_count": 1084,
+      "source_table": "trading_brain_candidate_capital_curve"
+    },
+    {
+      "baseline_git_sha": "f7c27dbf6b4293e4ba2755a642d2f616d98b3844",
+      "data_snapshot_approximation": "READ_ONLY_LIVE_TABLE_STATE; sorted SHA256 of every selected row; not an immutable point-in-time snapshot",
+      "date_end": "2026-08-08",
+      "date_start": "2026-08-04",
+      "known_defects": [
+        "candidate/run isolation and final-test separation await WP-06/WP-07",
+        "legacy adaptive validation is not promotion evidence"
+      ],
+      "legacy_classification": "LEGACY_PRE_AUDIT_GRADE",
+      "promotion_block_reason": "NOT_ELIGIBLE_FOR_PROMOTION",
+      "promotion_eligible": false,
+      "result_family": "STRATEGY_BRAIN_RUNS",
+      "results_checksum": "7a9c93a277b470212632c022034b0a0a512a98881fc154b6ca6c78ef7aff4864",
+      "row_count": 7,
+      "source_table": "trading_brain_runs"
+    },
+    {
+      "baseline_git_sha": "f7c27dbf6b4293e4ba2755a642d2f616d98b3844",
+      "data_snapshot_approximation": "READ_ONLY_LIVE_TABLE_STATE; sorted SHA256 of every selected row; not an immutable point-in-time snapshot",
+      "date_end": "2026-08-08",
+      "date_start": "2026-08-08",
+      "known_defects": [
+        "candidate/run isolation and final-test separation await WP-06/WP-07",
+        "legacy adaptive validation is not promotion evidence"
+      ],
+      "legacy_classification": "LEGACY_PRE_AUDIT_GRADE",
+      "promotion_block_reason": "NOT_ELIGIBLE_FOR_PROMOTION",
+      "promotion_eligible": false,
+      "result_family": "STRATEGY_BRAIN_SUMMARY",
+      "results_checksum": "f856606332b300383ab65b7d9ca83bde717206e92e3a7a18dfedc517e7290b46",
+      "row_count": 24,
+      "source_table": "trading_brain_candidate_summary"
+    }
+  ],
+  "manifest_checksum": "f3b50233f813b7280b863e3421b223e7da89e596239b9335e62853150e51d221",
+  "operating_state": {
+    "broker": "ALPACA_PAPER",
+    "policy": "SHADOW_ONLY",
+    "real_execution_enabled": false,
+    "research": "BACKTEST_ONLY"
+  },
+  "policy": {
+    "alpaca_execution_modes": [
+      "paper"
+    ],
+    "policy_checksum": "dc6c35fddffbd3c7dcac9192f977376a0291b7ff6b8d7e6db96116c6cbfe75ef",
+    "production_change_allowed_values": [
+      false
+    ],
+    "rows": [
+      {
+        "champion_strategy_version": "v2",
+        "execution_mode": "SHADOW_ONLY",
+        "policy_reason": "V2 es positivo en entrenamiento, pero solo acumula cuatro validaciones en 2025; permanece en sombra hasta alcanzar muestra suficiente.",
+        "ticker": "AAPL"
+      },
+      {
+        "champion_strategy_version": "v2",
+        "execution_mode": "SHADOW_ONLY",
+        "policy_reason": "La evidencia diaria de BTC no alcanza para promover V2 a ejecucion.",
+        "ticker": "BTC-USD"
+      },
+      {
+        "champion_strategy_version": "v2",
+        "execution_mode": "SHADOW_ONLY",
+        "policy_reason": "La muestra de COIN es insuficiente para ejecutar; se conserva como comparador.",
+        "ticker": "COIN"
+      },
+      {
+        "champion_strategy_version": "v2",
+        "execution_mode": "SHADOW_ONLY",
+        "policy_reason": "La evidencia diaria de ETH no alcanza para promover V2 a ejecucion.",
+        "ticker": "ETH-USD"
+      },
+      {
+        "champion_strategy_version": "v2",
+        "execution_mode": "SHADOW_ONLY",
+        "policy_reason": "V2 tiene evidencia limitada: ocho cierres de entrenamiento y dos de validacion; permanece en sombra hasta una validacion independiente suficiente.",
+        "ticker": "META"
+      },
+      {
+        "champion_strategy_version": "v2",
+        "execution_mode": "SHADOW_ONLY",
+        "policy_reason": "V2 no valido una ventaja robusta en semiconductores; se mide sin abrir orden.",
+        "ticker": "NVDA"
+      }
+    ],
+    "strategy_brain_statuses": [
+      "BACKTEST_ONLY"
+    ]
+  },
+  "promotion_eligible": false,
+  "repository": {
+    "configuration": {
+      "active_strategy_config": {
+        "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "row_count": 0,
+        "rows": [],
+        "source_table": "trading_active_strategy_config"
+      },
+      "backtest_context_variants": {
+        "checksum": "34f516c1eab049d549c2e5fab7a222157ba0a428ab32cbc160629f22b68ed2df",
+        "row_count": 132,
+        "rows": [
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Control. Usa el setup_score actual producido por el sistema.",
+            "variant_id": "baseline_actual",
+            "variant_name": "Reglas actuales sin ajuste adicional",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [
+              "AAPL",
+              "META"
+            ],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Control para comparar cambios de pesos.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_baseline",
+            "variant_name": "Control sin cambio",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Control para comparar cambios de pesos.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_baseline",
+            "variant_name": "Control sin cambio",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": -0.25,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Prueba un ajuste conservador aislado.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_company_lifecycle_weight_down",
+            "variant_name": "Reducir company_lifecycle_weight",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.25,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Prueba un ajuste aislado con mayor sensibilidad.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_company_lifecycle_weight_up",
+            "variant_name": "Aumentar company_lifecycle_weight",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": -0.25,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Prueba un ajuste conservador aislado.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_crypto_cycle_weight_down",
+            "variant_name": "Reducir crypto_cycle_weight",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.25,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Prueba un ajuste aislado con mayor sensibilidad.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_crypto_cycle_weight_up",
+            "variant_name": "Aumentar crypto_cycle_weight",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": -0.25,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Prueba un ajuste conservador aislado.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_earnings_weight_down",
+            "variant_name": "Reducir earnings_weight",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.25,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Prueba un ajuste aislado con mayor sensibilidad.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_earnings_weight_up",
+            "variant_name": "Aumentar earnings_weight",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": -0.25,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Prueba un ajuste conservador aislado.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_fear_weight_down",
+            "variant_name": "Reducir fear_weight",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.25,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Prueba un ajuste aislado con mayor sensibilidad.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_fear_weight_up",
+            "variant_name": "Aumentar fear_weight",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [
+              "AAPL",
+              "META"
+            ],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 0.85,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Prueba local de sensibilidad tecnica.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_momentum_weight_down",
+            "variant_name": "Reducir momentum_weight",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [
+              "AAPL",
+              "META"
+            ],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.15,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Prueba local de sensibilidad tecnica.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_momentum_weight_up",
+            "variant_name": "Aumentar momentum_weight",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": -0.25,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Prueba un ajuste conservador aislado.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_monetary_weight_down",
+            "variant_name": "Reducir monetary_weight",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.25,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Prueba un ajuste aislado con mayor sensibilidad.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_monetary_weight_up",
+            "variant_name": "Aumentar monetary_weight",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": -0.25,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Prueba un ajuste conservador aislado.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_political_risk_weight_down",
+            "variant_name": "Reducir political_risk_weight",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.25,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Prueba un ajuste aislado con mayor sensibilidad.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_political_risk_weight_up",
+            "variant_name": "Aumentar political_risk_weight",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.6,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.5,
+            "position_size_multiplier": 0.8,
+            "quality_weight": 0.75,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.6,
+            "variant_description": "Candidato generado por cerebro: Refuerza calidad y valoracion, penaliza contexto de riesgo.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_quality_risk",
+            "variant_name": "Calidad defensiva",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": -0.25,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Prueba un ajuste conservador aislado.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_quality_weight_down",
+            "variant_name": "Reducir quality_weight",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.25,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Prueba un ajuste aislado con mayor sensibilidad.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_quality_weight_up",
+            "variant_name": "Aumentar quality_weight",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [
+              "AAPL",
+              "META"
+            ],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 0.85,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Prueba local de sensibilidad tecnica.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_regime_weight_down",
+            "variant_name": "Reducir regime_weight",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [
+              "AAPL",
+              "META"
+            ],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 1.15,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Prueba local de sensibilidad tecnica.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_regime_weight_up",
+            "variant_name": "Aumentar regime_weight",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.7,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Mantiene se\u00f1ales pero reduce notional para medir riesgo neto.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_risk_down",
+            "variant_name": "Reducir exposicion",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.25,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.85,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Reduce sobreoperacion elevando el filtro de entrada.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_threshold_up",
+            "variant_name": "Exigir setup mayor",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [
+              "AAPL",
+              "META"
+            ],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.25,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.85,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Reduce sobreoperacion elevando el filtro de entrada.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_threshold_up",
+            "variant_name": "Exigir setup mayor",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [
+              "AAPL",
+              "META"
+            ],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 0.85,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Prueba local de sensibilidad tecnica.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_trend_weight_down",
+            "variant_name": "Reducir trend_weight",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [
+              "AAPL",
+              "META"
+            ],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.15,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Prueba local de sensibilidad tecnica.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_trend_weight_up",
+            "variant_name": "Aumentar trend_weight",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": -0.25,
+            "variant_description": "Candidato generado por cerebro: Prueba un ajuste conservador aislado.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_valuation_state_weight_down",
+            "variant_name": "Reducir valuation_state_weight",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.25,
+            "variant_description": "Candidato generado por cerebro: Prueba un ajuste aislado con mayor sensibilidad.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_valuation_state_weight_up",
+            "variant_name": "Aumentar valuation_state_weight",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [
+              "AAPL",
+              "META"
+            ],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Prueba local de sensibilidad tecnica.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_volatility_weight_down",
+            "variant_name": "Reducir volatility_weight",
+            "volatility_weight": 0.85,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [
+              "AAPL",
+              "META"
+            ],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Prueba local de sensibilidad tecnica.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_volatility_weight_up",
+            "variant_name": "Aumentar volatility_weight",
+            "volatility_weight": 1.15,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [
+              "AAPL",
+              "META"
+            ],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Prueba local de sensibilidad tecnica.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_volume_weight_down",
+            "variant_name": "Reducir volume_weight",
+            "volatility_weight": 1.0,
+            "volume_weight": 0.85
+          },
+          {
+            "asset_tickers": [
+              "AAPL",
+              "META"
+            ],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Prueba local de sensibilidad tecnica.. Solo backtesting.",
+            "variant_id": "brain_brain2026080_volume_weight_up",
+            "variant_name": "Aumentar volume_weight",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.15
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.7,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_brain2026080_risk_down; Control local para medir si la siguiente generacion mejora al padre.. Solo backtesting.",
+            "variant_id": "brain_g2_brain20260_80_risk_down_anchor",
+            "variant_name": "G2: Replica del mejor candidato",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.15,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.15,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.65,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_brain2026080_risk_down; Aumenta sensibilidad a earnings y condiciones monetarias.. Solo backtesting.",
+            "variant_id": "brain_g2_brain20260_80_risk_down_event_careful",
+            "variant_name": "G2: Cautela ante eventos",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.6,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_brain2026080_risk_down; Refuerza calidad, valoracion y proteccion ante miedo o riesgo politico.. Solo backtesting.",
+            "variant_id": "brain_g2_brain20260_80_risk_down_quality_defensive",
+            "variant_name": "G2: Calidad defensiva",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.6,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_brain2026080_risk_down; Reduce exposicion sin cambiar el filtro de entrada.. Solo backtesting.",
+            "variant_id": "brain_g2_brain20260_80_risk_down_risk_down",
+            "variant_name": "G2: Reducir riesgo desde el padre",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": -0.1,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.6,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_brain2026080_risk_down; Explora mas oportunidades con exposicion prudente.. Solo backtesting.",
+            "variant_id": "brain_g2_brain20260_80_risk_down_threshold_down",
+            "variant_name": "G2: Filtro moderadamente flexible",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.15,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.65,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_brain2026080_risk_down; Exige mayor calidad de setup y reduce levemente exposicion.. Solo backtesting.",
+            "variant_id": "brain_g2_brain20260_80_risk_down_threshold_up",
+            "variant_name": "G2: Filtro mas estricto",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.25,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_brain2026080_company_lifecycle_weight_up; Control local para medir si la siguiente generacion mejora al padre.. Solo backtesting.",
+            "variant_id": "brain_g2_brain20260_le_weight_up_anchor",
+            "variant_name": "G2: Replica del mejor candidato",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.25,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.15,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.15,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.95,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_brain2026080_company_lifecycle_weight_up; Aumenta sensibilidad a earnings y condiciones monetarias.. Solo backtesting.",
+            "variant_id": "brain_g2_brain20260_le_weight_up_event_careful",
+            "variant_name": "G2: Cautela ante eventos",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.25,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.9,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_brain2026080_company_lifecycle_weight_up; Refuerza calidad, valoracion y proteccion ante miedo o riesgo politico.. Solo backtesting.",
+            "variant_id": "brain_g2_brain20260_le_weight_up_quality_defensive",
+            "variant_name": "G2: Calidad defensiva",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.25,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.9,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_brain2026080_company_lifecycle_weight_up; Reduce exposicion sin cambiar el filtro de entrada.. Solo backtesting.",
+            "variant_id": "brain_g2_brain20260_le_weight_up_risk_down",
+            "variant_name": "G2: Reducir riesgo desde el padre",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.25,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": -0.1,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.9,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_brain2026080_company_lifecycle_weight_up; Explora mas oportunidades con exposicion prudente.. Solo backtesting.",
+            "variant_id": "brain_g2_brain20260_le_weight_up_threshold_down",
+            "variant_name": "G2: Filtro moderadamente flexible",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.25,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.15,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.95,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_brain2026080_company_lifecycle_weight_up; Exige mayor calidad de setup y reduce levemente exposicion.. Solo backtesting.",
+            "variant_id": "brain_g2_brain20260_le_weight_up_threshold_up",
+            "variant_name": "G2: Filtro mas estricto",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.25,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_brain2026080_monetary_weight_up; Control local para medir si la siguiente generacion mejora al padre.. Solo backtesting.",
+            "variant_id": "brain_g2_brain20260_ry_weight_up_anchor",
+            "variant_name": "G2: Replica del mejor candidato",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.15,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.4,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.95,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_brain2026080_monetary_weight_up; Aumenta sensibilidad a earnings y condiciones monetarias.. Solo backtesting.",
+            "variant_id": "brain_g2_brain20260_ry_weight_up_event_careful",
+            "variant_name": "G2: Cautela ante eventos",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.25,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.9,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_brain2026080_monetary_weight_up; Refuerza calidad, valoracion y proteccion ante miedo o riesgo politico.. Solo backtesting.",
+            "variant_id": "brain_g2_brain20260_ry_weight_up_quality_defensive",
+            "variant_name": "G2: Calidad defensiva",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.25,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.9,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_brain2026080_monetary_weight_up; Reduce exposicion sin cambiar el filtro de entrada.. Solo backtesting.",
+            "variant_id": "brain_g2_brain20260_ry_weight_up_risk_down",
+            "variant_name": "G2: Reducir riesgo desde el padre",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": -0.1,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.25,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.9,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_brain2026080_monetary_weight_up; Explora mas oportunidades con exposicion prudente.. Solo backtesting.",
+            "variant_id": "brain_g2_brain20260_ry_weight_up_threshold_down",
+            "variant_name": "G2: Filtro moderadamente flexible",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.15,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.25,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.95,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_brain2026080_monetary_weight_up; Exige mayor calidad de setup y reduce levemente exposicion.. Solo backtesting.",
+            "variant_id": "brain_g2_brain20260_ry_weight_up_threshold_up",
+            "variant_name": "G2: Filtro mas estricto",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.15,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.65,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g2_brain20260_80_risk_down_threshold_up; Control local para medir si la siguiente generacion mejora al padre.. Solo backtesting.",
+            "variant_id": "brain_g3_brain20260_threshold_up_anchor",
+            "variant_name": "G3: Replica del mejor candidato",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.15,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.15,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.15,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.6,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g2_brain20260_80_risk_down_threshold_up; Aumenta sensibilidad a earnings y condiciones monetarias.. Solo backtesting.",
+            "variant_id": "brain_g3_brain20260_threshold_up_event_careful",
+            "variant_name": "G3: Cautela ante eventos",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.15,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.55,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g2_brain20260_80_risk_down_threshold_up; Refuerza calidad, valoracion y proteccion ante miedo o riesgo politico.. Solo backtesting.",
+            "variant_id": "brain_g3_brain20260_threshold_up_quality_defensive",
+            "variant_name": "G3: Calidad defensiva",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.15,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.55,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g2_brain20260_80_risk_down_threshold_up; Reduce exposicion sin cambiar el filtro de entrada.. Solo backtesting.",
+            "variant_id": "brain_g3_brain20260_threshold_up_risk_down",
+            "variant_name": "G3: Reducir riesgo desde el padre",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.05,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.55,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g2_brain20260_80_risk_down_threshold_up; Explora mas oportunidades con exposicion prudente.. Solo backtesting.",
+            "variant_id": "brain_g3_brain20260_threshold_up_threshold_down",
+            "variant_name": "G3: Filtro moderadamente flexible",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.3,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.6,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g2_brain20260_80_risk_down_threshold_up; Exige mayor calidad de setup y reduce levemente exposicion.. Solo backtesting.",
+            "variant_id": "brain_g3_brain20260_threshold_up_threshold_up",
+            "variant_name": "G3: Filtro mas estricto",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.6,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g2_brain20260_80_risk_down_quality_defensive; Control local para medir si la siguiente generacion mejora al padre.. Solo backtesting.",
+            "variant_id": "brain_g3_brain20260_ty_defensive_anchor",
+            "variant_name": "G3: Replica del mejor candidato",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.15,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.15,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.55,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g2_brain20260_80_risk_down_quality_defensive; Aumenta sensibilidad a earnings y condiciones monetarias.. Solo backtesting.",
+            "variant_id": "brain_g3_brain20260_ty_defensive_event_careful",
+            "variant_name": "G3: Cautela ante eventos",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.3,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.3,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.3,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.3,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g2_brain20260_80_risk_down_quality_defensive; Refuerza calidad, valoracion y proteccion ante miedo o riesgo politico.. Solo backtesting.",
+            "variant_id": "brain_g3_brain20260_ty_defensive_quality_defensive",
+            "variant_name": "G3: Calidad defensiva",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g2_brain20260_80_risk_down_quality_defensive; Reduce exposicion sin cambiar el filtro de entrada.. Solo backtesting.",
+            "variant_id": "brain_g3_brain20260_ty_defensive_risk_down",
+            "variant_name": "G3: Reducir riesgo desde el padre",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": -0.1,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g2_brain20260_80_risk_down_quality_defensive; Explora mas oportunidades con exposicion prudente.. Solo backtesting.",
+            "variant_id": "brain_g3_brain20260_ty_defensive_threshold_down",
+            "variant_name": "G3: Filtro moderadamente flexible",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.15,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.55,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g2_brain20260_80_risk_down_quality_defensive; Exige mayor calidad de setup y reduce levemente exposicion.. Solo backtesting.",
+            "variant_id": "brain_g3_brain20260_ty_defensive_threshold_up",
+            "variant_name": "G3: Filtro mas estricto",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.6,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g2_brain20260_80_risk_down_risk_down; Control local para medir si la siguiente generacion mejora al padre.. Solo backtesting.",
+            "variant_id": "brain_g3_brain20260_wn_risk_down_anchor",
+            "variant_name": "G3: Replica del mejor candidato",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.15,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.15,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.55,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g2_brain20260_80_risk_down_risk_down; Aumenta sensibilidad a earnings y condiciones monetarias.. Solo backtesting.",
+            "variant_id": "brain_g3_brain20260_wn_risk_down_event_careful",
+            "variant_name": "G3: Cautela ante eventos",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g2_brain20260_80_risk_down_risk_down; Refuerza calidad, valoracion y proteccion ante miedo o riesgo politico.. Solo backtesting.",
+            "variant_id": "brain_g3_brain20260_wn_risk_down_quality_defensive",
+            "variant_name": "G3: Calidad defensiva",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g2_brain20260_80_risk_down_risk_down; Reduce exposicion sin cambiar el filtro de entrada.. Solo backtesting.",
+            "variant_id": "brain_g3_brain20260_wn_risk_down_risk_down",
+            "variant_name": "G3: Reducir riesgo desde el padre",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": -0.1,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g2_brain20260_80_risk_down_risk_down; Explora mas oportunidades con exposicion prudente.. Solo backtesting.",
+            "variant_id": "brain_g3_brain20260_wn_risk_down_threshold_down",
+            "variant_name": "G3: Filtro moderadamente flexible",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.15,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.55,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g2_brain20260_80_risk_down_risk_down; Exige mayor calidad de setup y reduce levemente exposicion.. Solo backtesting.",
+            "variant_id": "brain_g3_brain20260_wn_risk_down_threshold_up",
+            "variant_name": "G3: Filtro mas estricto",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_quality_defensive; Control local para medir si la siguiente generacion mejora al padre.. Solo backtesting.",
+            "variant_id": "brain_g4_brain20260_ty_defensive_anchor",
+            "variant_name": "G4: Replica del mejor candidato",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.15,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.15,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_quality_defensive; Aumenta sensibilidad a earnings y condiciones monetarias.. Solo backtesting.",
+            "variant_id": "brain_g4_brain20260_ty_defensive_event_careful",
+            "variant_name": "G4: Cautela ante eventos",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.3,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.3,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.3,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.3,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_quality_defensive; Refuerza calidad, valoracion y proteccion ante miedo o riesgo politico.. Solo backtesting.",
+            "variant_id": "brain_g4_brain20260_ty_defensive_quality_defensive",
+            "variant_name": "G4: Calidad defensiva",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_quality_defensive; Reduce exposicion sin cambiar el filtro de entrada.. Solo backtesting.",
+            "variant_id": "brain_g4_brain20260_ty_defensive_risk_down",
+            "variant_name": "G4: Reducir riesgo desde el padre",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": -0.1,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_quality_defensive; Explora mas oportunidades con exposicion prudente.. Solo backtesting.",
+            "variant_id": "brain_g4_brain20260_ty_defensive_threshold_down",
+            "variant_name": "G4: Filtro moderadamente flexible",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.15,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_quality_defensive; Exige mayor calidad de setup y reduce levemente exposicion.. Solo backtesting.",
+            "variant_id": "brain_g4_brain20260_ty_defensive_threshold_up",
+            "variant_name": "G4: Filtro mas estricto",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.15,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.15,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_quality_defensive; Da mayor importancia a tendencia, momentum y volumen, manteniendo riesgo prudente.. Solo backtesting.",
+            "variant_id": "brain_g4_brain20260_ty_defensive_trend_confirmed",
+            "variant_name": "G4: Tendencia confirmada",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.1
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.1,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.1,
+            "trend_weight": 1.15,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_quality_defensive; Reduce entradas por volatilidad y exige una tendencia mas limpia.. Solo backtesting.",
+            "variant_id": "brain_g4_brain20260_ty_defensive_trend_defensive",
+            "variant_name": "G4: Tendencia defensiva",
+            "volatility_weight": 0.9,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_ty_defensive_risk_down; Control local para medir si la siguiente generacion mejora al padre.. Solo backtesting.",
+            "variant_id": "brain_g4_brain20260_ve_risk_down_anchor",
+            "variant_name": "G4: Replica del mejor candidato",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.15,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.15,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_ty_defensive_risk_down; Aumenta sensibilidad a earnings y condiciones monetarias.. Solo backtesting.",
+            "variant_id": "brain_g4_brain20260_ve_risk_down_event_careful",
+            "variant_name": "G4: Cautela ante eventos",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.3,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.3,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.3,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.3,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_ty_defensive_risk_down; Refuerza calidad, valoracion y proteccion ante miedo o riesgo politico.. Solo backtesting.",
+            "variant_id": "brain_g4_brain20260_ve_risk_down_quality_defensive",
+            "variant_name": "G4: Calidad defensiva",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_ty_defensive_risk_down; Reduce exposicion sin cambiar el filtro de entrada.. Solo backtesting.",
+            "variant_id": "brain_g4_brain20260_ve_risk_down_risk_down",
+            "variant_name": "G4: Reducir riesgo desde el padre",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": -0.1,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_ty_defensive_risk_down; Explora mas oportunidades con exposicion prudente.. Solo backtesting.",
+            "variant_id": "brain_g4_brain20260_ve_risk_down_threshold_down",
+            "variant_name": "G4: Filtro moderadamente flexible",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.15,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_ty_defensive_risk_down; Exige mayor calidad de setup y reduce levemente exposicion.. Solo backtesting.",
+            "variant_id": "brain_g4_brain20260_ve_risk_down_threshold_up",
+            "variant_name": "G4: Filtro mas estricto",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.15,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.15,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_ty_defensive_risk_down; Da mayor importancia a tendencia, momentum y volumen, manteniendo riesgo prudente.. Solo backtesting.",
+            "variant_id": "brain_g4_brain20260_ve_risk_down_trend_confirmed",
+            "variant_name": "G4: Tendencia confirmada",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.1
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.1,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.1,
+            "trend_weight": 1.15,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_ty_defensive_risk_down; Reduce entradas por volatilidad y exige una tendencia mas limpia.. Solo backtesting.",
+            "variant_id": "brain_g4_brain20260_ve_risk_down_trend_defensive",
+            "variant_name": "G4: Tendencia defensiva",
+            "volatility_weight": 0.9,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_risk_down; Control local para medir si la siguiente generacion mejora al padre.. Solo backtesting.",
+            "variant_id": "brain_g4_brain20260_wn_risk_down_anchor",
+            "variant_name": "G4: Replica del mejor candidato",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.15,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.15,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_risk_down; Aumenta sensibilidad a earnings y condiciones monetarias.. Solo backtesting.",
+            "variant_id": "brain_g4_brain20260_wn_risk_down_event_careful",
+            "variant_name": "G4: Cautela ante eventos",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_risk_down; Refuerza calidad, valoracion y proteccion ante miedo o riesgo politico.. Solo backtesting.",
+            "variant_id": "brain_g4_brain20260_wn_risk_down_quality_defensive",
+            "variant_name": "G4: Calidad defensiva",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_risk_down; Reduce exposicion sin cambiar el filtro de entrada.. Solo backtesting.",
+            "variant_id": "brain_g4_brain20260_wn_risk_down_risk_down",
+            "variant_name": "G4: Reducir riesgo desde el padre",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": -0.1,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_risk_down; Explora mas oportunidades con exposicion prudente.. Solo backtesting.",
+            "variant_id": "brain_g4_brain20260_wn_risk_down_threshold_down",
+            "variant_name": "G4: Filtro moderadamente flexible",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.15,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_risk_down; Exige mayor calidad de setup y reduce levemente exposicion.. Solo backtesting.",
+            "variant_id": "brain_g4_brain20260_wn_risk_down_threshold_up",
+            "variant_name": "G4: Filtro mas estricto",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.15,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.15,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_risk_down; Da mayor importancia a tendencia, momentum y volumen, manteniendo riesgo prudente.. Solo backtesting.",
+            "variant_id": "brain_g4_brain20260_wn_risk_down_trend_confirmed",
+            "variant_name": "G4: Tendencia confirmada",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.1
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.1,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.0,
+            "regime_weight": 1.1,
+            "trend_weight": 1.15,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_risk_down; Reduce entradas por volatilidad y exige una tendencia mas limpia.. Solo backtesting.",
+            "variant_id": "brain_g4_brain20260_wn_risk_down_trend_defensive",
+            "variant_name": "G4: Tendencia defensiva",
+            "volatility_weight": 0.9,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": -0.1,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_threshold_down; Control local para medir si la siguiente generacion mejora al padre.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_reshold_down_anchor",
+            "variant_name": "G4: Replica del mejor candidato",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.15,
+            "fear_weight": 0.0,
+            "min_trade_score_add": -0.1,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.15,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_threshold_down; Aumenta sensibilidad a earnings y condiciones monetarias.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_reshold_down_event_careful",
+            "variant_name": "G4: Cautela ante eventos",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": -0.1,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_threshold_down; Refuerza calidad, valoracion y proteccion ante miedo o riesgo politico.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_reshold_down_quality_defensive",
+            "variant_name": "G4: Calidad defensiva",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": -0.1,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_threshold_down; Reduce exposicion sin cambiar el filtro de entrada.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_reshold_down_risk_down",
+            "variant_name": "G4: Reducir riesgo desde el padre",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.2,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.05,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.1,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.15,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_threshold_down; Prioriza tendencia pero reduce entradas alrededor de incertidumbre macro y resultados.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_reshold_down_selective_events",
+            "variant_name": "G4: Selectivo ante eventos",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": -0.2,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_threshold_down; Explora mas oportunidades con exposicion prudente.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_reshold_down_threshold_down",
+            "variant_name": "G4: Filtro moderadamente flexible",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.05,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_threshold_down; Exige mayor calidad de setup y reduce levemente exposicion.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_reshold_down_threshold_up",
+            "variant_name": "G4: Filtro mas estricto",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": -0.1,
+            "momentum_weight": 1.15,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.15,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_threshold_down; Da mayor importancia a tendencia, momentum y volumen, manteniendo riesgo prudente.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_reshold_down_trend_confirmed",
+            "variant_name": "G4: Tendencia confirmada",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.1
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.0,
+            "regime_weight": 1.1,
+            "trend_weight": 1.15,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_threshold_down; Reduce entradas por volatilidad y exige una tendencia mas limpia.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_reshold_down_trend_defensive",
+            "variant_name": "G4: Tendencia defensiva",
+            "volatility_weight": 0.9,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": -0.05,
+            "momentum_weight": 1.1,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.2,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_threshold_down; Combina tendencia, momentum, calidad y valoracion para evitar persecucion de precio sin respaldo.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_reshold_down_trend_quality",
+            "variant_name": "G4: Tendencia con calidad",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.0,
+            "regime_weight": 1.15,
+            "trend_weight": 1.2,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_threshold_down; Refuerza tendencia solo cuando el regimen y volatilidad son favorables.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_reshold_down_trend_regime",
+            "variant_name": "G4: Tendencia segun regimen",
+            "volatility_weight": 0.85,
+            "volume_weight": 1.1
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_ty_defensive_risk_down; Control local para medir si la siguiente generacion mejora al padre.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_ve_risk_down_anchor",
+            "variant_name": "G4: Replica del mejor candidato",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.15,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.15,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_ty_defensive_risk_down; Aumenta sensibilidad a earnings y condiciones monetarias.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_ve_risk_down_event_careful",
+            "variant_name": "G4: Cautela ante eventos",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.3,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.3,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.3,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.3,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_ty_defensive_risk_down; Refuerza calidad, valoracion y proteccion ante miedo o riesgo politico.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_ve_risk_down_quality_defensive",
+            "variant_name": "G4: Calidad defensiva",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_ty_defensive_risk_down; Reduce exposicion sin cambiar el filtro de entrada.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_ve_risk_down_risk_down",
+            "variant_name": "G4: Reducir riesgo desde el padre",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.2,
+            "fear_weight": 0.3,
+            "min_trade_score_add": 0.15,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.1,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.15,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_ty_defensive_risk_down; Prioriza tendencia pero reduce entradas alrededor de incertidumbre macro y resultados.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_ve_risk_down_selective_events",
+            "variant_name": "G4: Selectivo ante eventos",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": -0.1,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_ty_defensive_risk_down; Explora mas oportunidades con exposicion prudente.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_ve_risk_down_threshold_down",
+            "variant_name": "G4: Filtro moderadamente flexible",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.15,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_ty_defensive_risk_down; Exige mayor calidad de setup y reduce levemente exposicion.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_ve_risk_down_threshold_up",
+            "variant_name": "G4: Filtro mas estricto",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.15,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.15,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_ty_defensive_risk_down; Da mayor importancia a tendencia, momentum y volumen, manteniendo riesgo prudente.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_ve_risk_down_trend_confirmed",
+            "variant_name": "G4: Tendencia confirmada",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.1
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.1,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.1,
+            "trend_weight": 1.15,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_ty_defensive_risk_down; Reduce entradas por volatilidad y exige una tendencia mas limpia.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_ve_risk_down_trend_defensive",
+            "variant_name": "G4: Tendencia defensiva",
+            "volatility_weight": 0.9,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.05,
+            "momentum_weight": 1.1,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.3,
+            "regime_weight": 1.0,
+            "trend_weight": 1.2,
+            "valuation_state_weight": 0.3,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_ty_defensive_risk_down; Combina tendencia, momentum, calidad y valoracion para evitar persecucion de precio sin respaldo.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_ve_risk_down_trend_quality",
+            "variant_name": "G4: Tendencia con calidad",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.1,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.15,
+            "trend_weight": 1.2,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_ty_defensive_risk_down; Refuerza tendencia solo cuando el regimen y volatilidad son favorables.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_ve_risk_down_trend_regime",
+            "variant_name": "G4: Tendencia segun regimen",
+            "volatility_weight": 0.85,
+            "volume_weight": 1.1
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_risk_down; Control local para medir si la siguiente generacion mejora al padre.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_wn_risk_down_anchor",
+            "variant_name": "G4: Replica del mejor candidato",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.15,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.15,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_risk_down; Aumenta sensibilidad a earnings y condiciones monetarias.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_wn_risk_down_event_careful",
+            "variant_name": "G4: Cautela ante eventos",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.15,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_risk_down; Refuerza calidad, valoracion y proteccion ante miedo o riesgo politico.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_wn_risk_down_quality_defensive",
+            "variant_name": "G4: Calidad defensiva",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_risk_down; Reduce exposicion sin cambiar el filtro de entrada.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_wn_risk_down_risk_down",
+            "variant_name": "G4: Reducir riesgo desde el padre",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.2,
+            "fear_weight": 0.15,
+            "min_trade_score_add": 0.15,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.1,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.15,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_risk_down; Prioriza tendencia pero reduce entradas alrededor de incertidumbre macro y resultados.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_wn_risk_down_selective_events",
+            "variant_name": "G4: Selectivo ante eventos",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": -0.1,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_risk_down; Explora mas oportunidades con exposicion prudente.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_wn_risk_down_threshold_down",
+            "variant_name": "G4: Filtro moderadamente flexible",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.15,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_risk_down; Exige mayor calidad de setup y reduce levemente exposicion.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_wn_risk_down_threshold_up",
+            "variant_name": "G4: Filtro mas estricto",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.0,
+            "momentum_weight": 1.15,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.0,
+            "regime_weight": 1.0,
+            "trend_weight": 1.15,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_risk_down; Da mayor importancia a tendencia, momentum y volumen, manteniendo riesgo prudente.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_wn_risk_down_trend_confirmed",
+            "variant_name": "G4: Tendencia confirmada",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.1
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.1,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.0,
+            "regime_weight": 1.1,
+            "trend_weight": 1.15,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_risk_down; Reduce entradas por volatilidad y exige una tendencia mas limpia.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_wn_risk_down_trend_defensive",
+            "variant_name": "G4: Tendencia defensiva",
+            "volatility_weight": 0.9,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.05,
+            "momentum_weight": 1.1,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.15,
+            "regime_weight": 1.0,
+            "trend_weight": 1.2,
+            "valuation_state_weight": 0.15,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_risk_down; Combina tendencia, momentum, calidad y valoracion para evitar persecucion de precio sin respaldo.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_wn_risk_down_trend_quality",
+            "variant_name": "G4: Tendencia con calidad",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.0,
+            "crypto_cycle_weight": 0.0,
+            "earnings_weight": 0.0,
+            "fear_weight": 0.0,
+            "min_trade_score_add": 0.1,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.0,
+            "political_risk_weight": 0.0,
+            "position_size_multiplier": 0.5,
+            "quality_weight": 0.0,
+            "regime_weight": 1.15,
+            "trend_weight": 1.2,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Candidato generado por cerebro: Padre=brain_g3_brain20260_wn_risk_down_risk_down; Refuerza tendencia solo cuando el regimen y volatilidad son favorables.. Solo backtesting.",
+            "variant_id": "brain_g4_braing4r20_wn_risk_down_trend_regime",
+            "variant_name": "G4: Tendencia segun regimen",
+            "volatility_weight": 0.85,
+            "volume_weight": 1.1
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.6,
+            "crypto_cycle_weight": 0.1,
+            "earnings_weight": 0.45,
+            "fear_weight": -0.25,
+            "min_trade_score_add": 0.2,
+            "momentum_weight": 0.95,
+            "monetary_weight": 0.15,
+            "political_risk_weight": 0.2,
+            "position_size_multiplier": 0.8,
+            "quality_weight": 0.85,
+            "regime_weight": 1.0,
+            "trend_weight": 1.1,
+            "valuation_state_weight": 0.5,
+            "variant_description": "Acepta miedo moderado si la empresa es de calidad y no hay deterioro fundamental. Castiga miedo extremo.",
+            "variant_id": "contrarian_fear_quality",
+            "variant_name": "Contraria con calidad",
+            "volatility_weight": 1.1,
+            "volume_weight": 0.85
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.15,
+            "crypto_cycle_weight": 1.1,
+            "earnings_weight": 0.2,
+            "fear_weight": 0.4,
+            "min_trade_score_add": -0.1,
+            "momentum_weight": 1.15,
+            "monetary_weight": 0.35,
+            "political_risk_weight": 0.35,
+            "position_size_multiplier": 1.0,
+            "quality_weight": 0.1,
+            "regime_weight": 1.2,
+            "trend_weight": 1.1,
+            "valuation_state_weight": 0.0,
+            "variant_description": "Da mas peso al ciclo BTC/ETH, liquidez y regimen cripto. Solo deberia destacar en BTC, ETH y COIN.",
+            "variant_id": "crypto_cycle",
+            "variant_name": "Ciclo cripto",
+            "volatility_weight": 0.9,
+            "volume_weight": 1.05
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.35,
+            "crypto_cycle_weight": 0.2,
+            "earnings_weight": 1.25,
+            "fear_weight": 0.45,
+            "min_trade_score_add": 0.35,
+            "momentum_weight": 1.05,
+            "monetary_weight": 0.4,
+            "political_risk_weight": 0.35,
+            "position_size_multiplier": 0.75,
+            "quality_weight": 0.35,
+            "regime_weight": 1.1,
+            "trend_weight": 1.05,
+            "valuation_state_weight": 0.2,
+            "variant_description": "Penaliza fuerte reportes de resultados cercanos o recientes con mala calidad. Util para evitar gaps por earnings.",
+            "variant_id": "event_avoidant",
+            "variant_name": "Evita eventos",
+            "volatility_weight": 1.1,
+            "volume_weight": 1.1
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.8,
+            "crypto_cycle_weight": 0.4,
+            "earnings_weight": 0.35,
+            "fear_weight": 0.35,
+            "min_trade_score_add": -0.2,
+            "momentum_weight": 1.15,
+            "monetary_weight": 0.3,
+            "political_risk_weight": 0.25,
+            "position_size_multiplier": 1.05,
+            "quality_weight": 0.35,
+            "regime_weight": 1.0,
+            "trend_weight": 1.1,
+            "valuation_state_weight": 0.1,
+            "variant_description": "Favorece empresas en crecimiento y momentum cuando el contexto no esta en miedo extremo. Tolera mas volatilidad.",
+            "variant_id": "growth_momentum",
+            "variant_name": "Growth momentum",
+            "volatility_weight": 0.95,
+            "volume_weight": 1.05
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.65,
+            "crypto_cycle_weight": 0.15,
+            "earnings_weight": 0.55,
+            "fear_weight": 0.45,
+            "min_trade_score_add": 0.1,
+            "momentum_weight": 0.95,
+            "monetary_weight": 0.35,
+            "political_risk_weight": 0.25,
+            "position_size_multiplier": 0.9,
+            "quality_weight": 0.9,
+            "regime_weight": 1.05,
+            "trend_weight": 1.05,
+            "valuation_state_weight": 0.85,
+            "variant_description": "Prioriza companias estables/de calidad y castiga sobrevaloracion o deterioro de FCF/margenes.",
+            "variant_id": "quality_value",
+            "variant_name": "Calidad y valoracion",
+            "volatility_weight": 1.05,
+            "volume_weight": 0.9
+          },
+          {
+            "asset_tickers": [],
+            "company_lifecycle_weight": 0.35,
+            "crypto_cycle_weight": 0.25,
+            "earnings_weight": 0.7,
+            "fear_weight": 0.85,
+            "min_trade_score_add": 0.25,
+            "momentum_weight": 1.0,
+            "monetary_weight": 0.75,
+            "political_risk_weight": 0.6,
+            "position_size_multiplier": 0.85,
+            "quality_weight": 0.3,
+            "regime_weight": 1.0,
+            "trend_weight": 1.0,
+            "valuation_state_weight": 0.2,
+            "variant_description": "Castiga miedo alto, presion de tasas, riesgo politico y earnings cercanos. Busca menos trades, mejor control de perdida.",
+            "variant_id": "risk_aware_macro",
+            "variant_name": "Macro defensiva",
+            "volatility_weight": 1.0,
+            "volume_weight": 1.0
+          }
+        ],
+        "source_table": "trading_backtest_context_variants"
+      },
+      "champion_challenger_policy": {
+        "checksum": "8306866320517034bb83715f3d5d2455008cc1b1527a5ed81db247853f428b75",
+        "row_count": 6,
+        "rows": [
+          {
+            "asset_rule_profile": "TECH_MEGACAP",
+            "champion_strategy_version": "v2",
+            "execution_mode": "SHADOW_ONLY",
+            "policy_reason": "V2 es positivo en entrenamiento, pero solo acumula cuatro validaciones en 2025; permanece en sombra hasta alcanzar muestra suficiente.",
+            "ticker": "AAPL"
+          },
+          {
+            "asset_rule_profile": "CRYPTO_BTC",
+            "champion_strategy_version": "v2",
+            "execution_mode": "SHADOW_ONLY",
+            "policy_reason": "La evidencia diaria de BTC no alcanza para promover V2 a ejecucion.",
+            "ticker": "BTC-USD"
+          },
+          {
+            "asset_rule_profile": "CRYPTO_LINKED_EQUITY",
+            "champion_strategy_version": "v2",
+            "execution_mode": "SHADOW_ONLY",
+            "policy_reason": "La muestra de COIN es insuficiente para ejecutar; se conserva como comparador.",
+            "ticker": "COIN"
+          },
+          {
+            "asset_rule_profile": "CRYPTO_ETH",
+            "champion_strategy_version": "v2",
+            "execution_mode": "SHADOW_ONLY",
+            "policy_reason": "La evidencia diaria de ETH no alcanza para promover V2 a ejecucion.",
+            "ticker": "ETH-USD"
+          },
+          {
+            "asset_rule_profile": "DIGITAL_ADVERTISING_AI",
+            "champion_strategy_version": "v2",
+            "execution_mode": "SHADOW_ONLY",
+            "policy_reason": "V2 tiene evidencia limitada: ocho cierres de entrenamiento y dos de validacion; permanece en sombra hasta una validacion independiente suficiente.",
+            "ticker": "META"
+          },
+          {
+            "asset_rule_profile": "SEMICONDUCTOR_AI",
+            "champion_strategy_version": "v2",
+            "execution_mode": "SHADOW_ONLY",
+            "policy_reason": "V2 no valido una ventaja robusta en semiconductores; se mide sin abrir orden.",
+            "ticker": "NVDA"
+          }
+        ],
+        "source_table": "trading_champion_challenger_policy"
+      },
+      "strategy_versions": {
+        "checksum": "166b684b2b458f63ca068eda072b46fb461c3ecc40b0505d7bb107e1bf060de0",
+        "row_count": 4,
+        "rows": [
+          {
+            "daily_target_max_clp": 100000.0,
+            "daily_target_min_clp": 25000.0,
+            "max_holding_days": 10,
+            "max_position_pct": 0.2,
+            "min_crypto_stop_pct": 0.04,
+            "min_risk_reward": 1.4,
+            "min_stock_stop_pct": 0.03,
+            "min_trade_score": 5,
+            "min_watch_score": 3,
+            "paper_capital_clp": 10000000.0,
+            "require_positive_regime": false,
+            "require_strong_trend": false,
+            "require_volume_confirmation": false,
+            "risk_per_trade_pct": 0.01,
+            "stop_atr_multiple": 1.5,
+            "strategy_description": "Balanceada, 10 dias maximos, sirve como linea base.",
+            "strategy_name": "Base corto controlado",
+            "strategy_version": "v1",
+            "take_profit_1_r": 1.5,
+            "take_profit_2_r": 2.5,
+            "usd_clp_assumption": 950.0
+          },
+          {
+            "daily_target_max_clp": 100000.0,
+            "daily_target_min_clp": 25000.0,
+            "max_holding_days": 20,
+            "max_position_pct": 0.18,
+            "min_crypto_stop_pct": 0.05,
+            "min_risk_reward": 1.6,
+            "min_stock_stop_pct": 0.04,
+            "min_trade_score": 6,
+            "min_watch_score": 4,
+            "paper_capital_clp": 10000000.0,
+            "require_positive_regime": false,
+            "require_strong_trend": true,
+            "require_volume_confirmation": false,
+            "risk_per_trade_pct": 0.008,
+            "stop_atr_multiple": 1.7,
+            "strategy_description": "Menos agresiva, busca mejores entradas y deja respirar hasta 20 dias.",
+            "strategy_name": "Swing conservador",
+            "strategy_version": "v2",
+            "take_profit_1_r": 2.0,
+            "take_profit_2_r": 3.0,
+            "usd_clp_assumption": 950.0
+          },
+          {
+            "daily_target_max_clp": 100000.0,
+            "daily_target_min_clp": 25000.0,
+            "max_holding_days": 30,
+            "max_position_pct": 0.2,
+            "min_crypto_stop_pct": 0.06,
+            "min_risk_reward": 1.7,
+            "min_stock_stop_pct": 0.05,
+            "min_trade_score": 6,
+            "min_watch_score": 4,
+            "paper_capital_clp": 10000000.0,
+            "require_positive_regime": false,
+            "require_strong_trend": true,
+            "require_volume_confirmation": true,
+            "risk_per_trade_pct": 0.0075,
+            "stop_atr_multiple": 2.0,
+            "strategy_description": "Prioriza tendencia y confirmacion de volumen, con ventana hasta 30 dias.",
+            "strategy_name": "Momentum swing",
+            "strategy_version": "v3",
+            "take_profit_1_r": 2.2,
+            "take_profit_2_r": 3.5,
+            "usd_clp_assumption": 950.0
+          },
+          {
+            "daily_target_max_clp": 100000.0,
+            "daily_target_min_clp": 25000.0,
+            "max_holding_days": 45,
+            "max_position_pct": 0.15,
+            "min_crypto_stop_pct": 0.07,
+            "min_risk_reward": 1.9,
+            "min_stock_stop_pct": 0.05,
+            "min_trade_score": 7,
+            "min_watch_score": 5,
+            "paper_capital_clp": 10000000.0,
+            "require_positive_regime": true,
+            "require_strong_trend": true,
+            "require_volume_confirmation": true,
+            "risk_per_trade_pct": 0.006,
+            "stop_atr_multiple": 2.2,
+            "strategy_description": "La mas exigente. Opera menos, aguanta hasta 45 dias y busca mejor relacion riesgo/beneficio.",
+            "strategy_name": "Selectiva largo plazo",
+            "strategy_version": "v4",
+            "take_profit_1_r": 2.5,
+            "take_profit_2_r": 4.0,
+            "usd_clp_assumption": 950.0
+          }
+        ],
+        "source_table": "trading_strategy_versions"
+      },
+      "watchlist": {
+        "checksum": "f05c52119d7d2b222c5d58ec8abfb86889dfe10d2e4c74bd5cb23b73c8d2de01",
+        "row_count": 17,
+        "rows": [
+          {
+            "asset_type": "STOCK",
+            "enabled": true,
+            "slippage_bps": 5.0,
+            "spread_bps": 5.0,
+            "ticker": "AAPL",
+            "trading_group": "mega_cap_stock"
+          },
+          {
+            "asset_type": "CRYPTO",
+            "enabled": true,
+            "slippage_bps": 8.0,
+            "spread_bps": 12.0,
+            "ticker": "BTC-USD",
+            "trading_group": "crypto_major"
+          },
+          {
+            "asset_type": "STOCK",
+            "enabled": true,
+            "slippage_bps": 12.0,
+            "spread_bps": 18.0,
+            "ticker": "COIN",
+            "trading_group": "crypto_sensitive_stock"
+          },
+          {
+            "asset_type": "STOCK",
+            "enabled": true,
+            "slippage_bps": 5.0,
+            "spread_bps": 6.0,
+            "ticker": "COST",
+            "trading_group": "defensive_stock"
+          },
+          {
+            "asset_type": "CRYPTO",
+            "enabled": true,
+            "slippage_bps": 10.0,
+            "spread_bps": 14.0,
+            "ticker": "ETH-USD",
+            "trading_group": "crypto_major"
+          },
+          {
+            "asset_type": "STOCK",
+            "enabled": true,
+            "slippage_bps": 5.0,
+            "spread_bps": 5.0,
+            "ticker": "JNJ",
+            "trading_group": "defensive_stock"
+          },
+          {
+            "asset_type": "STOCK",
+            "enabled": true,
+            "slippage_bps": 5.0,
+            "spread_bps": 5.0,
+            "ticker": "KO",
+            "trading_group": "defensive_stock"
+          },
+          {
+            "asset_type": "STOCK",
+            "enabled": true,
+            "slippage_bps": 5.0,
+            "spread_bps": 5.0,
+            "ticker": "MA",
+            "trading_group": "quality_financial_stock"
+          },
+          {
+            "asset_type": "STOCK",
+            "enabled": true,
+            "slippage_bps": 5.0,
+            "spread_bps": 6.0,
+            "ticker": "MCD",
+            "trading_group": "defensive_stock"
+          },
+          {
+            "asset_type": "STOCK",
+            "enabled": true,
+            "slippage_bps": 6.0,
+            "spread_bps": 6.0,
+            "ticker": "META",
+            "trading_group": "mega_cap_stock"
+          },
+          {
+            "asset_type": "STOCK",
+            "enabled": false,
+            "slippage_bps": 5.0,
+            "spread_bps": 5.0,
+            "ticker": "MSFT",
+            "trading_group": "mega_cap_stock"
+          },
+          {
+            "asset_type": "STOCK",
+            "enabled": true,
+            "slippage_bps": 8.0,
+            "spread_bps": 8.0,
+            "ticker": "NVDA",
+            "trading_group": "high_beta_stock"
+          },
+          {
+            "asset_type": "STOCK",
+            "enabled": true,
+            "slippage_bps": 5.0,
+            "spread_bps": 5.0,
+            "ticker": "PEP",
+            "trading_group": "defensive_stock"
+          },
+          {
+            "asset_type": "STOCK",
+            "enabled": true,
+            "slippage_bps": 5.0,
+            "spread_bps": 5.0,
+            "ticker": "PG",
+            "trading_group": "defensive_stock"
+          },
+          {
+            "asset_type": "STOCK",
+            "enabled": true,
+            "slippage_bps": 5.0,
+            "spread_bps": 5.0,
+            "ticker": "V",
+            "trading_group": "quality_financial_stock"
+          },
+          {
+            "asset_type": "STOCK",
+            "enabled": true,
+            "slippage_bps": 5.0,
+            "spread_bps": 5.0,
+            "ticker": "WM",
+            "trading_group": "defensive_stock"
+          },
+          {
+            "asset_type": "STOCK",
+            "enabled": true,
+            "slippage_bps": 5.0,
+            "spread_bps": 5.0,
+            "ticker": "WMT",
+            "trading_group": "defensive_stock"
+          }
+        ],
+        "source_table": "trading_watchlist"
+      }
+    },
+    "configuration_checksum": "cc70b783acb6a6b27cc3c7308c9dff2b260659c6de2ee2a68f77f0ab5e95c426",
+    "git": {
+      "baseline_ref": "legacy-pre-audit-grade-2026-08",
+      "git_sha": "f7c27dbf6b4293e4ba2755a642d2f616d98b3844",
+      "tracked_configuration_files": [
+        {
+          "path": ".github/workflows/deploy.yml",
+          "sha256": "9256a9d32d518d5de2fad0da3e27e8d4969b3babfcd6342833e3de0d18282aaf"
+        },
+        {
+          "path": "cloud-functions/paper_trade_executor/conf/conf.py",
+          "sha256": "e10e114a32f97f96833d9745d08061410eb23804310c596398dcd6a06ccdb31a"
+        },
+        {
+          "path": "cloud-functions/paper_trade_risk_monitor/conf/conf.py",
+          "sha256": "e23fc4cb5d7f2e14abc2225edd42cf9470980ace420dbdb78fc22f4309434be2"
+        },
+        {
+          "path": "cloud-functions/strategy_brain/conf/conf.py",
+          "sha256": "bbe306cebe1438947482085ec5e3c23e9468a7960ac615fde524bab3f9e75f71"
+        },
+        {
+          "path": "dataform/definitions/trading_active_strategy_config.sqlx",
+          "sha256": "499f996ac0dc5970235ecc355d5a6a0e2de33d16dcd2561f91c5b248a6d04eab"
+        },
+        {
+          "path": "dataform/definitions/trading_champion_challenger_policy.sqlx",
+          "sha256": "6599e5e22b118c7e8c9d5e3c50a6599144dffc2bcb1f02cb4a0313b2d3b63ebd"
+        },
+        {
+          "path": "dataform/definitions/trading_strategy_versions.sqlx",
+          "sha256": "a595210f4b7775272041584ef48d13e4ec00702f6b0283423a5d7c49583896a8"
+        },
+        {
+          "path": "dataform/definitions/trading_watchlist.sqlx",
+          "sha256": "d966e2556e7a6e93d5efc4114dbb4817e5b9c1819608f81db585cce25f0e84a2"
+        },
+        {
+          "path": "dataform/package.json",
+          "sha256": "5e67daf539e01391c6e2803d99412001b8c8c2bb6d0690e191522b6b3a6a4dfd"
+        },
+        {
+          "path": "dataform/workflow_settings.yaml",
+          "sha256": "81e3d4bb68d13064a1e73b8854c4734ad0fdefb8f32349287c47c84e0f7fed11"
+        }
+      ]
+    }
+  },
+  "schema_version": "audit-grade-baseline/v1",
+  "section_checksums": {
+    "cloud": "6deb951c325522997e7c26e7aa57c62f4a5fd39da07b0cf5980fd412c7a30b3e",
+    "legacy_results": "63b86212a0b50f32870dc00f614589f1ca286fbf7fa3abd518d08e0e2c47eaa2",
+    "policy": "eb964b2eca73042ada969bf6c98589f890ff3016fa380e50716a726fc4bb0dda",
+    "repository": "baf99f91da8b0077b6519267986dabd8f659f087d8e1eb0d1d9eff9f746ff674"
+  }
+}

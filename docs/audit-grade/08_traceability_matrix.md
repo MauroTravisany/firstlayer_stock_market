@@ -14,6 +14,17 @@ BLOCKED
 
 Una fila solo pasa a `PASS` con enlace a código, prueba ejecutada y evidencia reproducible.
 
+## 0. Baseline y resultados legacy
+
+| ID | Requisito/invariante | Riesgo cubierto | WP | Implementación | Prueba ejecutada | Evidencia | Estado | Revisado |
+|---|---|---|---|---|---|---|---|---|
+| BASE-01 | Commit, configuración, Dataform, schedulers, servicios y resultados quedan inventariados | No poder reconstruir el estado previo | WP-00 | [`tools/capture_baseline.py`](../../tools/capture_baseline.py) | `python -m tools.capture_baseline --verify docs/audit-grade/evidence/baseline_manifest.json` (exit 0) | [`baseline_manifest.json`](evidence/baseline_manifest.json), checksum `f3b50233f813b7280b863e3421b223e7da89e596239b9335e62853150e51d221` | PASS | 2026-08-08 |
+| BASE-02 | Capturas repetidas del mismo estado producen el mismo checksum | Drift o serialización no determinista | WP-00 | [`tools/capture_baseline.py`](../../tools/capture_baseline.py) | captura inicial + verificación repetida (exit 0/0); unit test `test_repeated_capture_has_same_checksum` | [`WP-00.md`](evidence/WP-00.md) | PASS | 2026-08-08 |
+| BASE-03 | V1–V4, Strategy Brain y políticas tienen checksums y defectos conocidos | Resultados legacy confundidos con evidencia vigente | WP-00 | [`legacy_result_registry.sqlx`](../../dataform/definitions/legacy_result_registry.sqlx) | Dataform compile: 219 actions (exit 0); BigQuery dry-run: 167860862 bytes (exit 0); `test_legacy_registry_contains_required_families_and_hard_block` | [`baseline_manifest.json`](evidence/baseline_manifest.json) | PASS | 2026-08-08 |
+| BASE-04 | Todo resultado legacy es `LEGACY_PRE_AUDIT_GRADE` y no promocionable | Promoción accidental de historia inválida | WP-00 | [`legacy_result_registry.sqlx`](../../dataform/definitions/legacy_result_registry.sqlx) assertions + manifest validator | `test_legacy_results_are_never_promotion_eligible`; `test_manifest_tampering_is_rejected` (exit 0) | [`WP-00.md`](evidence/WP-00.md) | PASS | 2026-08-08 |
+| BASE-05 | Política permanece `SHADOW_ONLY`, Brain `BACKTEST_ONLY`, cambios productivos falsos y Alpaca Paper | Habilitación accidental de ejecución | WP-00 | validación fail-closed en [`tools/capture_baseline.py`](../../tools/capture_baseline.py) | `test_champion_challenger_policy_is_entirely_shadow_only`; `test_non_shadow_policy_is_rejected`; `test_strategy_brain_promotion_permission_is_rejected`; `test_alpaca_executor_defaults_and_deploy_config_remain_paper` (exit 0) | [`baseline_manifest.json`](evidence/baseline_manifest.json) | PASS | 2026-08-08 |
+| BASE-06 | La herramienta de captura no posee superficies de mutación operacional | Baseline que altera el estado observado | WP-00 | allowlist SQL/CLI y clientes HTTP GET en [`tools/capture_baseline.py`](../../tools/capture_baseline.py) | `test_only_read_only_cloud_and_bigquery_commands_are_allowed`; `test_bigquery_reader_rejects_mutation_before_client_call`; `test_cloud_inventory_uses_get_and_sanitizes_service_secrets` (exit 0) | [`WP-00.md`](evidence/WP-00.md) | PASS | 2026-08-08 |
+
 ## 1. Datos point-in-time
 
 | ID | Requisito/invariante | Riesgo actual | WP | Evidencia requerida | Estado inicial |
