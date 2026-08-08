@@ -207,6 +207,7 @@ No se elimina. Se conserva para auditoría, pero no puede compararse como si tuv
 
 ## 9. Documentos normativos
 
+- `00_current_state_and_target.md`: baseline de las once dimensiones, techos y work packages requeridos.
 - `01_target_architecture.md`: arquitectura, límites y estados.
 - `02_data_contracts_and_point_in_time.md`: contratos y migraciones de datos.
 - `03_quant_validation_standard.md`: metodología cuantitativa.
