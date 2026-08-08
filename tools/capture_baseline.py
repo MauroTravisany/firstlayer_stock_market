@@ -60,6 +60,23 @@ def checksum(value: Any) -> str:
     return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
 
 
+def utc_timestamp(value: dt.datetime | None = None) -> str:
+    instant = value or dt.datetime.now(dt.timezone.utc)
+    return instant.astimezone(dt.timezone.utc).isoformat(timespec="microseconds").replace(
+        "+00:00", "Z"
+    )
+
+
+def _parse_utc_timestamp(value: Any, field: str) -> dt.datetime:
+    if not isinstance(value, str) or not value.endswith("Z"):
+        raise BaselineValidationError(f"{field} must be an ISO-8601 UTC timestamp")
+    try:
+        parsed = dt.datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError as exc:
+        raise BaselineValidationError(f"{field} is invalid") from exc
+    return parsed
+
+
 def json_safe(value: Any) -> Any:
     """Convert BigQuery/API values into canonical JSON-compatible values."""
 
@@ -97,9 +114,20 @@ def sanitize(value: Any, *, parent_key: str = "") -> Any:
     return json_safe(value)
 
 
+_CAPTURE_METADATA_FIELDS = (
+    "capture_started_at_utc",
+    "capture_completed_at_utc",
+    "bigquery_snapshot_as_of_utc",
+)
+
+
 def _manifest_without_checksum(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Return deterministic state material, excluding per-attempt capture metadata."""
+
     material = copy.deepcopy(manifest)
     material.pop("manifest_checksum", None)
+    for field in _CAPTURE_METADATA_FIELDS:
+        material.pop(field, None)
     return material
 
 
@@ -130,6 +158,10 @@ def build_manifest(
     cloud: dict[str, Any],
     results: list[dict[str, Any]],
     policy: dict[str, Any],
+    capture_started_at_utc: str,
+    capture_completed_at_utc: str,
+    bigquery_snapshot_as_of_utc: str,
+    capture_atomicity: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a deterministic baseline manifest from already captured inputs."""
 
@@ -163,8 +195,30 @@ def build_manifest(
 
     repository_copy = copy.deepcopy(repository)
     cloud_copy = copy.deepcopy(cloud)
+    active_brain_schedulers = sorted(
+        str(row.get("name", "")).rsplit("/", 1)[-1]
+        for row in cloud_copy.get("schedulers", [])
+        if str(row.get("name", "")).rsplit("/", 1)[-1]
+        in {"strategy-brain-generate", "strategy-brain-review"}
+        and row.get("state") != "PAUSED"
+    )
+    operational_blockers = []
+    if active_brain_schedulers:
+        operational_blockers.append(
+            {
+                "blocker_id": "WP00_STRATEGY_BRAIN_NOT_PAUSED",
+                "affected_resources": active_brain_schedulers,
+                "observed_state": "ENABLED",
+                "required_state": "PAUSED_OR_LEGACY_RESEARCH",
+                "promotion_eligible": False,
+            }
+        )
     manifest = {
         "schema_version": SCHEMA_VERSION,
+        "capture_started_at_utc": capture_started_at_utc,
+        "capture_completed_at_utc": capture_completed_at_utc,
+        "bigquery_snapshot_as_of_utc": bigquery_snapshot_as_of_utc,
+        "capture_atomicity": copy.deepcopy(capture_atomicity or {}),
         "baseline_ref": baseline_ref,
         "baseline_git_sha": baseline_git_sha,
         "classification": LEGACY_CLASSIFICATION,
@@ -179,6 +233,7 @@ def build_manifest(
         "cloud": cloud_copy,
         "legacy_results": legacy_results,
         "policy": normalized_policy,
+        "operational_blockers": operational_blockers,
         "section_checksums": {
             "repository": checksum(repository_copy),
             "cloud": checksum(cloud_copy),
@@ -200,6 +255,21 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
         errors.append("baseline classification is not legacy")
     if manifest.get("promotion_eligible") is not False:
         errors.append("baseline is promotion eligible")
+    try:
+        started_at = _parse_utc_timestamp(
+            manifest.get("capture_started_at_utc"), "capture_started_at_utc"
+        )
+        completed_at = _parse_utc_timestamp(
+            manifest.get("capture_completed_at_utc"), "capture_completed_at_utc"
+        )
+        snapshot_at = _parse_utc_timestamp(
+            manifest.get("bigquery_snapshot_as_of_utc"),
+            "bigquery_snapshot_as_of_utc",
+        )
+        if not (started_at <= snapshot_at <= completed_at):
+            errors.append("BigQuery snapshot timestamp is outside the capture interval")
+    except BaselineValidationError as exc:
+        errors.append(str(exc))
     baseline_git_sha = str(manifest.get("baseline_git_sha", ""))
     if not re.fullmatch(r"[0-9a-f]{40}", baseline_git_sha):
         errors.append("baseline_git_sha is not a full commit SHA")
@@ -271,6 +341,22 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
     if set(policy.get("alpaca_execution_modes", [])) != {"paper"}:
         errors.append("Alpaca executor is not exclusively configured for paper")
 
+    active_brain_schedulers = sorted(
+        str(row.get("name", "")).rsplit("/", 1)[-1]
+        for row in cloud.get("schedulers", [])
+        if str(row.get("name", "")).rsplit("/", 1)[-1]
+        in {"strategy-brain-generate", "strategy-brain-review"}
+        and row.get("state") != "PAUSED"
+    )
+    blocker_resources = sorted(
+        resource
+        for blocker in manifest.get("operational_blockers", [])
+        if blocker.get("blocker_id") == "WP00_STRATEGY_BRAIN_NOT_PAUSED"
+        for resource in blocker.get("affected_resources", [])
+    )
+    if blocker_resources != active_brain_schedulers:
+        errors.append("Strategy Brain scheduler blocker does not match captured state")
+
     secret_paths = _unredacted_secret_paths(manifest)
     if secret_paths:
         errors.append(f"manifest contains unredacted secrets at {secret_paths}")
@@ -314,7 +400,7 @@ def assert_read_only_command(command: Sequence[str]) -> None:
     args = [part.lower() for part in parts[1:]]
 
     if program == "git":
-        if args and args[0] in {"rev-parse", "show", "status", "ls-files", "tag"}:
+        if args and args[0] in {"rev-parse", "show", "status", "ls-files"}:
             return
     elif program == "bq":
         if "query" in args:
@@ -407,11 +493,28 @@ class BigQueryReader:
                 _http=build_authorized_session(),
             )
         self.client = client
+        self.snapshot_fallback_tables: set[str] = set()
 
     def rows(self, sql: str) -> list[dict[str, Any]]:
         assert_read_only_sql(sql)
         query_job = self.client.query(sql, location=self.location)
         return [json_safe(dict(row.items())) for row in query_job.result()]
+
+    def rows_at_snapshot(
+        self,
+        snapshot_sql: str,
+        fallback_sql: str,
+        source_table: str,
+    ) -> list[dict[str, Any]]:
+        """Use BigQuery time travel, recording explicit fallback for unsupported views."""
+
+        if source_table in self.snapshot_fallback_tables:
+            return self.rows(fallback_sql)
+        try:
+            return self.rows(snapshot_sql)
+        except Exception:
+            self.snapshot_fallback_tables.add(source_table)
+            return self.rows(fallback_sql)
 
     def dry_run(self, sql: str) -> int:
         assert_read_only_sql(sql)
@@ -641,6 +744,29 @@ def _table_name(project_id: str, dataset_id: str, table_id: str) -> str:
     return f"`{project_id}.{dataset_id}.{table_id}`"
 
 
+def _snapshot_source(table: str, snapshot_as_of_utc: str) -> str:
+    _parse_utc_timestamp(snapshot_as_of_utc, "bigquery_snapshot_as_of_utc")
+    return f"{table} FOR SYSTEM_TIME AS OF TIMESTAMP('{snapshot_as_of_utc}')"
+
+
+def _rows_from_source(
+    reader: Any,
+    *,
+    table_id: str,
+    table: str,
+    snapshot_as_of_utc: str,
+    sql_template: str,
+) -> list[dict[str, Any]]:
+    snapshot_sql = sql_template.format(
+        source=_snapshot_source(table, snapshot_as_of_utc)
+    )
+    fallback_sql = sql_template.format(source=table)
+    rows_at_snapshot = getattr(reader, "rows_at_snapshot", None)
+    if rows_at_snapshot is None:
+        return reader.rows(snapshot_sql)
+    return rows_at_snapshot(snapshot_sql, fallback_sql, table_id)
+
+
 def render_sqlx_query(path: Path, project_id: str, dataset_id: str) -> str:
     """Render the simple Dataform ref syntax used by the WP-00 model for dry-run."""
 
@@ -675,17 +801,31 @@ def render_sqlx_query(path: Path, project_id: str, dataset_id: str) -> str:
 
 
 def capture_configuration(
-    reader: BigQueryReader, project_id: str, dataset_id: str
+    reader: BigQueryReader,
+    project_id: str,
+    dataset_id: str,
+    snapshot_as_of_utc: str = "2026-08-08T00:00:00.000000Z",
+    reverse_source_order: bool = False,
 ) -> dict[str, Any]:
     inventory: dict[str, Any] = {}
     for family, table_id, order_by in CONFIGURATION_TABLES:
         table = _table_name(project_id, dataset_id, table_id)
-        rows = reader.rows(f"SELECT * FROM {table} ORDER BY {order_by}")
+        rows = _rows_from_source(
+            reader,
+            table_id=table_id,
+            table=table,
+            snapshot_as_of_utc=snapshot_as_of_utc,
+            sql_template=(
+                f"SELECT * FROM {{source}} ORDER BY {order_by}"
+                + (" DESC" if reverse_source_order else "")
+            ),
+        )
+        canonical_rows = sorted(sanitize(rows), key=canonical_json)
         inventory[family] = {
             "source_table": table_id,
-            "row_count": len(rows),
-            "rows": sanitize(rows),
-            "checksum": checksum(rows),
+            "row_count": len(canonical_rows),
+            "rows": canonical_rows,
+            "checksum": checksum(canonical_rows),
         }
     return inventory
 
@@ -705,28 +845,39 @@ def capture_result_registry(
     project_id: str,
     dataset_id: str,
     baseline_git_sha: str,
+    snapshot_as_of_utc: str,
 ) -> list[dict[str, Any]]:
     registry: list[dict[str, Any]] = []
     for result_family, table_id, predicate, date_start, date_end in RESULT_FAMILIES:
         table = _table_name(project_id, dataset_id, table_id)
-        metadata_sql = f"""
+        metadata_template = f"""
 SELECT
   COUNT(*) AS row_count,
   CAST(MIN({date_start}) AS STRING) AS date_start,
   CAST(MAX({date_end}) AS STRING) AS date_end
-FROM {table}
+FROM {{source}}
 WHERE {predicate}
 """.strip()
-        metadata_rows = reader.rows(metadata_sql)
+        metadata_rows = _rows_from_source(
+            reader,
+            table_id=table_id,
+            table=table,
+            snapshot_as_of_utc=snapshot_as_of_utc,
+            sql_template=metadata_template,
+        )
         if len(metadata_rows) != 1:
             raise RuntimeError(f"unexpected metadata result for {result_family}")
-        hash_rows = reader.rows(
-            f"""
+        hash_rows = _rows_from_source(
+            reader,
+            table_id=table_id,
+            table=table,
+            snapshot_as_of_utc=snapshot_as_of_utc,
+            sql_template=f"""
 SELECT TO_HEX(SHA256(TO_JSON_STRING(t))) AS row_hash
-FROM {table} AS t
+FROM {{source}} AS t
 WHERE {predicate}
 ORDER BY row_hash
-""".strip()
+""".strip(),
         )
         row_hashes = [row["row_hash"] for row in hash_rows]
         metadata = metadata_rows[0]
@@ -769,37 +920,57 @@ def capture_policy(
     project_id: str,
     dataset_id: str,
     cloud_inventory: dict[str, Any],
+    snapshot_as_of_utc: str,
 ) -> dict[str, Any]:
     policy_table = _table_name(project_id, dataset_id, "trading_champion_challenger_policy")
     candidates_table = _table_name(project_id, dataset_id, "trading_brain_weight_candidates")
     runs_table = _table_name(project_id, dataset_id, "trading_brain_runs")
     audits_table = _table_name(project_id, dataset_id, "trading_brain_ai_audits")
 
-    policy_rows = reader.rows(
-        "SELECT ticker, champion_strategy_version, execution_mode, policy_reason "
-        f"FROM {policy_table} ORDER BY ticker"
+    policy_rows = _rows_from_source(
+        reader,
+        table_id="trading_champion_challenger_policy",
+        table=policy_table,
+        snapshot_as_of_utc=snapshot_as_of_utc,
+        sql_template=(
+            "SELECT ticker, champion_strategy_version, execution_mode, policy_reason "
+            "FROM {source} ORDER BY ticker"
+        ),
     )
-    status_rows = reader.rows(
-        f"SELECT DISTINCT candidate_status FROM {candidates_table} ORDER BY candidate_status"
+    status_rows = _rows_from_source(
+        reader,
+        table_id="trading_brain_weight_candidates",
+        table=candidates_table,
+        snapshot_as_of_utc=snapshot_as_of_utc,
+        sql_template=(
+            "SELECT DISTINCT candidate_status FROM {source} ORDER BY candidate_status"
+        ),
     )
-    production_rows = reader.rows(
-        f"""
-SELECT DISTINCT production_change_allowed
-FROM (
-  SELECT production_change_allowed FROM {runs_table}
-  UNION ALL
-  SELECT production_change_allowed FROM {audits_table}
-)
-ORDER BY production_change_allowed
-""".strip()
+    run_production_rows = _rows_from_source(
+        reader,
+        table_id="trading_brain_runs",
+        table=runs_table,
+        snapshot_as_of_utc=snapshot_as_of_utc,
+        sql_template="SELECT DISTINCT production_change_allowed FROM {source}",
+    )
+    audit_production_rows = _rows_from_source(
+        reader,
+        table_id="trading_brain_ai_audits",
+        table=audits_table,
+        snapshot_as_of_utc=snapshot_as_of_utc,
+        sql_template="SELECT DISTINCT production_change_allowed FROM {source}",
+    )
+    production_values = sorted(
+        {
+            row["production_change_allowed"]
+            for row in run_production_rows + audit_production_rows
+        }
     )
     return {
-        "rows": policy_rows,
-        "policy_checksum": checksum(policy_rows),
+        "rows": sorted(policy_rows, key=canonical_json),
+        "policy_checksum": checksum(sorted(policy_rows, key=canonical_json)),
         "strategy_brain_statuses": [row["candidate_status"] for row in status_rows],
-        "production_change_allowed_values": [
-            row["production_change_allowed"] for row in production_rows
-        ],
+        "production_change_allowed_values": production_values,
         "alpaca_execution_modes": _execution_modes_from_services(
             cloud_inventory.get("services", [])
         ),
@@ -831,7 +1002,10 @@ def capture_live_baseline(
     dataform_release: str,
     bigquery_client: Any = None,
     http_session: Any = None,
+    reverse_configuration_source_order: bool = False,
 ) -> dict[str, Any]:
+    capture_started_at_utc = utc_timestamp()
+    bigquery_snapshot_as_of_utc = capture_started_at_utc
     git = GitReader(repo_root)
     repository_git = git.inventory(baseline_ref, TRACKED_CONFIGURATION_FILES)
     baseline_git_sha = repository_git["git_sha"]
@@ -850,13 +1024,43 @@ def capture_live_baseline(
     cloud = CloudInventoryReader(project_id, location, session=shared_session).capture(
         dataform_repository, dataform_release
     )
-    configuration = capture_configuration(bq, project_id, dataset_id)
-    results = capture_result_registry(bq, project_id, dataset_id, baseline_git_sha)
-    policy = capture_policy(bq, project_id, dataset_id, cloud)
+    configuration = capture_configuration(
+        bq,
+        project_id,
+        dataset_id,
+        bigquery_snapshot_as_of_utc,
+        reverse_configuration_source_order,
+    )
+    results = capture_result_registry(
+        bq,
+        project_id,
+        dataset_id,
+        baseline_git_sha,
+        bigquery_snapshot_as_of_utc,
+    )
+    policy = capture_policy(
+        bq, project_id, dataset_id, cloud, bigquery_snapshot_as_of_utc
+    )
     repository = {
         "git": repository_git,
         "configuration": configuration,
         "configuration_checksum": checksum(configuration),
+    }
+    capture_completed_at_utc = utc_timestamp()
+    fallback_tables = sorted(bq.snapshot_fallback_tables)
+    capture_atomicity = {
+        "bigquery": (
+            "SINGLE_SYSTEM_TIME_AS_OF"
+            if not fallback_tables
+            else "SYSTEM_TIME_AS_OF_WITH_RECORDED_LIVE_FALLBACKS"
+        ),
+        "bigquery_live_fallback_tables": fallback_tables,
+        "non_atomic_surfaces": [
+            "Cloud Scheduler REST inventory",
+            "Cloud Run REST inventory",
+            "Dataform release REST inventory",
+        ],
+        "repository": "IMMUTABLE_GIT_COMMIT",
     }
     manifest = build_manifest(
         baseline_ref=baseline_ref,
@@ -865,6 +1069,10 @@ def capture_live_baseline(
         cloud=cloud,
         results=results,
         policy=policy,
+        capture_started_at_utc=capture_started_at_utc,
+        capture_completed_at_utc=capture_completed_at_utc,
+        bigquery_snapshot_as_of_utc=bigquery_snapshot_as_of_utc,
+        capture_atomicity=capture_atomicity,
     )
     validate_manifest(manifest)
     return manifest
@@ -900,6 +1108,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="BigQuery dry-run legacy_result_registry.sqlx and exit without capture",
     )
+    parser.add_argument(
+        "--reverse-configuration-source-order",
+        action="store_true",
+        help="request configuration rows in reverse source order to test canonicalization",
+    )
     return parser.parse_args(argv)
 
 
@@ -926,6 +1139,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             location=args.location,
             dataform_repository=args.dataform_repository,
             dataform_release=args.dataform_release,
+            reverse_configuration_source_order=args.reverse_configuration_source_order,
         )
         if args.verify:
             expected = json.loads(args.verify.read_text(encoding="utf-8"))

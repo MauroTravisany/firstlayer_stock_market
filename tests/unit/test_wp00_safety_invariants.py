@@ -41,8 +41,11 @@ class Wp00SafetyInvariantTest(unittest.TestCase):
     def test_legacy_registry_contains_required_families_and_hard_block(self):
         registry = self.read("dataform/definitions/legacy_result_registry.sqlx")
 
-        self.assertIn('CONCAT("DIRECTIONAL_", UPPER(strategy_version))', registry)
-        self.assertIn('strategy_version IN ("v1", "v2", "v3", "v4")', registry)
+        self.assertNotIn("${ref(", registry)
+        self.assertNotIn("CURRENT_TIMESTAMP()", registry)
+        self.assertNotRegex(registry, r"FROM\s+`stocks-437902\.")
+        self.assertIn('"DIRECTIONAL_V1" AS result_family', registry)
+        self.assertIn('"DIRECTIONAL_V4" AS result_family', registry)
         for family in (
             "STRATEGY_BRAIN_RUNS",
             "STRATEGY_BRAIN_CANDIDATES",
@@ -55,6 +58,10 @@ class Wp00SafetyInvariantTest(unittest.TestCase):
         self.assertIn('"LEGACY_PRE_AUDIT_GRADE" AS legacy_classification', registry)
         self.assertIn("FALSE AS promotion_eligible", registry)
         self.assertIn('"NOT_ELIGIBLE_FOR_PROMOTION" AS promotion_block_reason', registry)
+        self.assertIn(
+            '"f7c27dbf6b4293e4ba2755a642d2f616d98b3844" AS baseline_git_sha',
+            registry,
+        )
 
     def test_committed_baseline_manifest_is_valid(self):
         manifest = json.loads(
@@ -65,6 +72,44 @@ class Wp00SafetyInvariantTest(unittest.TestCase):
         self.assertEqual(
             manifest["baseline_git_sha"],
             "f7c27dbf6b4293e4ba2755a642d2f616d98b3844",
+        )
+
+    def test_static_registry_matches_frozen_manifest(self):
+        manifest = json.loads(
+            self.read("docs/audit-grade/evidence/baseline_manifest.json")
+        )
+        registry = self.read("dataform/definitions/legacy_result_registry.sqlx")
+
+        for row in manifest["legacy_results"]:
+            self.assertIn(row["result_family"], registry)
+            self.assertIn(row["results_checksum"], registry)
+            self.assertRegex(registry, rf"\b{row['row_count']}\b")
+            if row["date_start"]:
+                self.assertIn(f'DATE("{row["date_start"]}")', registry)
+            if row["date_end"]:
+                self.assertIn(f'DATE("{row["date_end"]}")', registry)
+        self.assertIn(manifest["baseline_git_sha"], registry)
+        self.assertIn(manifest["bigquery_snapshot_as_of_utc"], registry)
+
+    def test_enabled_strategy_brain_schedulers_are_recorded_as_blocker(self):
+        manifest = json.loads(
+            self.read("docs/audit-grade/evidence/baseline_manifest.json")
+        )
+
+        self.assertEqual(
+            manifest["operational_blockers"],
+            [
+                {
+                    "affected_resources": [
+                        "strategy-brain-generate",
+                        "strategy-brain-review",
+                    ],
+                    "blocker_id": "WP00_STRATEGY_BRAIN_NOT_PAUSED",
+                    "observed_state": "ENABLED",
+                    "promotion_eligible": False,
+                    "required_state": "PAUSED_OR_LEGACY_RESEARCH",
+                }
+            ],
         )
 
     def test_example_manifest_is_valid_json_and_non_promotable(self):

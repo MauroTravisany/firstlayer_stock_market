@@ -13,6 +13,7 @@ from tools.capture_baseline import (
     ReadOnlyViolation,
     assert_read_only_command,
     build_manifest,
+    capture_configuration,
     sanitize,
     render_sqlx_query,
     validate_manifest,
@@ -61,6 +62,9 @@ class CaptureBaselineTest(unittest.TestCase):
                 "production_change_allowed_values": [False],
                 "alpaca_execution_modes": ["paper"],
             },
+            "capture_started_at_utc": "2026-08-08T12:00:00.000000Z",
+            "capture_completed_at_utc": "2026-08-08T12:00:05.000000Z",
+            "bigquery_snapshot_as_of_utc": "2026-08-08T12:00:00.000000Z",
         }
 
     def test_repeated_capture_has_same_checksum(self):
@@ -75,6 +79,47 @@ class CaptureBaselineTest(unittest.TestCase):
         second = build_manifest(**second_inputs)
 
         self.assertEqual(first["manifest_checksum"], second["manifest_checksum"])
+
+    def test_capture_metadata_does_not_change_state_checksum(self):
+        first = build_manifest(**self.inputs)
+        later_inputs = copy.deepcopy(self.inputs)
+        later_inputs["capture_started_at_utc"] = "2026-08-08T13:00:00.000000Z"
+        later_inputs["capture_completed_at_utc"] = "2026-08-08T13:00:08.000000Z"
+        later_inputs["bigquery_snapshot_as_of_utc"] = "2026-08-08T13:00:00.000000Z"
+
+        second = build_manifest(**later_inputs)
+
+        self.assertEqual(first["manifest_checksum"], second["manifest_checksum"])
+
+    def test_configuration_rows_with_duplicate_ids_are_canonicalized(self):
+        class Reader:
+            def __init__(self, reverse):
+                self.reverse = reverse
+
+            def rows(self, sql):
+                if "trading_backtest_context_variants" not in sql:
+                    return []
+                rows = [
+                    {"variant_id": "duplicate", "weight": 2},
+                    {"variant_id": "duplicate", "weight": 1},
+                ]
+                return list(reversed(rows)) if self.reverse else rows
+
+        first = capture_configuration(
+            Reader(reverse=False), "stocks-437902", "acciones_dataset"
+        )
+        second = capture_configuration(
+            Reader(reverse=True), "stocks-437902", "acciones_dataset"
+        )
+
+        self.assertEqual(first, second)
+        self.assertEqual(
+            first["backtest_context_variants"]["rows"],
+            [
+                {"variant_id": "duplicate", "weight": 1},
+                {"variant_id": "duplicate", "weight": 2},
+            ],
+        )
 
     def test_legacy_results_are_never_promotion_eligible(self):
         manifest = build_manifest(**self.inputs)
@@ -145,6 +190,15 @@ class CaptureBaselineTest(unittest.TestCase):
         for command in allowed:
             assert_read_only_command(command)
         for command in forbidden:
+            with self.assertRaises(ReadOnlyViolation):
+                assert_read_only_command(command)
+
+    def test_git_tag_creation_and_deletion_are_rejected(self):
+        for command in (
+            ["git", "tag", "new-baseline-tag"],
+            ["git", "tag", "--delete", "legacy-pre-audit-grade-2026-08"],
+            ["git", "tag", "-d", "legacy-pre-audit-grade-2026-08"],
+        ):
             with self.assertRaises(ReadOnlyViolation):
                 assert_read_only_command(command)
 
