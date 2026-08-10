@@ -84,6 +84,17 @@ class RepositoryControlTests(unittest.TestCase):
             with self.subTest(service=service):
                 self.assertTrue((ROOT / context / "Dockerfile").is_file())
 
+    def test_dashboard_vitest_override_is_patched(self):
+        package = json.loads(
+            (ROOT / "dashboard" / "package.json").read_text(encoding="utf-8")
+        )
+        lock = json.loads(
+            (ROOT / "dashboard" / "package-lock.json").read_text(encoding="utf-8")
+        )
+
+        self.assertEqual(package["overrides"]["vitest"], "3.2.7")
+        self.assertEqual(lock["packages"]["node_modules/vitest"]["version"], "3.2.7")
+
 
 if __name__ == "__main__":
     unittest.main()
