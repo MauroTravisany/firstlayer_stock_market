@@ -61,13 +61,16 @@ def validate_transition(previous, current):
     for table, columns in previous_schema.items():
         if table not in current_schema or not columns.issubset(current_schema[table]):
             raise CompatibilityError(f"expanded schema removed legacy contract from {table}")
+        if table not in legacy or not columns.issubset(legacy[table]):
+            raise CompatibilityError(
+                f"legacy consumer contract must preserve every previously supported column in {table}"
+            )
+
     for label, contract in (("legacy", legacy), ("current", new)):
         for table, columns in contract.items():
             if table not in current_schema or not columns.issubset(current_schema[table]):
                 raise CompatibilityError(f"{label} consumer requires unavailable columns in {table}")
-    for table, columns in previous_schema.items():
-        if table not in legacy or not columns.intersection(legacy[table]):
-            raise CompatibilityError(f"legacy consumer contract omitted {table}")
+
     return {
         "status": "PASS",
         "phase": "expand",
