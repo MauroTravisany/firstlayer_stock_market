@@ -1,34 +1,82 @@
 name: Deploy Evidence dashboard
 
 on:
-  workflow_dispatch:
-  push:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
     branches:
       - main
-      - master
-    paths:
-      - "dashboard/**"
-      - ".github/workflows/deploy-dashboard.yml"
   schedule:
     # 21:50 in Chile during winter, after both AI runs and the trading summary.
     - cron: "50 1 * * 2-6"
 
 permissions:
   contents: read
-  id-token: write
-  pages: write
 
 concurrency:
   group: github-pages
   cancel-in-progress: true
 
 jobs:
+  verify-source:
+    name: Verify dashboard source CI
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      head_sha: ${{ steps.source.outputs.head_sha }}
+    steps:
+      - name: Resolve source and require successful CI
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          WORKFLOW_EVENT: ${{ github.event.workflow_run.event }}
+          WORKFLOW_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WORKFLOW_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${EVENT_NAME}" == "workflow_run" ]]; then
+            test "${WORKFLOW_CONCLUSION}" = "success"
+            test "${WORKFLOW_EVENT}" = "push"
+            test "${WORKFLOW_HEAD_BRANCH}" = "main"
+            head_sha="${WORKFLOW_HEAD_SHA}"
+          else
+            head_sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq '.sha')"
+            runs="$(gh run list \
+              --repo "${GITHUB_REPOSITORY}" \
+              --workflow ci.yml \
+              --branch main \
+              --commit "${head_sha}" \
+              --event push \
+              --status completed \
+              --limit 20 \
+              --json conclusion,headSha)"
+            jq -e --arg sha "${head_sha}" \
+              'any(.[]; .headSha == $sha and .conclusion == "success")' \
+              <<<"${runs}" >/dev/null
+          fi
+          [[ "${head_sha}" =~ ^[0-9a-f]{40}$ ]]
+          echo "head_sha=${head_sha}" >> "${GITHUB_OUTPUT}"
+          echo "DASHBOARD_SOURCE_VERIFIED sha=${head_sha}"
+
   build:
     runs-on: ubuntu-latest
+    needs:
+      - verify-source
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify-source.outputs.head_sha }}
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -42,54 +90,56 @@ jobs:
 
       - name: Install dependencies
         working-directory: dashboard
-        run: npm install --legacy-peer-deps
+        run: npm ci --legacy-peer-deps
 
       - name: Export BigQuery snapshots
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dashboard/data
 
-          bq query --project_id="${{ secrets.GCP_PROJECT_ID }}" --use_legacy_sql=false --format=csv \
-            'select * from `stocks-437902.acciones_dataset.looker_portfolio_latest`' \
+          bq query --project_id="${GCP_PROJECT_ID}" --use_legacy_sql=false --format=csv \
+            "select * from \`stocks-437902.acciones_dataset.looker_portfolio_latest\`" \
             > dashboard/data/portfolio_latest.csv
 
-          bq query --project_id="${{ secrets.GCP_PROJECT_ID }}" --use_legacy_sql=false --format=csv \
-            'select * from `stocks-437902.acciones_dataset.looker_portfolio_history`' \
+          bq query --project_id="${GCP_PROJECT_ID}" --use_legacy_sql=false --format=csv \
+            "select * from \`stocks-437902.acciones_dataset.looker_portfolio_history\`" \
             > dashboard/data/portfolio_history.csv
 
-          bq query --project_id="${{ secrets.GCP_PROJECT_ID }}" --use_legacy_sql=false --format=csv \
-            'select * from `stocks-437902.acciones_dataset.looker_company_status_latest`' \
+          bq query --project_id="${GCP_PROJECT_ID}" --use_legacy_sql=false --format=csv \
+            "select * from \`stocks-437902.acciones_dataset.looker_company_status_latest\`" \
             > dashboard/data/company_status_latest.csv
 
-          bq query --project_id="${{ secrets.GCP_PROJECT_ID }}" --use_legacy_sql=false --format=csv \
-            'select * from `stocks-437902.acciones_dataset.looker_company_status_changes`' \
+          bq query --project_id="${GCP_PROJECT_ID}" --use_legacy_sql=false --format=csv \
+            "select * from \`stocks-437902.acciones_dataset.looker_company_status_changes\`" \
             > dashboard/data/company_status_changes.csv
 
-          if ! bq query --project_id="${{ secrets.GCP_PROJECT_ID }}" --use_legacy_sql=false --format=csv \
-            'select * from `stocks-437902.acciones_dataset.portfolio_signal_backtest`' \
+          if ! bq query --project_id="${GCP_PROJECT_ID}" --use_legacy_sql=false --format=csv \
+            "select * from \`stocks-437902.acciones_dataset.portfolio_signal_backtest\`" \
             > dashboard/data/portfolio_signal_backtest.csv; then
             printf 'analysis_date,ticker,signal,sell_signal,classification,last_close,final_score,sell_score,margin_of_safety_pct,risk_level,technical_trend,price_5d,price_20d,price_60d,forward_return_5d,forward_return_20d,forward_return_60d,signal_success_60d,backtest_status,calculated_at\n' > dashboard/data/portfolio_signal_backtest.csv
           fi
 
-          bq query --project_id="${{ secrets.GCP_PROJECT_ID }}" --use_legacy_sql=false --format=csv \
-            'select * from `stocks-437902.acciones_dataset.looker_portfolio_summary`' \
+          bq query --project_id="${GCP_PROJECT_ID}" --use_legacy_sql=false --format=csv \
+            "select * from \`stocks-437902.acciones_dataset.looker_portfolio_summary\`" \
             > dashboard/data/portfolio_summary.csv
 
-          bq query --project_id="${{ secrets.GCP_PROJECT_ID }}" --use_legacy_sql=false --format=csv \
-            'select * from `stocks-437902.acciones_dataset.looker_portfolio_ai_summary`' \
+          bq query --project_id="${GCP_PROJECT_ID}" --use_legacy_sql=false --format=csv \
+            "select * from \`stocks-437902.acciones_dataset.looker_portfolio_ai_summary\`" \
             > dashboard/data/portfolio_ai_summary.csv
 
-          bq query --project_id="${{ secrets.GCP_PROJECT_ID }}" --use_legacy_sql=false --format=csv \
-            'select * from `stocks-437902.acciones_dataset.looker_data_quality_latest`' \
+          bq query --project_id="${GCP_PROJECT_ID}" --use_legacy_sql=false --format=csv \
+            "select * from \`stocks-437902.acciones_dataset.looker_data_quality_latest\`" \
             > dashboard/data/data_quality_latest.csv
 
-          bq query --project_id="${{ secrets.GCP_PROJECT_ID }}" --use_legacy_sql=false --format=csv \
-            'select * from `stocks-437902.acciones_dataset.portfolio_ai_analysis_daily`
+          bq query --project_id="${GCP_PROJECT_ID}" --use_legacy_sql=false --format=csv \
+            "select * from \`stocks-437902.acciones_dataset.portfolio_ai_analysis_daily\`
              where analysis_date = (
                select max(analysis_date)
-               from `stocks-437902.acciones_dataset.portfolio_ai_analysis_daily`
-             )' \
+               from \`stocks-437902.acciones_dataset.portfolio_ai_analysis_daily\`
+             )" \
             > dashboard/data/ai_analysis_latest.csv
 
           for csv_file in dashboard/data/*.csv; do
@@ -128,6 +178,9 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     needs: build
+    permissions:
+      id-token: write
+      pages: write
 
     steps:
       - name: Deploy to GitHub Pages

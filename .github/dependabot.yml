@@ -1,0 +1,114 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: npm
+    directory: /dashboard
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      dashboard-dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: npm
+    directory: /dataform
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      dataform-dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: terraform
+    directory: /terraform
+    schedule:
+      interval: weekly
+      day: monday
+
+  - package-ecosystem: pip
+    directory: /cloud-functions/daily_ai_analysis
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: pip
+    directory: /cloud-functions/daily_stocks
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: pip
+    directory: /cloud-functions/financial_data
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: pip
+    directory: /cloud-functions/macro_data
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: pip
+    directory: /cloud-functions/paper_trade_executor
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: pip
+    directory: /cloud-functions/paper_trade_risk_monitor
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: pip
+    directory: /cloud-functions/paper_trading_alerts
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: pip
+    directory: /cloud-functions/strategy_brain
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"

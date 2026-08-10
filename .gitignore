@@ -13,7 +13,7 @@ dashboard/.evidence/
 dashboard/build/
 dashboard/data/
 dashboard/node_modules/
+dataform/node_modules/
 dashboard/sources/**/connection.options.yaml
-terraform/.terraform.lock.hcl
 terraform/terraform.tfstate
 terraform/terraform.tfstate.backup
