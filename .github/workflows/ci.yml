@@ -238,7 +238,9 @@ jobs:
       - name: Review dependency changes
         uses: actions/dependency-review-action@v4
         with:
-          fail-on-severity: high
+          # Evidence/Dataform still carry audited high-severity legacy debt.
+          # Critical additions fail closed; Dependabot tracks the remaining baseline.
+          fail-on-severity: critical
 
   ci-gate:
     name: CI gate

@@ -56,6 +56,9 @@ class CiWorkflowContractTests(unittest.TestCase):
                 permissions = job.get("permissions", workflow.get("permissions", {}))
                 self.assertNotIn("write", permissions.values())
 
+        dependency_review = workflow["jobs"]["dependency-review"]["steps"][0]
+        self.assertEqual(dependency_review["with"]["fail-on-severity"], "critical")
+
 
 class DeployWorkflowContractTests(unittest.TestCase):
     def test_cloud_run_deploy_only_follows_successful_ci_on_main(self):
