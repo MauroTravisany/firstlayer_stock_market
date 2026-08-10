@@ -40,4 +40,3 @@ def health_response(request, default_service):
         "mutation_performed": False,
     }
     return json.dumps(payload, sort_keys=True), 200, headers
-
