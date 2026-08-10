@@ -34,11 +34,26 @@ def load_runtime(context):
 
 
 class RuntimeHealthContractTests(unittest.TestCase):
-    def test_every_service_has_non_mutating_health_and_readiness(self):
+    def test_every_service_has_static_liveness_and_real_readiness(self):
         environment = {
             "RELEASE_GIT_SHA": "a" * 40,
             "RELEASE_VERSION": "release-a",
             "RELEASE_IMAGE_DIGEST": "sha256:" + "b" * 64,
+            "PROJECT_ID": "test-project",
+            "project_id": "test-project",
+            "dataset_id": "acciones_dataset",
+            "bucket_name": "test-bucket",
+            "table_id": "prices",
+            "OPENAI_API_KEY": "placeholder",
+            "ALERT_WEBHOOK_URL": "https://example.invalid/webhook",
+            "ALPACA_API_KEY": "placeholder",
+            "ALPACA_SECRET_KEY": "placeholder",
+            "ALPACA_BASE_URL": "https://paper-api.alpaca.markets",
+            "PAPER_EXECUTION_MODE": "paper",
+            "BRAIN_EXECUTION_MODE": "BACKTEST_ONLY",
+            "READINESS_TEST_MODE": "true",
+            "READINESS_FAKE_TABLES": "*",
+            "READINESS_FAKE_IMPORTS": "*",
         }
         with mock.patch.dict(os.environ, environment, clear=True):
             for context, service in CONTEXTS:
@@ -54,6 +69,52 @@ class RuntimeHealthContractTests(unittest.TestCase):
                         self.assertEqual(payload["service"], service)
                         self.assertEqual(payload["operation"], "readiness_probe")
                         self.assertFalse(payload["mutation_performed"])
+                        if path == "/readyz":
+                            self.assertTrue(payload["checks"])
+
+    def test_missing_required_configuration_is_not_ready_but_health_is_live(self):
+        module = load_runtime("daily_stocks")
+        with mock.patch.dict(os.environ, {}, clear=True):
+            health_body, health_status, _ = module.health_response(
+                Request("/healthz"), "stockdaily"
+            )
+            ready_body, ready_status, _ = module.health_response(
+                Request("/readyz"), "stockdaily"
+            )
+        self.assertEqual(health_status, 200)
+        self.assertEqual(json.loads(health_body)["status"], "alive")
+        self.assertEqual(ready_status, 503)
+        self.assertEqual(json.loads(ready_body)["status"], "not_ready")
+
+    def test_live_alpaca_or_non_paper_mode_is_never_ready(self):
+        module = load_runtime("paper_trade_executor")
+        base = {
+            "RELEASE_GIT_SHA": "a" * 40,
+            "RELEASE_VERSION": "release-a",
+            "RELEASE_IMAGE_DIGEST": "sha256:" + "b" * 64,
+            "PROJECT_ID": "test",
+            "project_id": "test",
+            "dataset_id": "dataset",
+            "ALPACA_API_KEY": "placeholder",
+            "ALPACA_SECRET_KEY": "placeholder",
+            "READINESS_TEST_MODE": "true",
+            "READINESS_FAKE_TABLES": "*",
+            "READINESS_FAKE_IMPORTS": "*",
+        }
+        for mode, url in (
+            ("live", "https://paper-api.alpaca.markets"),
+            ("paper", "https://api.alpaca.markets"),
+        ):
+            with self.subTest(mode=mode, url=url):
+                with mock.patch.dict(
+                    os.environ,
+                    {**base, "PAPER_EXECUTION_MODE": mode, "ALPACA_BASE_URL": url},
+                    clear=True,
+                ):
+                    _, status, _ = module.health_response(
+                        Request("/readyz"), "papertradeexecutor"
+                    )
+                self.assertEqual(status, 503)
 
     def test_health_post_is_rejected_without_mutation(self):
         module = load_runtime("daily_stocks")

@@ -141,6 +141,12 @@ class RepoInvariantTests(unittest.TestCase):
         self.repo.write(".github/workflows/deploy.yml", deploy)
         self.assertViolation("STRATEGY_BRAIN_REACTIVATION")
 
+    def test_readiness_test_fixture_in_deploy_is_rejected(self):
+        deploy = self.repo.read(".github/workflows/deploy.yml")
+        deploy += "\n# READINESS_TEST_MODE=true\n"
+        self.repo.write(".github/workflows/deploy.yml", deploy)
+        self.assertViolation("READINESS_FIXTURE_IN_DEPLOY")
+
     def test_master_deploy_is_rejected(self):
         deploy = self.repo.read(".github/workflows/deploy.yml").replace("branches: [main]", "branches: [main, master]")
         self.repo.write(".github/workflows/deploy.yml", deploy)

@@ -24,7 +24,7 @@ def _require_sha(value, label):
         raise DataformPromotionError(f"{label} must be a full lowercase git SHA")
 
 
-def validate_compilation(document, expected_snapshot_commit):
+def validate_compilation(document, expected_snapshot_commit, expected_candidate_branch):
     if not isinstance(document, dict):
         raise DataformPromotionError("compilation response must be an object")
     name = document.get("name")
@@ -41,9 +41,9 @@ def validate_compilation(document, expected_snapshot_commit):
         raise DataformPromotionError(
             "compiled Dataform commit does not match the exact promoted snapshot"
         )
-    if not document.get("releaseConfig"):
+    if document.get("gitCommitish") != expected_candidate_branch:
         raise DataformPromotionError(
-            "compilation must be created from the production release config"
+            "compilation must be created from the exact candidate branch"
         )
     return name
 
@@ -67,6 +67,9 @@ def build_evidence(
     git_sha,
     tree_sha,
     snapshot_commit_sha,
+    candidate_ref,
+    previous_production_sha,
+    final_production_sha,
     compilation,
     previous_release,
     current_release,
@@ -75,6 +78,8 @@ def build_evidence(
         (git_sha, "git_sha"),
         (tree_sha, "dataform_tree_sha"),
         (snapshot_commit_sha, "snapshot_commit_sha"),
+        (previous_production_sha, "previous_dataform_production_sha"),
+        (final_production_sha, "final_dataform_production_sha"),
     ):
         _require_sha(value, label)
     previous_required = {"name", "gitCommitish", "releaseCompilationResult"}
@@ -84,7 +89,13 @@ def build_evidence(
         raise DataformPromotionError(
             "previous release is missing mandatory rollback metadata"
         )
-    compilation_name = validate_compilation(compilation, snapshot_commit_sha)
+    if not re.fullmatch(r"refs/heads/dataform-candidate-[0-9a-z-]+", candidate_ref):
+        raise DataformPromotionError("candidate_ref is invalid")
+    if final_production_sha != snapshot_commit_sha:
+        raise DataformPromotionError("final production SHA must equal the validated candidate")
+    compilation_name = validate_compilation(
+        compilation, snapshot_commit_sha, candidate_ref.removeprefix("refs/heads/")
+    )
     validate_release(current_release, compilation_name)
     return {
         "status": "PASS",
@@ -92,6 +103,10 @@ def build_evidence(
         "git_sha": git_sha,
         "dataform_tree_sha": tree_sha,
         "snapshot_commit_sha": snapshot_commit_sha,
+        "candidate_ref": candidate_ref,
+        "previous_dataform_production_sha": previous_production_sha,
+        "candidate_sha": snapshot_commit_sha,
+        "final_dataform_production_sha": final_production_sha,
         "compilation_id": compilation_name,
         "release_previous": previous_release,
         "release_new": current_release,
@@ -101,6 +116,8 @@ def build_evidence(
             "release_compilation_result": previous_release[
                 "releaseCompilationResult"
             ],
+            "branch_ref": "refs/heads/dataform-production",
+            "branch_sha": previous_production_sha,
         },
     }
 
@@ -117,6 +134,9 @@ def main() -> int:
     parser.add_argument("--git-sha", required=True)
     parser.add_argument("--tree-sha", required=True)
     parser.add_argument("--snapshot-commit-sha", required=True)
+    parser.add_argument("--candidate-ref", required=True)
+    parser.add_argument("--previous-production-sha", required=True)
+    parser.add_argument("--final-production-sha", required=True)
     parser.add_argument("--compilation-json", required=True)
     parser.add_argument("--previous-release-json", required=True)
     parser.add_argument("--current-release-json", required=True)
@@ -127,6 +147,9 @@ def main() -> int:
             git_sha=args.git_sha,
             tree_sha=args.tree_sha,
             snapshot_commit_sha=args.snapshot_commit_sha,
+            candidate_ref=args.candidate_ref,
+            previous_production_sha=args.previous_production_sha,
+            final_production_sha=args.final_production_sha,
             compilation=_read_json(args.compilation_json),
             previous_release=_read_json(args.previous_release_json),
             current_release=_read_json(args.current_release_json),

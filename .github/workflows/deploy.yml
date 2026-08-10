@@ -185,24 +185,43 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           dataform_tree_sha="$(git rev-parse "${APPROVED_SHA}:dataform")"
-          parent_args=()
-          if git fetch origin dataform-production --depth=1; then
-            parent_args=(-p FETCH_HEAD)
-          fi
-          snapshot_commit_sha="$(printf 'WP-01 exact Dataform snapshot for %s\n' "${APPROVED_SHA}" | git commit-tree "${dataform_tree_sha}" "${parent_args[@]}")"
-          git push origin "${snapshot_commit_sha}:refs/heads/dataform-production"
-          remote_snapshot="$(git ls-remote origin refs/heads/dataform-production | cut -f1)"
-          test "${snapshot_commit_sha}" = "${remote_snapshot}"
+          production_ref="refs/heads/dataform-production"
+          previous_dataform_production_sha="$(git ls-remote --refs origin "${production_ref}" | cut -f1)"
+          [[ "${previous_dataform_production_sha}" =~ ^[0-9a-f]{40}$ ]]
+          git fetch --no-tags origin "${previous_dataform_production_sha}"
+          snapshot_commit_sha="$(printf 'WP-01 exact Dataform snapshot for %s\n' "${APPROVED_SHA}" | git commit-tree "${dataform_tree_sha}" -p "${previous_dataform_production_sha}")"
+          candidate_branch="dataform-candidate-${APPROVED_SHA:0:12}"
+          candidate_ref="refs/heads/${candidate_branch}"
+          python scripts/ci/dataform_branch_transaction.py create-candidate \
+            --candidate-ref "${candidate_ref}" \
+            --candidate-sha "${snapshot_commit_sha}" \
+            --evidence release-evidence/dataform-candidate-ref.json
+          test "$(git ls-remote --refs origin "${production_ref}" | cut -f1)" = "${previous_dataform_production_sha}"
 
-          jq -n --arg release "${release}" '{releaseConfig:$release}'             > release-evidence/dataform-compilation-request.json
+          jq -n \
+            --arg git_commitish "${candidate_branch}" \
+            --argjson code_config "$(jq '.codeCompilationConfig // {}' release-evidence/dataform-release-previous.json)" \
+            '{gitCommitish:$git_commitish,codeCompilationConfig:$code_config}' \
+            > release-evidence/dataform-compilation-request.json
           curl --fail-with-body --silent --show-error -X POST             -H "Authorization: Bearer ${token}"             -H "Content-Type: application/json"             --data-binary @release-evidence/dataform-compilation-request.json             "https://dataform.googleapis.com/v1beta1/${repository}/compilationResults"             > release-evidence/dataform-compilation.json
           compilation_id="$(jq -r '.name' release-evidence/dataform-compilation.json)"
           test -n "${compilation_id}"
           curl --fail-with-body --silent --show-error             -H "Authorization: Bearer ${token}"             "https://dataform.googleapis.com/v1beta1/${compilation_id}"             > release-evidence/dataform-compilation.json
           test "$(jq '[.compilationErrors[]?] | length' release-evidence/dataform-compilation.json)" = 0
           test "$(jq -r '.resolvedGitCommitSha' release-evidence/dataform-compilation.json)" = "${snapshot_commit_sha}"
-          test "$(jq -r '.releaseConfig' release-evidence/dataform-compilation.json)" = "${release}"
-          jq -n             --arg git_sha "${APPROVED_SHA}"             --arg tree_sha "${dataform_tree_sha}"             --arg snapshot_commit_sha "${snapshot_commit_sha}"             --arg compilation_id "${compilation_id}"             --arg release "${release}"             '{git_sha:$git_sha,dataform_tree_sha:$tree_sha,snapshot_commit_sha:$snapshot_commit_sha,compilation_id:$compilation_id,release:$release}'             > release-evidence/dataform-prepared.json
+          test "$(jq -r '.gitCommitish' release-evidence/dataform-compilation.json)" = "${candidate_branch}"
+          test "$(git ls-remote --refs origin "${production_ref}" | cut -f1)" = "${previous_dataform_production_sha}"
+          jq -n \
+            --arg git_sha "${APPROVED_SHA}" \
+            --arg tree_sha "${dataform_tree_sha}" \
+            --arg snapshot_commit_sha "${snapshot_commit_sha}" \
+            --arg candidate_branch "${candidate_branch}" \
+            --arg candidate_ref "${candidate_ref}" \
+            --arg previous_dataform_production_sha "${previous_dataform_production_sha}" \
+            --arg compilation_id "${compilation_id}" \
+            --arg release "${release}" \
+            '{git_sha:$git_sha,dataform_tree_sha:$tree_sha,snapshot_commit_sha:$snapshot_commit_sha,candidate_branch:$candidate_branch,candidate_ref:$candidate_ref,previous_dataform_production_sha:$previous_dataform_production_sha,compilation_id:$compilation_id,release:$release}' \
+            > release-evidence/dataform-prepared.json
           echo "DATAFORM_COMPILATION_VALID sha=${APPROVED_SHA} tree=${dataform_tree_sha} compilation=${compilation_id}"
 
       - name: Confirm Paper-only target configuration
@@ -228,7 +247,8 @@ jobs:
           set -Eeuo pipefail
           release_version="sha-${APPROVED_SHA:0:12}"
           candidate_tag="candidate-${APPROVED_SHA:0:12}"
-          dataform_promoted=false
+          dataform_branch_promoted=false
+          dataform_release_promoted=false
           : > staged-revisions.tsv
           : > promoted-revisions.tsv
 
@@ -238,14 +258,24 @@ jobs:
             set +e
             rollback_status=0
             token="$(gcloud auth print-access-token)"
-            if [[ "${dataform_promoted}" == true ]]; then
+            if [[ "${dataform_release_promoted}" == true ]]; then
               previous_result="$(jq -r '.releaseCompilationResult' release-evidence/dataform-release-previous.json)"
               release="$(jq -r '.name' release-evidence/dataform-release-previous.json)"
               jq -n                 --arg name "${release}"                 --arg git_commitish dataform-production                 --arg result "${previous_result}"                 '{name:$name,gitCommitish:$git_commitish,releaseCompilationResult:$result}'                 > release-evidence/dataform-rollback-request.json
               curl --fail-with-body --silent --show-error -X PATCH                 -H "Authorization: Bearer ${token}"                 -H "Content-Type: application/json"                 --data-binary @release-evidence/dataform-rollback-request.json                 "https://dataform.googleapis.com/v1beta1/${release}?updateMask=releaseCompilationResult"                 > release-evidence/dataform-release-rollback.json || rollback_status=1
               test "$(jq -r '.releaseCompilationResult' release-evidence/dataform-release-rollback.json)" = "${previous_result}" || rollback_status=1
             fi
-            python scripts/ci/cloud_run_traffic.py restore-directory               --directory traffic-snapshots               --project "${GCP_PROJECT_ID}"               --region "${REGION}" || rollback_status=1
+            if [[ "${dataform_branch_promoted}" == true ]]; then
+              python scripts/ci/dataform_branch_transaction.py rollback-production \
+                --previous-sha "$(jq -r '.previous_dataform_production_sha' release-evidence/dataform-prepared.json)" \
+                --candidate-sha "$(jq -r '.snapshot_commit_sha' release-evidence/dataform-prepared.json)" \
+                --evidence release-evidence/dataform-branch-rollback.json || rollback_status=1
+            fi
+            python scripts/ci/cloud_run_traffic.py restore-directory \
+              --directory traffic-snapshots \
+              --project "${GCP_PROJECT_ID}" \
+              --region "${REGION}" \
+              --evidence-directory release-evidence/traffic-rollback-verification || rollback_status=1
             jq -n               --argjson original_status "${original_status}"               --argjson rollback_status "${rollback_status}"               '{status:"ROLLBACK_ATTEMPTED",original_exit:$original_status,rollback_exit:$rollback_status}'               > release-evidence/rollback-result.json
             if [[ "${rollback_status}" -ne 0 ]]; then
               echo "ROLLBACK_INCOMPLETE" >&2
@@ -260,12 +290,44 @@ jobs:
             python scripts/ci/cloud_run_traffic.py snapshot               --service "${service}"               --project "${GCP_PROJECT_ID}"               --region "${REGION}"               --output "traffic-snapshots/${service}.json"
           done < approved-images.tsv
 
+          # Expand first: move the validated candidate with CAS, then bind the release.
+          previous_dataform_production_sha="$(jq -r '.previous_dataform_production_sha' release-evidence/dataform-prepared.json)"
+          snapshot_commit_sha="$(jq -r '.snapshot_commit_sha' release-evidence/dataform-prepared.json)"
+          python scripts/ci/dataform_branch_transaction.py promote-production \
+            --previous-sha "${previous_dataform_production_sha}" \
+            --candidate-sha "${snapshot_commit_sha}" \
+            --evidence release-evidence/dataform-branch-promotion.json
+          dataform_branch_promoted=true
+
+          token="$(gcloud auth print-access-token)"
+          release="$(jq -r '.release' release-evidence/dataform-prepared.json)"
+          compilation_id="$(jq -r '.compilation_id' release-evidence/dataform-prepared.json)"
+          jq -n             --arg name "${release}"             --arg git_commitish dataform-production             --arg result "${compilation_id}"             '{name:$name,gitCommitish:$git_commitish,releaseCompilationResult:$result}'             > release-evidence/dataform-promotion-request.json
+          curl --fail-with-body --silent --show-error -X PATCH             -H "Authorization: Bearer ${token}"             -H "Content-Type: application/json"             --data-binary @release-evidence/dataform-promotion-request.json             "https://dataform.googleapis.com/v1beta1/${release}?updateMask=releaseCompilationResult"             > release-evidence/dataform-release-new.json
+          dataform_release_promoted=true
+          test "$(jq -r '.releaseCompilationResult' release-evidence/dataform-release-new.json)" = "${compilation_id}"
+          test "$(git ls-remote --refs origin refs/heads/dataform-production | cut -f1)" = "${snapshot_commit_sha}"
+          python scripts/ci/dataform_promotion.py \
+            --git-sha "${APPROVED_SHA}" \
+            --tree-sha "$(jq -r '.dataform_tree_sha' release-evidence/dataform-prepared.json)" \
+            --snapshot-commit-sha "${snapshot_commit_sha}" \
+            --candidate-ref "$(jq -r '.candidate_ref' release-evidence/dataform-prepared.json)" \
+            --previous-production-sha "${previous_dataform_production_sha}" \
+            --final-production-sha "${snapshot_commit_sha}" \
+            --compilation-json release-evidence/dataform-compilation.json \
+            --previous-release-json release-evidence/dataform-release-previous.json \
+            --current-release-json release-evidence/dataform-release-new.json \
+            --output release-evidence/dataform-promotion-evidence.json
+
           while IFS=$'\t' read -r service immutable_image; do
             [[ "${immutable_image}" == *"@sha256:"* ]]
             image_digest="${immutable_image##*@}"
             release_env="RELEASE_GIT_SHA=${APPROVED_SHA},RELEASE_VERSION=${release_version},RELEASE_IMAGE_DIGEST=${image_digest}"
             if [[ "${service}" == papertradeexecutor || "${service}" == papertraderiskmonitor ]]; then
               release_env="${release_env},PAPER_EXECUTION_MODE=paper"
+            fi
+            if [[ "${service}" == strategybrain ]]; then
+              release_env="${release_env},BRAIN_EXECUTION_MODE=BACKTEST_ONLY"
             fi
             gcloud run services update "${service}"               --project "${GCP_PROJECT_ID}"               --region "${REGION}"               --platform managed               --image "${immutable_image}"               --no-traffic               --tag "${candidate_tag}"               --update-env-vars "${release_env}"               --quiet
             service_document="$(gcloud run services describe "${service}" --project "${GCP_PROJECT_ID}" --region "${REGION}" --platform managed --format=json)"
@@ -285,15 +347,6 @@ jobs:
             python scripts/ci/smoke_test_services.py               --service "${service}"               --revision "${staged_revision}"               --project "${GCP_PROJECT_ID}"               --region "${REGION}"               --expected-image "${immutable_image}"               --expected-git-sha "${APPROVED_SHA}"               --expected-version "${release_version}"               --url "${service_url}/healthz"               --audience "${service_url}"               --timeout-seconds 30
             gcloud run services update-traffic "${service}"               --project "${GCP_PROJECT_ID}"               --region "${REGION}"               --platform managed               --remove-tags "${candidate_tag}"               --quiet
           done < staged-revisions.tsv
-
-          token="$(gcloud auth print-access-token)"
-          release="$(jq -r '.release' release-evidence/dataform-prepared.json)"
-          compilation_id="$(jq -r '.compilation_id' release-evidence/dataform-prepared.json)"
-          jq -n             --arg name "${release}"             --arg git_commitish dataform-production             --arg result "${compilation_id}"             '{name:$name,gitCommitish:$git_commitish,releaseCompilationResult:$result}'             > release-evidence/dataform-promotion-request.json
-          curl --fail-with-body --silent --show-error -X PATCH             -H "Authorization: Bearer ${token}"             -H "Content-Type: application/json"             --data-binary @release-evidence/dataform-promotion-request.json             "https://dataform.googleapis.com/v1beta1/${release}?updateMask=releaseCompilationResult"             > release-evidence/dataform-release-new.json
-          dataform_promoted=true
-          test "$(jq -r '.releaseCompilationResult' release-evidence/dataform-release-new.json)" = "${compilation_id}"
-          python scripts/ci/dataform_promotion.py             --git-sha "${APPROVED_SHA}"             --tree-sha "$(jq -r '.dataform_tree_sha' release-evidence/dataform-prepared.json)"             --snapshot-commit-sha "$(jq -r '.snapshot_commit_sha' release-evidence/dataform-prepared.json)"             --compilation-json release-evidence/dataform-compilation.json             --previous-release-json release-evidence/dataform-release-previous.json             --current-release-json release-evidence/dataform-release-new.json             --output release-evidence/dataform-promotion-evidence.json
 
           trap - ERR
           jq -n --arg sha "${APPROVED_SHA}" '{status:"PROMOTION_COMPLETE",git_sha:$sha}'             > release-evidence/promotion-result.json
@@ -339,10 +392,15 @@ jobs:
             "https://dataform.googleapis.com/v1beta1/${release}?updateMask=releaseCompilationResult" \
             > release-evidence/dataform-evidence-failure-rollback.json || rollback_status=1
           test "$(jq -r '.releaseCompilationResult' release-evidence/dataform-evidence-failure-rollback.json)" = "${previous_result}" || rollback_status=1
+          python scripts/ci/dataform_branch_transaction.py rollback-production \
+            --previous-sha "$(jq -r '.previous_dataform_production_sha' release-evidence/dataform-prepared.json)" \
+            --candidate-sha "$(jq -r '.snapshot_commit_sha' release-evidence/dataform-prepared.json)" \
+            --evidence release-evidence/dataform-evidence-failure-branch-rollback.json || rollback_status=1
           python scripts/ci/cloud_run_traffic.py restore-directory \
             --directory traffic-snapshots \
             --project "${GCP_PROJECT_ID}" \
-            --region "${REGION}" || rollback_status=1
+            --region "${REGION}" \
+            --evidence-directory release-evidence/traffic-evidence-failure-rollback-verification || rollback_status=1
           if [[ "${rollback_status}" -ne 0 ]]; then
             echo "ROLLBACK_INCOMPLETE_AFTER_EVIDENCE_FAILURE" >&2
           else

@@ -27,7 +27,7 @@ def load_config():
     project_id = access_secret_version("project_id")
     dataset_id = access_secret_version("dataset_id")
     base_url = (os.environ.get("ALPACA_BASE_URL") or access_secret_version(os.environ.get("ALPACA_BASE_URL_SECRET", "ALPACA_BASE_URL"), required=False) or "https://paper-api.alpaca.markets").rstrip("/")
-    if "paper-api.alpaca.markets" not in base_url:
+    if base_url != "https://paper-api.alpaca.markets":
         raise RuntimeError("Safety guard: only Alpaca Paper API is allowed")
     return {
         "project_id": project_id,

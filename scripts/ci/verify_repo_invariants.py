@@ -139,6 +139,12 @@ def _workflow_violations(root: Path) -> Iterable[Violation]:
             relative,
             "code deploy must not mutate scheduler configuration",
         )
+    if "READINESS_TEST_MODE" in source or "READINESS_FAKE_TABLES" in source:
+        yield Violation(
+            "READINESS_FIXTURE_IN_DEPLOY",
+            relative,
+            "production deploy must never enable readiness test fixtures",
+        )
 
 
 def _policy_violations(root: Path) -> Iterable[Violation]:
@@ -272,7 +278,12 @@ def _legacy_violations(root: Path) -> Iterable[Violation]:
 
 def _candidate_text_files(root: Path) -> Iterable[Path]:
     for path in root.rglob("*"):
-        if not path.is_file() or any(part in IGNORED_SCAN_PARTS for part in path.parts):
+        if any(part in IGNORED_SCAN_PARTS for part in path.parts):
+            continue
+        try:
+            if not path.is_file():
+                continue
+        except OSError:
             continue
         if path.suffix.lower() in TEXT_SUFFIXES or path.name in {"Dockerfile", "Procfile"}:
             yield path

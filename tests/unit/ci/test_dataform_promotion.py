@@ -6,13 +6,15 @@ from scripts.ci import dataform_promotion
 GIT_SHA = "a" * 40
 TREE_SHA = "b" * 40
 SNAPSHOT_SHA = "c" * 40
+PREVIOUS_SHA = "d" * 40
+CANDIDATE_REF = "refs/heads/dataform-candidate-abcdef123456"
 COMPILATION = "projects/p/locations/us-east1/repositories/r/compilationResults/123"
 
 
 def compilation(errors=None, resolved=SNAPSHOT_SHA):
     return {
         "name": COMPILATION,
-        "releaseConfig": "projects/p/locations/us-east1/repositories/r/releaseConfigs/production",
+        "gitCommitish": CANDIDATE_REF.removeprefix("refs/heads/"),
         "resolvedGitCommitSha": resolved,
         "compilationErrors": errors or [],
     }
@@ -33,6 +35,9 @@ class DataformPromotionTests(unittest.TestCase):
             git_sha=GIT_SHA,
             tree_sha=TREE_SHA,
             snapshot_commit_sha=SNAPSHOT_SHA,
+            candidate_ref=CANDIDATE_REF,
+            previous_production_sha=PREVIOUS_SHA,
+            final_production_sha=SNAPSHOT_SHA,
             compilation=compilation(),
             previous_release=previous,
             current_release=release(),
@@ -49,13 +54,17 @@ class DataformPromotionTests(unittest.TestCase):
     def test_compilation_errors_fail_closed(self):
         with self.assertRaises(dataform_promotion.DataformPromotionError):
             dataform_promotion.validate_compilation(
-                compilation([{"message": "broken SQLX"}]), SNAPSHOT_SHA
+                compilation([{"message": "broken SQLX"}]),
+                SNAPSHOT_SHA,
+                CANDIDATE_REF.removeprefix("refs/heads/"),
             )
 
     def test_compilation_of_another_sha_fails_closed(self):
         with self.assertRaises(dataform_promotion.DataformPromotionError):
             dataform_promotion.validate_compilation(
-                compilation(resolved="d" * 40), SNAPSHOT_SHA
+                compilation(resolved="e" * 40),
+                SNAPSHOT_SHA,
+                CANDIDATE_REF.removeprefix("refs/heads/"),
             )
 
     def test_release_pointing_to_another_compilation_fails_closed(self):
@@ -68,6 +77,9 @@ class DataformPromotionTests(unittest.TestCase):
                 git_sha=GIT_SHA,
                 tree_sha=TREE_SHA,
                 snapshot_commit_sha=SNAPSHOT_SHA,
+                candidate_ref=CANDIDATE_REF,
+                previous_production_sha=PREVIOUS_SHA,
+                final_production_sha=SNAPSHOT_SHA,
                 compilation=compilation(),
                 previous_release={"name": release()["name"]},
                 current_release=release(),

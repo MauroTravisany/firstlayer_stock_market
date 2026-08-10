@@ -58,6 +58,13 @@ jobs:
       - name: Validate repository invariants and secret patterns
         run: python scripts/ci/verify_repo_invariants.py
 
+      - name: Validate additive Dataform expand contract
+        run: >-
+          python scripts/ci/verify_dataform_compatibility.py
+          --previous dataform/contracts/wp01_previous.json
+          --current dataform/contracts/runtime_compatibility.json
+          --scan dataform/definitions
+
       - name: Compile Python sources
         run: >-
           python -m compileall -q
@@ -96,6 +103,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      issues: read
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
     steps:
       - name: Checkout exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -203,6 +213,13 @@ jobs:
           docker save "${image}" | gzip -9 > "release-artifacts/${{ matrix.service }}/image.tar.gz"
           sha256sum "release-artifacts/${{ matrix.service }}/image.tar.gz"             > "release-artifacts/${{ matrix.service }}/image.tar.gz.sha256"
           jq -n             --arg service "${{ matrix.service }}"             --arg context "${{ matrix.context }}"             --arg git_sha "${GITHUB_SHA}"             --arg local_image "${image}"             --arg image_id "$(docker image inspect --format '{{.Id}}' "${image}")"             '{service:$service,context:$context,git_sha:$git_sha,local_image:$local_image,image_id:$image_id}'             > "release-artifacts/${{ matrix.service }}/metadata.json"
+
+      - name: Verify container liveness and non-mutating readiness
+        run: >-
+          python scripts/ci/integration_test_containers.py
+          --image "wp01/${{ matrix.service }}:${GITHUB_SHA}"
+          --service "${{ matrix.service }}"
+          --timeout-seconds 45
 
       - name: Upload immutable image artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

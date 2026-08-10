@@ -48,6 +48,8 @@ class CiWorkflowContractTests(unittest.TestCase):
             "git diff --check",
             "npm_audit_gate.py",
             "verify_action_pinning.py",
+            "verify_dataform_compatibility.py",
+            "integration_test_containers.py",
         )
         for fragment in required_fragments:
             with self.subTest(fragment=fragment):
@@ -110,10 +112,24 @@ class DeployWorkflowContractTests(unittest.TestCase):
         self.assertIn("releaseCompilationResult", source)
         self.assertIn("compilationErrors", source)
         self.assertIn("dataform-production", source)
+        self.assertIn("dataform-candidate-", source)
+        branch_tool = (
+            ROOT / "scripts" / "ci" / "dataform_branch_transaction.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("--force-with-lease", branch_tool)
+        self.assertIn("previous_dataform_production_sha", source)
+        self.assertIn("dataform_branch_transaction.py", source)
         self.assertIn("--actual-image-id", source)
+        candidate_index = source.index("dataform-candidate-")
+        compile_index = source.index("compilationResults", candidate_index)
+        production_move_index = source.index("promote", compile_index)
         stage_index = source.index("--no-traffic")
         smoke_index = source.index("smoke_test_services.py", stage_index)
         promote_index = source.index("gcloud run services update-traffic", smoke_index)
+        release_promotion_index = source.index("releaseCompilationResult", production_move_index)
+        self.assertLess(candidate_index, compile_index)
+        self.assertLess(compile_index, production_move_index)
+        self.assertLess(release_promotion_index, stage_index)
         self.assertLess(stage_index, smoke_index)
         self.assertLess(smoke_index, promote_index)
         self.assertNotIn("gcloud run deploy", source)
@@ -129,6 +145,7 @@ class DeployWorkflowContractTests(unittest.TestCase):
             source,
         )
         self.assertIn("ROLLBACK_COMPLETE_AFTER_EVIDENCE_FAILURE", source)
+        self.assertIn("rollback-production", source)
 
     def test_deploy_cannot_reactivate_schedulers_and_uses_scoped_repository_write(self):
         workflow = load_workflow("deploy.yml")

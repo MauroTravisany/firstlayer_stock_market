@@ -8,7 +8,7 @@
       "surface": "dataform",
       "reason": "Legacy @dataform/cli 3.0.0 build-only sandbox dependency; Dataform compilation runs on reviewed repository code and remains isolated from production promotion until all gates pass.",
       "owner": "@MauroTravisany",
-      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/36",
+      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/52",
       "expires_on": "2026-09-30"
     },
     {
@@ -18,7 +18,7 @@
       "surface": "dataform",
       "reason": "Legacy @dataform/cli 3.0.0 build-only sandbox dependency; Dataform compilation runs on reviewed repository code and remains isolated from production promotion until all gates pass.",
       "owner": "@MauroTravisany",
-      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/36",
+      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/52",
       "expires_on": "2026-09-30"
     },
     {
@@ -28,7 +28,7 @@
       "surface": "dataform",
       "reason": "Legacy @dataform/cli 3.0.0 build-only sandbox dependency; Dataform compilation runs on reviewed repository code and remains isolated from production promotion until all gates pass.",
       "owner": "@MauroTravisany",
-      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/36",
+      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/52",
       "expires_on": "2026-09-30"
     },
     {
@@ -38,7 +38,7 @@
       "surface": "dataform",
       "reason": "Legacy @dataform/cli 3.0.0 build-only sandbox dependency; Dataform compilation runs on reviewed repository code and remains isolated from production promotion until all gates pass.",
       "owner": "@MauroTravisany",
-      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/36",
+      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/52",
       "expires_on": "2026-09-30"
     },
     {
@@ -48,7 +48,7 @@
       "surface": "dataform",
       "reason": "Legacy @dataform/cli 3.0.0 build-only sandbox dependency; Dataform compilation runs on reviewed repository code and remains isolated from production promotion until all gates pass.",
       "owner": "@MauroTravisany",
-      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/36",
+      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/52",
       "expires_on": "2026-09-30"
     },
     {
@@ -58,7 +58,7 @@
       "surface": "dataform",
       "reason": "Legacy @dataform/cli 3.0.0 build-only sandbox dependency; Dataform compilation runs on reviewed repository code and remains isolated from production promotion until all gates pass.",
       "owner": "@MauroTravisany",
-      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/36",
+      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/52",
       "expires_on": "2026-09-30"
     },
     {
@@ -68,7 +68,7 @@
       "surface": "dataform",
       "reason": "Legacy @dataform/cli 3.0.0 build-only sandbox dependency; Dataform compilation runs on reviewed repository code and remains isolated from production promotion until all gates pass.",
       "owner": "@MauroTravisany",
-      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/36",
+      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/52",
       "expires_on": "2026-09-30"
     },
     {
@@ -78,7 +78,7 @@
       "surface": "dataform",
       "reason": "Legacy @dataform/cli 3.0.0 build-only sandbox dependency; Dataform compilation runs on reviewed repository code and remains isolated from production promotion until all gates pass.",
       "owner": "@MauroTravisany",
-      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/36",
+      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/52",
       "expires_on": "2026-09-30"
     },
     {
@@ -88,7 +88,7 @@
       "surface": "dataform",
       "reason": "Legacy @dataform/cli 3.0.0 build-only sandbox dependency; Dataform compilation runs on reviewed repository code and remains isolated from production promotion until all gates pass.",
       "owner": "@MauroTravisany",
-      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/36",
+      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/52",
       "expires_on": "2026-09-30"
     },
     {
@@ -98,7 +98,7 @@
       "surface": "dataform",
       "reason": "Legacy @dataform/cli 3.0.0 build-only sandbox dependency; Dataform compilation runs on reviewed repository code and remains isolated from production promotion until all gates pass.",
       "owner": "@MauroTravisany",
-      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/36",
+      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/52",
       "expires_on": "2026-09-30"
     },
     {
@@ -108,7 +108,7 @@
       "surface": "dataform",
       "reason": "Legacy @dataform/cli 3.0.0 build-only sandbox dependency; Dataform compilation runs on reviewed repository code and remains isolated from production promotion until all gates pass.",
       "owner": "@MauroTravisany",
-      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/36",
+      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/52",
       "expires_on": "2026-09-30"
     },
     {
@@ -118,7 +118,7 @@
       "surface": "dataform",
       "reason": "Legacy @dataform/cli 3.0.0 build-only sandbox dependency; Dataform compilation runs on reviewed repository code and remains isolated from production promotion until all gates pass.",
       "owner": "@MauroTravisany",
-      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/36",
+      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/52",
       "expires_on": "2026-09-30"
     },
     {
@@ -128,7 +128,7 @@
       "surface": "dataform",
       "reason": "Legacy @dataform/cli 3.0.0 build-only sandbox dependency; Dataform compilation runs on reviewed repository code and remains isolated from production promotion until all gates pass.",
       "owner": "@MauroTravisany",
-      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/36",
+      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/52",
       "expires_on": "2026-09-30"
     },
     {
@@ -138,7 +138,7 @@
       "surface": "dataform",
       "reason": "Legacy @dataform/cli 3.0.0 build-only sandbox dependency; Dataform compilation runs on reviewed repository code and remains isolated from production promotion until all gates pass.",
       "owner": "@MauroTravisany",
-      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/36",
+      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/52",
       "expires_on": "2026-09-30"
     },
     {
@@ -148,7 +148,7 @@
       "surface": "dataform",
       "reason": "Legacy @dataform/cli 3.0.0 build-only sandbox dependency; Dataform compilation runs on reviewed repository code and remains isolated from production promotion until all gates pass.",
       "owner": "@MauroTravisany",
-      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/36",
+      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/52",
       "expires_on": "2026-09-30"
     },
     {
@@ -158,7 +158,7 @@
       "surface": "dataform",
       "reason": "Legacy @dataform/cli 3.0.0 build-only sandbox dependency; Dataform compilation runs on reviewed repository code and remains isolated from production promotion until all gates pass.",
       "owner": "@MauroTravisany",
-      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/36",
+      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/52",
       "expires_on": "2026-09-30"
     },
     {
@@ -168,7 +168,7 @@
       "surface": "dataform",
       "reason": "Legacy @dataform/cli 3.0.0 build-only sandbox dependency; Dataform compilation runs on reviewed repository code and remains isolated from production promotion until all gates pass.",
       "owner": "@MauroTravisany",
-      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/36",
+      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/52",
       "expires_on": "2026-09-30"
     },
     {
@@ -178,7 +178,7 @@
       "surface": "dataform",
       "reason": "Legacy @dataform/cli 3.0.0 build-only sandbox dependency; Dataform compilation runs on reviewed repository code and remains isolated from production promotion until all gates pass.",
       "owner": "@MauroTravisany",
-      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/36",
+      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/52",
       "expires_on": "2026-09-30"
     },
     {
@@ -188,7 +188,7 @@
       "surface": "dataform",
       "reason": "Legacy @dataform/cli 3.0.0 build-only sandbox dependency; Dataform compilation runs on reviewed repository code and remains isolated from production promotion until all gates pass.",
       "owner": "@MauroTravisany",
-      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/36",
+      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/52",
       "expires_on": "2026-09-30"
     },
     {
@@ -198,7 +198,7 @@
       "surface": "dataform",
       "reason": "Legacy @dataform/cli 3.0.0 build-only sandbox dependency; Dataform compilation runs on reviewed repository code and remains isolated from production promotion until all gates pass.",
       "owner": "@MauroTravisany",
-      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/36",
+      "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/52",
       "expires_on": "2026-09-30"
     }
   ]

@@ -11,13 +11,13 @@ workflow syntax + invariants + secrets + unit tests + dependency gates
   -> CI gate for the exact git SHA
   -> production environment approval
   -> publish images once and resolve immutable digests
-  -> sync the exact approved dataform/ tree and compile it
+  -> create and compile an exact Dataform candidate without moving production
+  -> promote the backward-compatible Dataform expansion with compare-and-swap
   -> deploy revision with zero traffic
   -> metadata and functional /readyz smoke
   -> promote traffic
   -> functional /healthz smoke
-  -> promote the validated Dataform compilation
-  -> exact traffic and Dataform release rollback on failure
+  -> exact traffic, Dataform release and Dataform branch rollback on failure
 ```
 
 `ci.yml` es el unico workflow que responde a `pull_request`, `push` y `workflow_dispatch`. `deploy.yml` no acepta ninguno de esos eventos: solo recibe `workflow_run` de `CI`, con resultado `success`, evento original `push`, rama `main` y repositorio de origen identico.
@@ -139,23 +139,31 @@ Esta transicion es manual y permanece pendiente durante el PR.
 
 `scripts/ci/smoke_test_services.py` aplica dos capas. Primero ejecuta `gcloud run revisions describe`, exige una imagen `@sha256:`, valida `Ready=True`, confirma `observedGeneration` y compara el digest exacto. Luego obtiene un identity token con audience explicita y ejecuta solo `GET /readyz` sobre la revision sin trafico y `GET /healthz` despues de promoverla.
 
-Cada respuesta debe incluir `status`, `service`, `git_sha`, `version`, `image_digest`, `operation=readiness_probe` y `mutation_performed=false`. Tiene timeout, limita el tamano de respuesta y falla ante HTTP distinto de 200, JSON malformado, SHA/digest incorrecto o cualquier indicio de orden, estrategia, escritura BigQuery, alerta o mutacion de recursos. Los handlers se ejecutan antes de cargar configuracion de negocio.
+Cada respuesta debe incluir `status`, `service`, `git_sha`, `version`, `image_digest`, `operation=readiness_probe` y `mutation_performed=false`. `/healthz` es estatico. `/readyz` valida configuracion, imports, presencia de secretos, contratos read-only de tablas, Alpaca Paper exacto y Strategy Brain `BACKTEST_ONLY`, todo con timeout y sin exponer valores. Falla ante HTTP distinto de 200, JSON malformado, identidad incorrecta o cualquier indicio de orden, estrategia, escritura, alerta o mutacion.
 
 ## 9. Rollback exacto
 
 Antes de crear revisiones, `cloud_run_traffic.py` registra por servicio `spec.traffic`, `status.traffic`, revisiones, porcentajes, tags, `latestReadyRevision` y `latestCreatedRevision`.
 
-Ante un fallo, restaura en orden inverso el reparto anterior con `--to-revisions`, limpia los tags nuevos y repone todos los tags previos. No usa `latestReadyRevision` como sustituto de la revision activa. Si el estado ya coincide, el rollback es idempotente y no ejecuta cambios. Un fallo parcial se informa como `ROLLBACK_INCOMPLETE` y mantiene el workflow fallando.
+Ante un fallo, restaura en orden inverso desde `spec.traffic` mediante `--to-revisions`, preservando `latestRevision`, revisiones, porcentajes y tags. Luego vuelve a describir cada servicio y compara `spec.traffic`, `status.traffic`, tags y porcentajes. Un comando exitoso no basta: cualquier diferencia produce `ROLLBACK_INCOMPLETE`. Si el estado ya coincide, no ejecuta cambios y verifica igualmente el snapshot.
 
 La retencion del artifact es parte del gate: si las promociones terminaron pero `actions/upload-artifact` falla, el paso `failure()` posterior restaura el release Dataform y los mapas de trafico. No se acepta una promocion activa sin evidencia descargable.
 
 ## 10. Promocion y rollback Dataform
 
-Despues del approval, deploy vuelve a verificar que el SHA aprobado siga siendo el `main` remoto actual. Antes de mover la rama Dataform exige que el release no tenga una programacion automatica activa. Crea un commit de snapshot cuyo arbol es exactamente `APPROVED_SHA:dataform`, lo publica en `dataform-production` y verifica el SHA remoto.
+Despues del approval, deploy vuelve a verificar que el SHA aprobado siga siendo el `main` remoto actual y captura `previous_dataform_production_sha`. Crea un commit con el tree exacto `APPROVED_SHA:dataform`, pero publica primero solo una rama `dataform-candidate-<sha>`. La compilacion usa esa rama candidata, debe resolver al commit exacto y contener cero `compilationErrors`; durante toda esta preparacion `dataform-production` debe conservar el SHA anterior.
 
-La compilacion se crea desde el release `production`; debe resolver al commit de snapshot exacto y contener cero `compilationErrors`. El release no cambia hasta que las ocho revisiones Cloud Run superan smoke y promocion. Entonces se actualiza solo `releaseCompilationResult` y se genera `dataform-promotion-evidence.json` con el SHA Git, tree SHA, snapshot commit, compilation ID, release anterior, release nuevo y metadata de rollback.
+La fase de promocion mueve `dataform-production` mediante compare-and-swap/`--force-with-lease`. Si el SHA remoto cambió, falla cerrado. Luego actualiza solo `releaseCompilationResult` a la compilacion ya validada y registra SHA anterior, candidato y final. Si falla cualquier paso posterior, restaura el release anterior y la rama anterior; el rollback de rama tambien usa CAS y es idempotente.
 
-Si falla cualquier paso posterior, se restaura el `releaseCompilationResult` anterior y se verifica la respuesta. La rama puede conservar el commit auditado, pero ningun workflow lo ejecuta mientras el release apunte a la compilacion anterior.
+### Orden expand/contract
+
+No existe una transaccion distribuida entre Git, Dataform/BigQuery y Cloud Run. Por eso cada release debe respetar este orden:
+
+1. CI valida `dataform/contracts/runtime_compatibility.json` contra el contrato previo.
+2. Solo se permiten expansiones aditivas; `DROP`, `RENAME`, cambios de tipo y contratos legacy incompletos fallan.
+3. Se promueve la expansion Dataform compatible.
+4. Se promueve Cloud Run, mientras codigo anterior y nuevo siguen funcionando.
+5. Una eliminacion se posterga a otra release y requiere demostrar que ya no existen consumidores legacy.
 
 Despues de un rollback autorizado se debe:
 
@@ -172,7 +180,7 @@ Este PR prueba los algoritmos con fixtures y contratos. No ejecuta rollback live
 
 Todas las entradas `uses:` deben estar fijadas a un commit SHA completo. Las acciones Docker, incluido actionlint, deben usar `@sha256:<digest>`. `verify_action_pinning.py` y los workflow contract tests bloquean tags mutables.
 
-CI ejecuta audits separados para `dashboard/` y `dataform/`. El JSON se valida con `npm_audit_gate.py`; cualquier finding critical no autorizado falla. `.github/npm-audit-allowlist.json` no acepta excepciones globales: cada registro debe identificar GHSA/CVE, paquete, version exacta, superficie, razon, owner, issue y fecha de expiracion. Un cambio de paquete/version, registro incompleto o fecha vencida falla cerrado.
+CI ejecuta audits separados para `dashboard/` y `dataform/`. El JSON se valida con `npm_audit_gate.py`; cualquier finding critical no autorizado falla. `.github/npm-audit-allowlist.json` no acepta excepciones globales: cada registro debe identificar GHSA/CVE, paquete, version exacta, superficie, razon, owner, issue abierto y fecha de expiracion. El gate rechaza issue cerrado, cambio de paquete/version, registro incompleto, fecha vencida, duplicado o excepcion sin finding correspondiente. La deuda `vm2@3.9.19` se sigue exclusivamente en Issue #52 y debe eliminarse antes de `2026-09-30`.
 
 Para renovar una excepcion:
 

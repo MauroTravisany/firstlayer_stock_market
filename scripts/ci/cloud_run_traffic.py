@@ -73,15 +73,67 @@ def semantic_traffic(rows):
     )
 
 
+def semantic_spec_traffic(rows):
+    return sorted(
+        (
+            "LATEST" if row.get("latestRevision") is True else str(row.get("revisionName", "")),
+            int(row.get("percent", 0) or 0),
+            str(row.get("tag", "")),
+        )
+        for row in rows
+    )
+
+
+def _status_summary(rows):
+    percentages = {}
+    tags = {}
+    for row in rows:
+        revision = str(row.get("revisionName", ""))
+        if not revision:
+            raise TrafficRestoreError("status traffic row is missing revisionName")
+        percentages[revision] = max(
+            percentages.get(revision, 0), int(row.get("percent", 0) or 0)
+        )
+        if row.get("tag"):
+            tags[str(row["tag"])] = revision
+    return percentages, tags
+
+
+def verify_restored(snapshot, document):
+    current_spec = _copy_traffic(document.get("spec", {}).get("traffic", []), "spec.traffic")
+    current_status = _copy_traffic(document.get("status", {}).get("traffic", []), "status.traffic")
+    expected_percentages, expected_tags = _status_summary(snapshot["status_traffic"])
+    current_percentages, current_tags = _status_summary(current_status)
+    checks = {
+        "spec_traffic": semantic_spec_traffic(current_spec)
+        == semantic_spec_traffic(snapshot["spec_traffic"]),
+        "status_traffic": semantic_traffic(current_status)
+        == semantic_traffic(snapshot["status_traffic"]),
+        "percentages": current_percentages == expected_percentages,
+        "tags": current_tags == expected_tags,
+    }
+    if not all(checks.values()):
+        failed = ",".join(name for name, passed in checks.items() if not passed)
+        raise TrafficRestoreError(f"post-restore verification failed: {failed}")
+    return {
+        "verified": True,
+        "checks": checks,
+        "spec_traffic": current_spec,
+        "status_traffic": current_status,
+        "percentages": current_percentages,
+        "tags": current_tags,
+    }
+
+
 def build_restore_plan(snapshot, project, region):
     service = snapshot["service"]
-    rows = snapshot["status_traffic"]
+    rows = snapshot["spec_traffic"]
     percentages = {}
     tags = []
     for row in rows:
-        revision = row.get("revisionName")
+        revision = "LATEST" if row.get("latestRevision") is True else row.get("revisionName")
         if not revision:
-            raise TrafficRestoreError("traffic row is missing revisionName")
+            raise TrafficRestoreError("spec traffic row has no revisionName or latestRevision")
         percent = int(row.get("percent", 0) or 0)
         percentages[revision] = max(percentages.get(revision, 0), percent)
         if row.get("tag"):
@@ -111,27 +163,71 @@ def build_restore_plan(snapshot, project, region):
     return plan
 
 
-def restore_snapshot(snapshot, current_document, runner, project="project", region="region"):
-    current_rows = current_document.get("status", {}).get("traffic", [])
-    if semantic_traffic(current_rows) == semantic_traffic(snapshot["status_traffic"]):
-        return False
+def restore_snapshot(
+    snapshot,
+    current_document,
+    runner,
+    describer,
+    project="project",
+    region="region",
+):
+    try:
+        verification = verify_restored(snapshot, current_document)
+    except TrafficRestoreError:
+        verification = None
+    if verification is not None:
+        return {"service": snapshot["service"], "changed": False, **verification}
     for command in build_restore_plan(snapshot, project, region):
         runner(command)
-    return True
+    try:
+        restored_document = describer()
+    except Exception as exc:
+        raise TrafficRestoreError(
+            f"post-restore describe failed for {snapshot['service']}: {exc}"
+        ) from exc
+    verification = verify_restored(snapshot, restored_document)
+    return {"service": snapshot["service"], "changed": True, **verification}
 
 
-def restore_many(snapshots, current_documents, runner, project, region):
+def restore_many(
+    snapshots,
+    current_documents,
+    runner,
+    describer,
+    project,
+    region,
+    recorder=None,
+):
     failures = []
+    results = []
     for snapshot in reversed(snapshots):
         service = snapshot["service"]
         try:
-            restore_snapshot(
-                snapshot, current_documents[service], runner, project, region
-            )
+            result = restore_snapshot(
+                    snapshot,
+                    current_documents[service],
+                    runner,
+                    lambda service=service: describer(service),
+                    project,
+                    region,
+                )
+            results.append(result)
+            if recorder:
+                recorder(result)
         except Exception as exc:
+            if recorder:
+                recorder(
+                    {
+                        "service": service,
+                        "changed": None,
+                        "verified": False,
+                        "error": str(exc),
+                    }
+                )
             failures.append(f"{service}: {exc}")
     if failures:
         raise TrafficRestoreError("; ".join(failures))
+    return results
 
 
 def _run(command, timeout=120):
@@ -180,6 +276,7 @@ def main() -> int:
     restore.add_argument("--directory", type=Path, required=True)
     restore.add_argument("--project", required=True)
     restore.add_argument("--region", required=True)
+    restore.add_argument("--evidence-directory", type=Path)
     args = parser.parse_args()
     try:
         if args.command == "snapshot":
@@ -201,7 +298,26 @@ def main() -> int:
                 row["service"]: _describe(row["service"], args.project, args.region)
                 for row in snapshots
             }
-            restore_many(snapshots, current, _run, args.project, args.region)
+            if args.evidence_directory:
+                args.evidence_directory.mkdir(parents=True, exist_ok=True)
+
+                def record(result):
+                    output = args.evidence_directory / f"{result['service']}.json"
+                    output.write_text(
+                        json.dumps(result, indent=2, sort_keys=True) + "\n",
+                        encoding="utf-8",
+                    )
+            else:
+                record = None
+            restore_many(
+                snapshots,
+                current,
+                _run,
+                lambda service: _describe(service, args.project, args.region),
+                args.project,
+                args.region,
+                recorder=record,
+            )
     except (TrafficRestoreError, OSError, json.JSONDecodeError, subprocess.TimeoutExpired) as exc:
         print(json.dumps({"status": "FAIL", "error": str(exc)}, sort_keys=True))
         return 2

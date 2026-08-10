@@ -5,7 +5,10 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 import re
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 
@@ -62,7 +65,14 @@ def _installed_versions(lock_document, package):
     }
 
 
-def evaluate_audit(audit_document, lock_document, allowlist_document, surface, today=None):
+def evaluate_audit(
+    audit_document,
+    lock_document,
+    allowlist_document,
+    surface,
+    today=None,
+    issue_states=None,
+):
     today = today or dt.date.today()
     if allowlist_document.get("version") != 1:
         raise NpmAuditError("npm audit allowlist version must equal 1")
@@ -70,6 +80,7 @@ def evaluate_audit(audit_document, lock_document, allowlist_document, surface, t
     if not isinstance(exceptions, list):
         raise NpmAuditError("npm audit allowlist exceptions must be a list")
     allowed = set()
+    seen = set()
     for row in exceptions:
         if not isinstance(row, dict) or not REQUIRED.issubset(row):
             raise NpmAuditError("npm audit exception is missing mandatory fields")
@@ -80,14 +91,24 @@ def evaluate_audit(audit_document, lock_document, allowlist_document, surface, t
         if not str(row["reason"]).strip() or not str(row["owner"]).strip():
             raise NpmAuditError("npm audit exception requires reason and owner")
         _expiry(row["expires_on"], today)
-        allowed.add(
-            (
-                str(row["surface"]),
-                str(row["package"]),
-                str(row["version"]),
-                str(row["advisory"]).upper(),
-            )
+        issue = str(row["remediation_issue"])
+        if issue_states is not None and issue_states.get(issue) != "open":
+            state = issue_states.get(issue, "unverified")
+            raise NpmAuditError(f"remediation issue must be open: {issue} ({state})")
+        finding_key = (
+            str(row["surface"]),
+            str(row["package"]),
+            str(row["version"]),
+            str(row["advisory"]).upper(),
         )
+        exception_key = finding_key + (issue, str(row["expires_on"]))
+        if exception_key in seen:
+            raise NpmAuditError("duplicate npm audit exception")
+        seen.add(exception_key)
+        if finding_key[0] == surface:
+            if finding_key in allowed:
+                raise NpmAuditError("duplicate npm audit finding authorization")
+            allowed.add(finding_key)
 
     findings = []
     vulnerabilities = audit_document.get("vulnerabilities", {})
@@ -123,6 +144,10 @@ def evaluate_audit(audit_document, lock_document, allowlist_document, surface, t
                 raise NpmAuditError(
                     f"unauthorized critical vulnerability: {surface}/{package}@{version} {advisory}"
                 )
+    unused = allowed - set(findings)
+    if unused:
+        rendered = ", ".join("/".join(row) for row in sorted(unused))
+        raise NpmAuditError(f"npm audit exception has no matching finding: {rendered}")
     return {
         "status": "PASS",
         "surface": surface,
@@ -138,19 +163,51 @@ def _read_json(path):
         raise NpmAuditError(f"invalid JSON file: {path}") from exc
 
 
+def _fetch_issue_states(allowlist_document, token, timeout=10):
+    if not token:
+        raise NpmAuditError("GITHUB_TOKEN is required to verify remediation issues")
+    states = {}
+    for issue in sorted(
+        {str(row.get("remediation_issue")) for row in allowlist_document.get("exceptions", [])}
+    ):
+        match = ISSUE_URL.fullmatch(issue)
+        if not match:
+            raise NpmAuditError(f"invalid remediation issue URL: {issue}")
+        path = issue.removeprefix("https://github.com/")
+        owner, repo, _, number = path.split("/", 3)
+        request = urllib.request.Request(
+            f"https://api.github.com/repos/{owner}/{repo}/issues/{number}",
+            headers={
+                "Accept": "application/vnd.github+json",
+                "Authorization": f"Bearer {token}",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                document = json.loads(response.read().decode("utf-8"))
+        except (OSError, urllib.error.HTTPError, json.JSONDecodeError) as exc:
+            raise NpmAuditError(f"could not verify remediation issue: {issue}") from exc
+        states[issue] = str(document.get("state", "unknown")).lower()
+    return states
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--audit-json", required=True)
     parser.add_argument("--package-lock", required=True)
     parser.add_argument("--allowlist", required=True)
     parser.add_argument("--surface", required=True)
+    parser.add_argument("--github-token", default=os.environ.get("GITHUB_TOKEN"))
     args = parser.parse_args()
     try:
+        allowlist = _read_json(args.allowlist)
         result = evaluate_audit(
             _read_json(args.audit_json),
             _read_json(args.package_lock),
-            _read_json(args.allowlist),
+            allowlist,
             args.surface,
+            issue_states=_fetch_issue_states(allowlist, args.github_token),
         )
     except NpmAuditError as exc:
         print(json.dumps({"status": "FAIL", "error": str(exc)}, sort_keys=True))

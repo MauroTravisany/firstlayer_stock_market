@@ -35,7 +35,7 @@ def allowlist(**overrides):
         "surface": "dataform",
         "reason": "Inherited toolchain dependency",
         "owner": "@MauroTravisany",
-        "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/36",
+        "remediation_issue": "https://github.com/MauroTravisany/firstlayer_stock_market/issues/52",
         "expires_on": "2026-09-30",
     }
     row.update(overrides)
@@ -45,7 +45,14 @@ def allowlist(**overrides):
 class NpmAuditGateTests(unittest.TestCase):
     def test_exact_unexpired_exception_is_accepted(self):
         result = npm_audit_gate.evaluate_audit(
-            audit(), lock(), allowlist(), "dataform", dt.date(2026, 8, 10)
+            audit(),
+            lock(),
+            allowlist(),
+            "dataform",
+            dt.date(2026, 8, 10),
+            issue_states={
+                "https://github.com/MauroTravisany/firstlayer_stock_market/issues/52": "open"
+            },
         )
         self.assertEqual(result["status"], "PASS")
 
@@ -69,6 +76,37 @@ class NpmAuditGateTests(unittest.TestCase):
                         allowlist(expires_on=expires_on),
                         "dataform",
                         dt.date(2026, 8, 10),
+                    )
+
+    def test_closed_remediation_issue_fails(self):
+        with self.assertRaises(npm_audit_gate.NpmAuditError):
+            npm_audit_gate.evaluate_audit(
+                audit(),
+                lock(),
+                allowlist(),
+                "dataform",
+                dt.date(2026, 8, 10),
+                issue_states={
+                    "https://github.com/MauroTravisany/firstlayer_stock_market/issues/52": "closed"
+                },
+            )
+
+    def test_duplicate_or_unused_exception_fails(self):
+        duplicate = allowlist()
+        duplicate["exceptions"].append(dict(duplicate["exceptions"][0]))
+        unused = allowlist(advisory="GHSA-unused-0000-0000")
+        for document in (duplicate, unused):
+            with self.subTest(document=document):
+                with self.assertRaises(npm_audit_gate.NpmAuditError):
+                    npm_audit_gate.evaluate_audit(
+                        audit(),
+                        lock(),
+                        document,
+                        "dataform",
+                        dt.date(2026, 8, 10),
+                        issue_states={
+                            "https://github.com/MauroTravisany/firstlayer_stock_market/issues/52": "open"
+                        },
                     )
 
     def test_package_or_version_change_fails(self):

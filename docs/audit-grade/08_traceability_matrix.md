@@ -125,10 +125,11 @@ Una fila solo pasa a `PASS` con enlace a código, prueba ejecutada y evidencia r
 | CI-06 | Environment approval | `deploy.yml` exige `environment: production`, pero la API remota responde 404 porque el environment aún no fue creado | WP-01 | [lectura GitHub y runbook](evidence/WP-01.md#estado-remoto-y-pasos-manuales) | PARTIAL |
 | CI-07 | Invariantes de seguridad del repositorio | Riesgo de habilitar ejecución, reactivar Strategy Brain, desplegar ramas no autorizadas o promover legacy | WP-01 | [checker y pruebas negativas](evidence/WP-01.md#invariantes-de-seguridad) | PASS |
 | CI-08 | Sintaxis y permisos mínimos de workflows | Riesgo de YAML inválido o permisos `write` innecesarios | WP-01 | [actionlint y contratos](evidence/WP-01.md#verificación-ejecutada) | PASS |
-| CI-09 | Promoción Dataform auditada | El workflow sincroniza el tree exacto del SHA aprobado, exige compilación sin errores y conserva release/rollback metadata; no se ejecutó contra production | WP-01 | [promoción y pruebas](evidence/WP-01.md#promocion-dataform) | PARTIAL |
+| CI-09 | Promoción Dataform auditada | Candidato exacto se compila sin mover producción; la rama productiva usa CAS y rollback de release+rama. No se ejecutó contra production | WP-01 | [promoción transaccional y pruebas](evidence/WP-01.md#promocion-dataform-transaccional-por-referencia) | PARTIAL |
 | CI-10 | Dashboard sin SHA obsoleto | El workflow valida repositorio, evento, CI y SHA actual de `main`, y repite el check antes de Pages | WP-01 | [arquitectura y contratos](evidence/WP-01.md#arquitectura-resultante) | PASS |
-| CI-11 | Dependencias críticas fail-closed | Audits npm separados y allowlist exacta, versionada y con expiración; deuda autorizada de Dataform permanece hasta 2026-09-30 | WP-01 | [gate y excepciones](evidence/WP-01.md#dependencias) | PASS |
-| CI-12 | Smoke funcional no mutante | Metadata más `/readyz` staged y `/healthz` promovido, con identidad, timeout y detección de mutaciones; no se ejecutó live | WP-01/09 | [implementación y pruebas](evidence/WP-01.md#smoke-funcional-no-mutante) | PASS |
+| CI-11 | Dependencias críticas fail-closed | Audits separados; excepciones exactas exigen issue abierto, finding presente, unicidad y expiración. `vm2` se sigue en #52 | WP-01 | [gate y excepciones](evidence/WP-01.md#dependencias) | PASS |
+| CI-12 | Smoke funcional no mutante | Liveness estático y readiness real con identidad, configuración, imports, secretos, tablas read-only y modos seguros; 8/8 imágenes integradas | WP-01/09 | [implementación y pruebas](evidence/WP-01.md#smoke-funcional-no-mutante) | PASS |
+| CI-13 | Transición Dataform/Cloud Run compatible | No hay transacción distribuida; CI exige expansión aditiva que soporte consumidores legacy y current antes de Cloud Run | WP-01 | [contrato expand/contract](evidence/WP-01.md#contrato-expandcontract) | PASS |
 | SEC-01 | Workload Identity Federation | JSON SA secret | WP-10 | OIDC workflow | MISSING |
 | SEC-02 | Least privilege por servicio | Permisos no inventariados | WP-10 | IAM matrix | MISSING |
 | SEC-03 | Terraform fuente de verdad | Infra parcial/dispersa | WP-10 | plan/drift report | MISSING |
@@ -144,7 +145,7 @@ Una fila solo pasa a `PASS` con enlace a código, prueba ejecutada y evidencia r
 | OP-02 | SLO/freshness/quality | Calidad parcial, SLO no formal | WP-09 | SLO dashboard | PARTIAL |
 | OP-03 | Runbooks | Documentación parcial | WP-09/11 | drill evidence | PARTIAL |
 | OP-04 | Backfill seguro | Manual/no estandarizado | WP-09 | backfill test | MISSING |
-| OP-05 | Rollback probado | Restauración exacta de tráfico y release Dataform probada con fixtures, incluidos tags, reparto parcial, fallos e idempotencia; falta un drill live autorizado | WP-01/09 | [rollback exacto](evidence/WP-01.md#rollback-exacto) | PARTIAL |
+| OP-05 | Rollback probado | Restauración desde `spec.traffic` con post-describe de spec/status/tags/porcentajes y rollback Dataform release+rama probados; falta drill live autorizado | WP-01/09 | [rollback exacto](evidence/WP-01.md#rollback-exacto) | PARTIAL |
 | OP-06 | RPO/RTO/restore | No definido | WP-10 | restore evidence | MISSING |
 | OP-07 | Cost monitoring | No formal | WP-09 | budget/alert | MISSING |
 
