@@ -121,10 +121,14 @@ Una fila solo pasa a `PASS` con enlace a código, prueba ejecutada y evidencia r
 | CI-02 | CI antes de deploy | El deploy versionado sólo consume un `workflow_run` exitoso de `CI` para el SHA exacto de un push a `main`; el workflow permanece deshabilitado hasta configurar gates remotos | WP-01 | [contratos y arquitectura CI/CD](evidence/WP-01.md#arquitectura-resultante) | PASS |
 | CI-03 | Tests cuantitativos en CI | CI ejecuta los tests Python existentes, pero la cobertura cuantitativa audit-grade completa pertenece a WP-05/WP-07 | WP-01/05/07 | [suite ejecutada](evidence/WP-01.md#verificación-ejecutada) | PARTIAL |
 | CI-04 | Dataform test dataset/dry-run | Dataform compila de forma reproducible; aún no existe dataset aislado ni dry-run BigQuery para todas las acciones | WP-01/05 | [compilación Dataform](evidence/WP-01.md#verificación-ejecutada) | PARTIAL |
-| CI-05 | Build once/promote digest | CI construye una vez, conserva checksum/provenance y deploy exige el artefacto del run exacto y promueve por digest; no existe evidencia de promoción live porque deploy está deshabilitado | WP-01/10 | [artefactos inmutables y builds locales](evidence/WP-01.md#build-once-y-digest) | PARTIAL |
+| CI-05 | Build once/promote digest | CI construye una vez, valida checksum e image ID y deploy exige el artefacto del run exacto y digest inmutable; no existe evidencia de promoción live porque deploy está deshabilitado | WP-01/10 | [artefactos inmutables y builds locales](evidence/WP-01.md#build-once-e-identidad) | PARTIAL |
 | CI-06 | Environment approval | `deploy.yml` exige `environment: production`, pero la API remota responde 404 porque el environment aún no fue creado | WP-01 | [lectura GitHub y runbook](evidence/WP-01.md#estado-remoto-y-pasos-manuales) | PARTIAL |
 | CI-07 | Invariantes de seguridad del repositorio | Riesgo de habilitar ejecución, reactivar Strategy Brain, desplegar ramas no autorizadas o promover legacy | WP-01 | [checker y pruebas negativas](evidence/WP-01.md#invariantes-de-seguridad) | PASS |
 | CI-08 | Sintaxis y permisos mínimos de workflows | Riesgo de YAML inválido o permisos `write` innecesarios | WP-01 | [actionlint y contratos](evidence/WP-01.md#verificación-ejecutada) | PASS |
+| CI-09 | Promoción Dataform auditada | El workflow sincroniza el tree exacto del SHA aprobado, exige compilación sin errores y conserva release/rollback metadata; no se ejecutó contra production | WP-01 | [promoción y pruebas](evidence/WP-01.md#promocion-dataform) | PARTIAL |
+| CI-10 | Dashboard sin SHA obsoleto | El workflow valida repositorio, evento, CI y SHA actual de `main`, y repite el check antes de Pages | WP-01 | [arquitectura y contratos](evidence/WP-01.md#arquitectura-resultante) | PASS |
+| CI-11 | Dependencias críticas fail-closed | Audits npm separados y allowlist exacta, versionada y con expiración; deuda autorizada de Dataform permanece hasta 2026-09-30 | WP-01 | [gate y excepciones](evidence/WP-01.md#dependencias) | PASS |
+| CI-12 | Smoke funcional no mutante | Metadata más `/readyz` staged y `/healthz` promovido, con identidad, timeout y detección de mutaciones; no se ejecutó live | WP-01/09 | [implementación y pruebas](evidence/WP-01.md#smoke-funcional-no-mutante) | PASS |
 | SEC-01 | Workload Identity Federation | JSON SA secret | WP-10 | OIDC workflow | MISSING |
 | SEC-02 | Least privilege por servicio | Permisos no inventariados | WP-10 | IAM matrix | MISSING |
 | SEC-03 | Terraform fuente de verdad | Infra parcial/dispersa | WP-10 | plan/drift report | MISSING |
@@ -140,7 +144,7 @@ Una fila solo pasa a `PASS` con enlace a código, prueba ejecutada y evidencia r
 | OP-02 | SLO/freshness/quality | Calidad parcial, SLO no formal | WP-09 | SLO dashboard | PARTIAL |
 | OP-03 | Runbooks | Documentación parcial | WP-09/11 | drill evidence | PARTIAL |
 | OP-04 | Backfill seguro | Manual/no estandarizado | WP-09 | backfill test | MISSING |
-| OP-05 | Rollback probado | Algoritmo y contrato probados con fixtures; falta un drill autorizado sobre Cloud Run | WP-01/09 | [smoke read-only y rollback documentado](evidence/WP-01.md#smoke-y-rollback) | PARTIAL |
+| OP-05 | Rollback probado | Restauración exacta de tráfico y release Dataform probada con fixtures, incluidos tags, reparto parcial, fallos e idempotencia; falta un drill live autorizado | WP-01/09 | [rollback exacto](evidence/WP-01.md#rollback-exacto) | PARTIAL |
 | OP-06 | RPO/RTO/restore | No definido | WP-10 | restore evidence | MISSING |
 | OP-07 | Cost monitoring | No formal | WP-09 | budget/alert | MISSING |
 

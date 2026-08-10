@@ -89,13 +89,41 @@ def verify_artifacts(artifacts_dir: Path, inventory_path: Path, approved_sha: st
     return [records[service] for service in sorted(records)]
 
 
+def verify_loaded_image_id(metadata_path: Path, actual_image_id: str):
+    metadata = _load_json(Path(metadata_path))
+    expected = str(metadata.get("image_id", ""))
+    if not IMAGE_ID.fullmatch(actual_image_id):
+        raise ArtifactVerificationError("loaded image ID is not a valid sha256 image ID")
+    if actual_image_id != expected:
+        raise ArtifactVerificationError("loaded image ID does not match immutable metadata")
+    return {
+        "status": "PASS",
+        "service": metadata.get("service"),
+        "image_id": actual_image_id,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--artifacts", type=Path, required=True)
-    parser.add_argument("--inventory", type=Path, required=True)
-    parser.add_argument("--approved-sha", required=True)
+    parser.add_argument("--artifacts", type=Path)
+    parser.add_argument("--inventory", type=Path)
+    parser.add_argument("--approved-sha")
+    parser.add_argument("--metadata", type=Path)
+    parser.add_argument("--actual-image-id")
     args = parser.parse_args()
     try:
+        if args.metadata or args.actual_image_id:
+            if not args.metadata or not args.actual_image_id:
+                raise ArtifactVerificationError(
+                    "--metadata and --actual-image-id must be provided together"
+                )
+            result = verify_loaded_image_id(args.metadata, args.actual_image_id)
+            print(json.dumps(result, sort_keys=True))
+            return 0
+        if not args.artifacts or not args.inventory or not args.approved_sha:
+            raise ArtifactVerificationError(
+                "artifact mode requires --artifacts, --inventory and --approved-sha"
+            )
         records = verify_artifacts(args.artifacts, args.inventory, args.approved_sha)
     except ArtifactVerificationError as exc:
         print(json.dumps({"status": "FAIL", "error": str(exc)}, sort_keys=True))

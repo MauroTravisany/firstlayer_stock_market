@@ -46,6 +46,8 @@ class CiWorkflowContractTests(unittest.TestCase):
             "dependency-review-action",
             "actionlint",
             "git diff --check",
+            "npm_audit_gate.py",
+            "verify_action_pinning.py",
         )
         for fragment in required_fragments:
             with self.subTest(fragment=fragment):
@@ -58,6 +60,9 @@ class CiWorkflowContractTests(unittest.TestCase):
 
         dependency_review = workflow["jobs"]["dependency-review"]["steps"][0]
         self.assertEqual(dependency_review["with"]["fail-on-severity"], "critical")
+
+        build_needs = set(as_list(workflow["jobs"]["build-images"].get("needs")))
+        self.assertIn("preflight-gate", build_needs)
 
 
 class DeployWorkflowContractTests(unittest.TestCase):
@@ -96,10 +101,16 @@ class DeployWorkflowContractTests(unittest.TestCase):
         self.assertIn("--no-traffic", source)
         self.assertIn("update-traffic", source)
         self.assertIn("smoke_test_services.py", source)
-        self.assertIn("rollback", source.lower())
-        self.assertIn("tac promoted-revisions.tsv", source)
-        self.assertIn('trap \'status=$?; rollback; exit ${status}\' ERR', source)
-        self.assertIn('--to-revisions "${previous_revision}=100"', source)
+        self.assertIn("/readyz", source)
+        self.assertIn("/healthz", source)
+        self.assertIn("cloud_run_traffic.py", source)
+        self.assertIn("traffic-snapshots", source)
+        self.assertIn("dataform_promotion.py", source)
+        self.assertIn("dataform-promotion-evidence", source)
+        self.assertIn("releaseCompilationResult", source)
+        self.assertIn("compilationErrors", source)
+        self.assertIn("dataform-production", source)
+        self.assertIn("--actual-image-id", source)
         stage_index = source.index("--no-traffic")
         smoke_index = source.index("smoke_test_services.py", stage_index)
         promote_index = source.index("gcloud run services update-traffic", smoke_index)
@@ -108,7 +119,18 @@ class DeployWorkflowContractTests(unittest.TestCase):
         self.assertNotIn("gcloud run deploy", source)
         self.assertNotIn("--source", source)
 
-    def test_deploy_cannot_reactivate_schedulers_or_write_repository(self):
+    def test_missing_release_evidence_rolls_back_a_completed_promotion(self):
+        source = (WORKFLOWS / "deploy.yml").read_text(encoding="utf-8")
+
+        self.assertIn("id: promote", source)
+        self.assertIn("id: release_evidence", source)
+        self.assertIn(
+            "failure() && steps.promote.outcome == 'success' && steps.release_evidence.outcome == 'failure'",
+            source,
+        )
+        self.assertIn("ROLLBACK_COMPLETE_AFTER_EVIDENCE_FAILURE", source)
+
+    def test_deploy_cannot_reactivate_schedulers_and_uses_scoped_repository_write(self):
         workflow = load_workflow("deploy.yml")
         source = (WORKFLOWS / "deploy.yml").read_text(encoding="utf-8")
 
@@ -120,10 +142,14 @@ class DeployWorkflowContractTests(unittest.TestCase):
         self.assertNotIn("strategy-brain-review", source)
         self.assertNotIn("scheduler jobs create", source)
         self.assertNotIn("scheduler jobs update", source)
-        for job_name, job in workflow["jobs"].items():
-            with self.subTest(job=job_name):
-                permissions = job.get("permissions", workflow.get("permissions", {}))
-                self.assertNotIn("write", permissions.values())
+        self.assertEqual(
+            workflow["jobs"]["build"]["permissions"],
+            {"actions": "read", "contents": "read"},
+        )
+        self.assertEqual(
+            workflow["jobs"]["deploy"]["permissions"],
+            {"actions": "read", "contents": "write"},
+        )
 
     def test_dashboard_deploy_has_no_master_or_unverified_manual_path(self):
         workflow = load_workflow("deploy-dashboard.yml")
@@ -137,6 +163,9 @@ class DeployWorkflowContractTests(unittest.TestCase):
         self.assertIn("verify-source", workflow["jobs"])
         self.assertIn("CI", source)
         self.assertIn("head_sha", source)
+        self.assertIn("head_repository.full_name", source)
+        self.assertGreaterEqual(source.count("commits/main"), 2)
+        self.assertIn("verify_main_sha.py", source)
 
 
 if __name__ == "__main__":

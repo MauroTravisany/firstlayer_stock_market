@@ -17,79 +17,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-images:
-    name: Build immutable image (${{ matrix.service }})
+  workflow-contracts:
+    name: Workflow syntax and immutable actions
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - service: stockdaily
-            context: cloud-functions/daily_stocks
-          - service: stockfinancial
-            context: cloud-functions/financial_data
-          - service: stockmacrodata
-            context: cloud-functions/macro_data
-          - service: stockaianalysis
-            context: cloud-functions/daily_ai_analysis
-          - service: papertradingalerts
-            context: cloud-functions/paper_trading_alerts
-          - service: papertradeexecutor
-            context: cloud-functions/paper_trade_executor
-          - service: papertraderiskmonitor
-            context: cloud-functions/paper_trade_risk_monitor
-          - service: strategybrain
-            context: cloud-functions/strategy_brain
     steps:
       - name: Checkout exact source
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Build image once
-        shell: bash
-        run: |
-          set -euo pipefail
-          image="wp01/${{ matrix.service }}:${GITHUB_SHA}"
-          docker build \
-            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
-            --tag "${image}" \
-            "${{ matrix.context }}"
-          mkdir -p "release-artifacts/${{ matrix.service }}"
-          docker save "${image}" | gzip -9 > "release-artifacts/${{ matrix.service }}/image.tar.gz"
-          sha256sum "release-artifacts/${{ matrix.service }}/image.tar.gz" \
-            > "release-artifacts/${{ matrix.service }}/image.tar.gz.sha256"
-          jq -n \
-            --arg service "${{ matrix.service }}" \
-            --arg context "${{ matrix.context }}" \
-            --arg git_sha "${GITHUB_SHA}" \
-            --arg local_image "${image}" \
-            --arg image_id "$(docker image inspect --format '{{.Id}}' "${image}")" \
-            '{service:$service,context:$context,git_sha:$git_sha,local_image:$local_image,image_id:$image_id}' \
-            > "release-artifacts/${{ matrix.service }}/metadata.json"
-
-      - name: Upload immutable image artifact
-        uses: actions/upload-artifact@v4
+      - name: Validate workflow syntax with actionlint
+        uses: docker://rhysd/actionlint@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9
         with:
-          name: cloud-run-image-${{ matrix.service }}-${{ github.sha }}
-          path: release-artifacts/${{ matrix.service }}
-          if-no-files-found: error
-          retention-days: 7
+          args: -color
+
+      - name: Reject mutable action references
+        run: python scripts/ci/verify_action_pinning.py
 
   python-and-invariants:
-    name: Python and repository invariants
-    needs: build-images
+    name: Python, repository invariants and secrets
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - name: Checkout exact source
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
           cache: pip
@@ -122,24 +79,143 @@ jobs:
             git diff --check
           fi
 
-  workflow-contracts:
-    name: Workflow syntax and contracts
-    needs: build-images
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: critical
+
+  dependency-security:
+    name: Critical npm audit gate
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - name: Checkout exact source
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Validate workflow syntax with actionlint
-        uses: docker://rhysd/actionlint:1.7.7
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          args: -color
+          node-version: "20"
+
+      - name: Capture dashboard npm audit
+        working-directory: dashboard
+        shell: bash
+        run: npm audit --json > ../dashboard-audit.json || test "$?" -eq 1
+
+      - name: Enforce dashboard critical policy
+        run: >-
+          python scripts/ci/npm_audit_gate.py
+          --audit-json dashboard-audit.json
+          --package-lock dashboard/package-lock.json
+          --allowlist .github/npm-audit-allowlist.json
+          --surface dashboard
+
+      - name: Capture Dataform npm audit
+        working-directory: dataform
+        shell: bash
+        run: npm audit --json > ../dataform-audit.json || test "$?" -eq 1
+
+      - name: Enforce Dataform critical policy
+        run: >-
+          python scripts/ci/npm_audit_gate.py
+          --audit-json dataform-audit.json
+          --package-lock dataform/package-lock.json
+          --allowlist .github/npm-audit-allowlist.json
+          --surface dataform
+
+  preflight-gate:
+    name: Security preflight gate
+    if: always()
+    needs:
+      - workflow-contracts
+      - python-and-invariants
+      - dependency-review
+      - dependency-security
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Require every lightweight and security check
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sys
+
+          results = {name: value["result"] for name, value in json.loads(os.environ["NEEDS_JSON"]).items()}
+          required = {"workflow-contracts", "python-and-invariants", "dependency-security"}
+          failures = {name: results.get(name) for name in required if results.get(name) != "success"}
+          dependency = results.get("dependency-review")
+          if dependency not in {"success", "skipped"}:
+              failures["dependency-review"] = dependency
+          print(json.dumps({"status": "PASS" if not failures else "FAIL", "results": results}, sort_keys=True))
+          if failures:
+              sys.exit(1)
+          PY
+  build-images:
+    name: Build immutable image (${{ matrix.service }})
+    needs:
+      - preflight-gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: stockdaily
+            context: cloud-functions/daily_stocks
+          - service: stockfinancial
+            context: cloud-functions/financial_data
+          - service: stockmacrodata
+            context: cloud-functions/macro_data
+          - service: stockaianalysis
+            context: cloud-functions/daily_ai_analysis
+          - service: papertradingalerts
+            context: cloud-functions/paper_trading_alerts
+          - service: papertradeexecutor
+            context: cloud-functions/paper_trade_executor
+          - service: papertraderiskmonitor
+            context: cloud-functions/paper_trade_risk_monitor
+          - service: strategybrain
+            context: cloud-functions/strategy_brain
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build image once
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="wp01/${{ matrix.service }}:${GITHUB_SHA}"
+          docker build             --label "org.opencontainers.image.revision=${GITHUB_SHA}"             --tag "${image}"             "${{ matrix.context }}"
+          mkdir -p "release-artifacts/${{ matrix.service }}"
+          docker save "${image}" | gzip -9 > "release-artifacts/${{ matrix.service }}/image.tar.gz"
+          sha256sum "release-artifacts/${{ matrix.service }}/image.tar.gz"             > "release-artifacts/${{ matrix.service }}/image.tar.gz.sha256"
+          jq -n             --arg service "${{ matrix.service }}"             --arg context "${{ matrix.context }}"             --arg git_sha "${GITHUB_SHA}"             --arg local_image "${image}"             --arg image_id "$(docker image inspect --format '{{.Id}}' "${image}")"             '{service:$service,context:$context,git_sha:$git_sha,local_image:$local_image,image_id:$image_id}'             > "release-artifacts/${{ matrix.service }}/metadata.json"
+
+      - name: Upload immutable image artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cloud-run-image-${{ matrix.service }}-${{ github.sha }}
+          path: release-artifacts/${{ matrix.service }}
+          if-no-files-found: error
+          retention-days: 7
 
   dataform:
     name: Dataform compile
-    needs: build-images
+    needs:
+      - preflight-gate
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -148,10 +224,10 @@ jobs:
         working-directory: dataform
     steps:
       - name: Checkout exact source
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "20"
           cache: npm
@@ -165,16 +241,17 @@ jobs:
 
   dashboard:
     name: Dashboard build
-    needs: build-images
+    needs:
+      - preflight-gate
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - name: Checkout exact source
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
 
@@ -182,7 +259,7 @@ jobs:
         run: python scripts/ci/prepare_dashboard_fixtures.py
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "20"
           cache: npm
@@ -202,7 +279,8 @@ jobs:
 
   terraform:
     name: Terraform validate
-    needs: build-images
+    needs:
+      - preflight-gate
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -211,10 +289,10 @@ jobs:
         working-directory: terraform
     steps:
       - name: Checkout exact source
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: "1.9.8"
 
@@ -227,32 +305,15 @@ jobs:
       - name: Validate Terraform configuration
         run: terraform validate -no-color
 
-  dependency-review:
-    name: Dependency review
-    needs: build-images
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - name: Review dependency changes
-        uses: actions/dependency-review-action@v4
-        with:
-          # Evidence/Dataform still carry audited high-severity legacy debt.
-          # Critical additions fail closed; Dependabot tracks the remaining baseline.
-          fail-on-severity: critical
-
   ci-gate:
     name: CI gate
     if: always()
     needs:
+      - preflight-gate
       - build-images
-      - python-and-invariants
-      - workflow-contracts
       - dataform
       - dashboard
       - terraform
-      - dependency-review
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -267,18 +328,8 @@ jobs:
           import sys
 
           results = {name: value["result"] for name, value in json.loads(os.environ["NEEDS_JSON"]).items()}
-          required = {
-              "build-images",
-              "python-and-invariants",
-              "workflow-contracts",
-              "dataform",
-              "dashboard",
-              "terraform",
-          }
+          required = {"preflight-gate", "build-images", "dataform", "dashboard", "terraform"}
           failures = {name: results.get(name) for name in required if results.get(name) != "success"}
-          dependency = results.get("dependency-review")
-          if dependency not in {"success", "skipped"}:
-              failures["dependency-review"] = dependency
           print(json.dumps({"status": "PASS" if not failures else "FAIL", "results": results}, sort_keys=True))
           if failures:
               sys.exit(1)

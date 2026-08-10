@@ -29,7 +29,12 @@ jobs:
     outputs:
       head_sha: ${{ steps.source.outputs.head_sha }}
     steps:
-      - name: Resolve source and require successful CI
+      - name: Checkout verification scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+
+      - name: Resolve source and require successful current-main CI
         id: source
         env:
           GH_TOKEN: ${{ github.token }}
@@ -37,31 +42,22 @@ jobs:
           WORKFLOW_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
           WORKFLOW_EVENT: ${{ github.event.workflow_run.event }}
           WORKFLOW_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WORKFLOW_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
           WORKFLOW_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         shell: bash
         run: |
           set -euo pipefail
+          current_main="$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq '.sha')"
           if [[ "${EVENT_NAME}" == "workflow_run" ]]; then
-            test "${WORKFLOW_CONCLUSION}" = "success"
-            test "${WORKFLOW_EVENT}" = "push"
-            test "${WORKFLOW_HEAD_BRANCH}" = "main"
+            python scripts/ci/verify_main_sha.py               --event-name "${EVENT_NAME}"               --conclusion "${WORKFLOW_CONCLUSION}"               --workflow-event "${WORKFLOW_EVENT}"               --head-branch "${WORKFLOW_HEAD_BRANCH}"               --head-repository "${WORKFLOW_HEAD_REPOSITORY}"               --repository "${GITHUB_REPOSITORY}"               --head-sha "${WORKFLOW_HEAD_SHA}"               --current-main-sha "${current_main}"
             head_sha="${WORKFLOW_HEAD_SHA}"
           else
-            head_sha="$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq '.sha')"
-            runs="$(gh run list \
-              --repo "${GITHUB_REPOSITORY}" \
-              --workflow ci.yml \
-              --branch main \
-              --commit "${head_sha}" \
-              --event push \
-              --status completed \
-              --limit 20 \
-              --json conclusion,headSha)"
-            jq -e --arg sha "${head_sha}" \
-              'any(.[]; .headSha == $sha and .conclusion == "success")' \
-              <<<"${runs}" >/dev/null
+            head_sha="${current_main}"
+            runs="$(gh run list               --repo "${GITHUB_REPOSITORY}"               --workflow ci.yml               --branch main               --commit "${head_sha}"               --event push               --status completed               --limit 20               --json conclusion,headSha)"
+            jq -e --arg sha "${head_sha}"               'any(.[]; .headSha == $sha and .conclusion == "success")'               <<<"${runs}" >/dev/null
           fi
           [[ "${head_sha}" =~ ^[0-9a-f]{40}$ ]]
+          test "${head_sha}" = "${current_main}"
           echo "head_sha=${head_sha}" >> "${GITHUB_OUTPUT}"
           echo "DASHBOARD_SOURCE_VERIFIED sha=${head_sha}"
 
@@ -71,20 +67,19 @@ jobs:
       - verify-source
     permissions:
       contents: read
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Checkout exact verified code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.verify-source.outputs.head_sha }}
 
       - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "20"
 
@@ -98,62 +93,45 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # BigQuery table identifiers intentionally use backticks inside SQL strings.
           mkdir -p dashboard/data
 
-          bq query --project_id="${GCP_PROJECT_ID}" --use_legacy_sql=false --format=csv \
-            "select * from \`stocks-437902.acciones_dataset.looker_portfolio_latest\`" \
-            > dashboard/data/portfolio_latest.csv
+          bq query --project_id="${GCP_PROJECT_ID}" --use_legacy_sql=false --format=csv             "select * from \`stocks-437902.acciones_dataset.looker_portfolio_latest\`"             > dashboard/data/portfolio_latest.csv
 
-          bq query --project_id="${GCP_PROJECT_ID}" --use_legacy_sql=false --format=csv \
-            "select * from \`stocks-437902.acciones_dataset.looker_portfolio_history\`" \
-            > dashboard/data/portfolio_history.csv
+          bq query --project_id="${GCP_PROJECT_ID}" --use_legacy_sql=false --format=csv             "select * from \`stocks-437902.acciones_dataset.looker_portfolio_history\`"             > dashboard/data/portfolio_history.csv
 
-          bq query --project_id="${GCP_PROJECT_ID}" --use_legacy_sql=false --format=csv \
-            "select * from \`stocks-437902.acciones_dataset.looker_company_status_latest\`" \
-            > dashboard/data/company_status_latest.csv
+          bq query --project_id="${GCP_PROJECT_ID}" --use_legacy_sql=false --format=csv             "select * from \`stocks-437902.acciones_dataset.looker_company_status_latest\`"             > dashboard/data/company_status_latest.csv
 
-          bq query --project_id="${GCP_PROJECT_ID}" --use_legacy_sql=false --format=csv \
-            "select * from \`stocks-437902.acciones_dataset.looker_company_status_changes\`" \
-            > dashboard/data/company_status_changes.csv
+          bq query --project_id="${GCP_PROJECT_ID}" --use_legacy_sql=false --format=csv             "select * from \`stocks-437902.acciones_dataset.looker_company_status_changes\`"             > dashboard/data/company_status_changes.csv
 
-          if ! bq query --project_id="${GCP_PROJECT_ID}" --use_legacy_sql=false --format=csv \
-            "select * from \`stocks-437902.acciones_dataset.portfolio_signal_backtest\`" \
-            > dashboard/data/portfolio_signal_backtest.csv; then
+          if ! bq query --project_id="${GCP_PROJECT_ID}" --use_legacy_sql=false --format=csv             "select * from \`stocks-437902.acciones_dataset.portfolio_signal_backtest\`"             > dashboard/data/portfolio_signal_backtest.csv; then
             printf 'analysis_date,ticker,signal,sell_signal,classification,last_close,final_score,sell_score,margin_of_safety_pct,risk_level,technical_trend,price_5d,price_20d,price_60d,forward_return_5d,forward_return_20d,forward_return_60d,signal_success_60d,backtest_status,calculated_at\n' > dashboard/data/portfolio_signal_backtest.csv
           fi
 
-          bq query --project_id="${GCP_PROJECT_ID}" --use_legacy_sql=false --format=csv \
-            "select * from \`stocks-437902.acciones_dataset.looker_portfolio_summary\`" \
-            > dashboard/data/portfolio_summary.csv
+          bq query --project_id="${GCP_PROJECT_ID}" --use_legacy_sql=false --format=csv             "select * from \`stocks-437902.acciones_dataset.looker_portfolio_summary\`"             > dashboard/data/portfolio_summary.csv
 
-          bq query --project_id="${GCP_PROJECT_ID}" --use_legacy_sql=false --format=csv \
-            "select * from \`stocks-437902.acciones_dataset.looker_portfolio_ai_summary\`" \
-            > dashboard/data/portfolio_ai_summary.csv
+          bq query --project_id="${GCP_PROJECT_ID}" --use_legacy_sql=false --format=csv             "select * from \`stocks-437902.acciones_dataset.looker_portfolio_ai_summary\`"             > dashboard/data/portfolio_ai_summary.csv
 
-          bq query --project_id="${GCP_PROJECT_ID}" --use_legacy_sql=false --format=csv \
-            "select * from \`stocks-437902.acciones_dataset.looker_data_quality_latest\`" \
-            > dashboard/data/data_quality_latest.csv
+          bq query --project_id="${GCP_PROJECT_ID}" --use_legacy_sql=false --format=csv             "select * from \`stocks-437902.acciones_dataset.looker_data_quality_latest\`"             > dashboard/data/data_quality_latest.csv
 
-          bq query --project_id="${GCP_PROJECT_ID}" --use_legacy_sql=false --format=csv \
-            "select * from \`stocks-437902.acciones_dataset.portfolio_ai_analysis_daily\`
+          bq query --project_id="${GCP_PROJECT_ID}" --use_legacy_sql=false --format=csv             "select * from \`stocks-437902.acciones_dataset.portfolio_ai_analysis_daily\`
              where analysis_date = (
                select max(analysis_date)
                from \`stocks-437902.acciones_dataset.portfolio_ai_analysis_daily\`
-             )" \
-            > dashboard/data/ai_analysis_latest.csv
+             )"             > dashboard/data/ai_analysis_latest.csv
 
           for csv_file in dashboard/data/*.csv; do
-            echo "::group::$(basename "$csv_file")"
-            head -n 1 "$csv_file"
-            rows=$(( $(wc -l < "$csv_file") - 1 ))
-            echo "rows=$rows"
-            if [ "$rows" -le 0 ]; then
-              if [ "$(basename "$csv_file")" = "portfolio_signal_backtest.csv" ]; then
-                echo "CSV snapshot is empty but allowed until historical forward returns exist: $csv_file"
+            echo "::group::$(basename "${csv_file}")"
+            head -n 1 "${csv_file}"
+            rows=$(( $(wc -l < "${csv_file}") - 1 ))
+            echo "rows=${rows}"
+            if [ "${rows}" -le 0 ]; then
+              if [ "$(basename "${csv_file}")" = "portfolio_signal_backtest.csv" ]; then
+                echo "CSV snapshot is empty but allowed until historical forward returns exist: ${csv_file}"
                 echo "::endgroup::"
                 continue
               fi
-              echo "CSV snapshot is empty: $csv_file" >&2
+              echo "CSV snapshot is empty: ${csv_file}" >&2
               exit 1
             fi
             echo "::endgroup::"
@@ -168,7 +146,7 @@ jobs:
         run: npm run build:strict
 
       - name: Upload GitHub Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: dashboard/build
 
@@ -177,12 +155,40 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    needs: build
+    needs:
+      - verify-source
+      - build
     permissions:
+      actions: read
+      contents: read
       id-token: write
       pages: write
-
     steps:
+      - name: Checkout exact verification script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.verify-source.outputs.head_sha }}
+
+      - name: Recheck current main immediately before Pages deploy
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVED_SHA: ${{ needs.verify-source.outputs.head_sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          WORKFLOW_EVENT: ${{ github.event.workflow_run.event }}
+          WORKFLOW_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WORKFLOW_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+          WORKFLOW_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_main="$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq '.sha')"
+          test "${APPROVED_SHA}" = "${current_main}"
+          if [[ "${EVENT_NAME}" == "workflow_run" ]]; then
+            python scripts/ci/verify_main_sha.py               --event-name "${EVENT_NAME}"               --conclusion "${WORKFLOW_CONCLUSION}"               --workflow-event "${WORKFLOW_EVENT}"               --head-branch "${WORKFLOW_HEAD_BRANCH}"               --head-repository "${WORKFLOW_HEAD_REPOSITORY}"               --repository "${GITHUB_REPOSITORY}"               --head-sha "${WORKFLOW_HEAD_SHA}"               --current-main-sha "${current_main}"
+          fi
+          echo "DASHBOARD_CURRENT_MAIN_REVERIFIED sha=${APPROVED_SHA}"
+
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

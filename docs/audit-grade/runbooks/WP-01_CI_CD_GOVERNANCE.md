@@ -5,21 +5,24 @@ Este runbook describe configuraciones manuales. Escribirlas aqui no demuestra qu
 ## 1. Flujo versionado
 
 ```text
-build immutable images
-  -> tests and scans in CI
+workflow syntax + invariants + secrets + unit tests + dependency gates
+  -> security preflight gate
+  -> build immutable images + Dataform/dashboard/Terraform validation
   -> CI gate for the exact git SHA
   -> production environment approval
-  -> publish image once and resolve immutable digest
+  -> publish images once and resolve immutable digests
+  -> sync the exact approved dataform/ tree and compile it
   -> deploy revision with zero traffic
-  -> read-only readiness smoke
+  -> metadata and functional /readyz smoke
   -> promote traffic
-  -> post-promotion smoke
-  -> rollback traffic on failure
+  -> functional /healthz smoke
+  -> promote the validated Dataform compilation
+  -> exact traffic and Dataform release rollback on failure
 ```
 
 `ci.yml` es el unico workflow que responde a `pull_request`, `push` y `workflow_dispatch`. `deploy.yml` no acepta ninguno de esos eventos: solo recibe `workflow_run` de `CI`, con resultado `success`, evento original `push`, rama `main` y repositorio de origen identico.
 
-Las imagenes se construyen dentro del CI y se guardan como artefactos con `git_sha`, image ID y checksum. Deploy descarga artefactos del run exacto, verifica otra vez SHA/checksum, publica cada imagen una vez y usa exclusivamente una referencia `@sha256:`. No usa tags mutables para actualizar Cloud Run.
+Las imagenes se construyen dentro del CI y se guardan como artefactos con `git_sha`, image ID y checksum. Deploy descarga artefactos del run exacto, verifica otra vez SHA/checksum, compara el image ID real inmediatamente despues de `docker load`, publica cada imagen una vez y usa exclusivamente una referencia `@sha256:`. No usa tags mutables para actualizar Cloud Run.
 
 ## 2. Cambiar la default branch a main
 
@@ -53,13 +56,15 @@ En `Settings -> Rules -> Rulesets`, crear un ruleset activo llamado `protect-mai
 Required checks propuestos:
 
 ```text
-CI / CI gate
-CI / Python and repository invariants
-CI / Workflow syntax and contracts
+CI / Workflow syntax and immutable actions
+CI / Python, repository invariants and secrets
+CI / Critical npm audit gate
+CI / Security preflight gate
 CI / Dataform compile
 CI / Dashboard build
 CI / Terraform validate
 CI / Dependency review
+CI / CI gate
 ```
 
 `CI / CI gate` depende tambien de las ocho variantes `Build immutable image (...)`; por eso un fallo de build, test, scanner o compilacion impide que el gate termine en success.
@@ -71,7 +76,7 @@ No habilitar bypass para administradores o aplicaciones salvo una decision separ
 En `Settings -> Environments`:
 
 1. Crear o abrir el environment `production`.
-2. En `Deployment protection rules`, agregar `required reviewers` y seleccionar al owner operacional autorizado.
+2. En `Deployment protection rules`, agregar `required reviewers` y seleccionar un reviewer independiente que no sea el autor del cambio.
 3. Habilitar `Prevent self-review` cuando el plan de GitHub lo permita.
 4. En `Deployment branches and tags`, elegir `Selected branches and tags` y permitir solo `main`.
 5. Limitar acceso a `GCP_SA_KEY` y `GCP_PROJECT_ID` al environment cuando GitHub permita environment secrets.
@@ -118,46 +123,68 @@ No ejecutar `gh workflow enable`, `workflow_dispatch` ni llamadas equivalentes d
 
 La reactivacion no forma parte de WP-01.
 
-## 7. Smoke test no destructivo
+## 7. Transicion del workflow de dashboard
 
-`scripts/ci/smoke_test_services.py` solo ejecuta `gcloud run revisions describe`. Tiene timeout entre 1 y 120 segundos, exige una imagen `@sha256:`, valida `Ready=True`, confirma `observedGeneration` y compara el digest exacto. No llama URLs funcionales, no crea ordenes, no escribe tablas, no ejecuta estrategias y no envia alertas.
+Antes de retirar cualquier workflow legacy de GitHub Pages:
 
-Una revision nueva se crea con `--no-traffic`. Si el smoke previo falla, la promocion se detiene y el trafico sigue en la revision anterior.
+1. identificar por API el ID, nombre, path y estado de todos los workflows que publiquen Pages;
+2. comprobar que `deploy-dashboard.yml` fusionado usa el SHA actual de `main`, que el CI de ese SHA fue exitoso y que repite la comprobacion inmediatamente antes de `actions/deploy-pages`;
+3. ejecutar una publicacion controlada y conservar run ID, SHA y URL;
+4. deshabilitar el workflow legacy solo despues de verificar la publicacion nueva;
+5. registrar la lectura final que demuestre que queda un unico camino autorizado.
 
-## 8. Rollback
+Esta transicion es manual y permanece pendiente durante el PR.
 
-Antes de crear cada revision, deploy registra:
+## 8. Smoke test no destructivo
 
-```text
-service
-previous_revision
-staged_revision
-immutable_image_digest
-git_sha
-environment
-```
+`scripts/ci/smoke_test_services.py` aplica dos capas. Primero ejecuta `gcloud run revisions describe`, exige una imagen `@sha256:`, valida `Ready=True`, confirma `observedGeneration` y compara el digest exacto. Luego obtiene un identity token con audience explicita y ejecuta solo `GET /readyz` sobre la revision sin trafico y `GET /healthz` despues de promoverla.
 
-Si falla el smoke posterior a la promocion, el trap `rollback` recorre `promoted-revisions.tsv` en orden inverso y ejecuta:
+Cada respuesta debe incluir `status`, `service`, `git_sha`, `version`, `image_digest`, `operation=readiness_probe` y `mutation_performed=false`. Tiene timeout, limita el tamano de respuesta y falla ante HTTP distinto de 200, JSON malformado, SHA/digest incorrecto o cualquier indicio de orden, estrategia, escritura BigQuery, alerta o mutacion de recursos. Los handlers se ejecutan antes de cargar configuracion de negocio.
 
-```bash
-gcloud run services update-traffic SERVICE \
-  --project PROJECT \
-  --region us-east1 \
-  --platform managed \
-  --to-revisions "previous_revision=100" \
-  --quiet
-```
+## 9. Rollback exacto
+
+Antes de crear revisiones, `cloud_run_traffic.py` registra por servicio `spec.traffic`, `status.traffic`, revisiones, porcentajes, tags, `latestReadyRevision` y `latestCreatedRevision`.
+
+Ante un fallo, restaura en orden inverso el reparto anterior con `--to-revisions`, limpia los tags nuevos y repone todos los tags previos. No usa `latestReadyRevision` como sustituto de la revision activa. Si el estado ya coincide, el rollback es idempotente y no ejecuta cambios. Un fallo parcial se informa como `ROLLBACK_INCOMPLETE` y mantiene el workflow fallando.
+
+La retencion del artifact es parte del gate: si las promociones terminaron pero `actions/upload-artifact` falla, el paso `failure()` posterior restaura el release Dataform y los mapas de trafico. No se acepta una promocion activa sin evidencia descargable.
+
+## 10. Promocion y rollback Dataform
+
+Despues del approval, deploy vuelve a verificar que el SHA aprobado siga siendo el `main` remoto actual. Antes de mover la rama Dataform exige que el release no tenga una programacion automatica activa. Crea un commit de snapshot cuyo arbol es exactamente `APPROVED_SHA:dataform`, lo publica en `dataform-production` y verifica el SHA remoto.
+
+La compilacion se crea desde el release `production`; debe resolver al commit de snapshot exacto y contener cero `compilationErrors`. El release no cambia hasta que las ocho revisiones Cloud Run superan smoke y promocion. Entonces se actualiza solo `releaseCompilationResult` y se genera `dataform-promotion-evidence.json` con el SHA Git, tree SHA, snapshot commit, compilation ID, release anterior, release nuevo y metadata de rollback.
+
+Si falla cualquier paso posterior, se restaura el `releaseCompilationResult` anterior y se verifica la respuesta. La rama puede conservar el commit auditado, pero ningun workflow lo ejecuta mientras el release apunte a la compilacion anterior.
 
 Despues de un rollback autorizado se debe:
 
-1. verificar `status.traffic` y `status.latestReadyRevisionName` por lectura;
-2. ejecutar el smoke read-only contra `previous_revision` y su digest conocido;
-3. conservar `release-manifest.ndjson`, `staged-revisions.tsv`, `promoted-revisions.tsv` y logs del run;
-4. abrir incidente con SHA, digest fallido, revision restaurada, timestamps y motivo;
-5. mantener bloqueada cualquier promocion nueva hasta cerrar el incidente.
+1. comparar semanticamente `spec.traffic` y `status.traffic` con el snapshot;
+2. verificar el `releaseCompilationResult` Dataform restaurado;
+3. ejecutar los probes contra las revisiones nuevamente activas;
+4. conservar todos los artifacts y logs del run;
+5. abrir incidente con SHA, digest, revision, compilation ID, timestamps y motivo;
+6. mantener bloqueada cualquier promocion nueva hasta cerrar el incidente.
 
-Este PR prueba el algoritmo con fixtures y contratos. No ejecuta un rollback real ni modifica Cloud Run.
+Este PR prueba los algoritmos con fixtures y contratos. No ejecuta rollback live ni modifica GCP.
 
-## 9. Workload Identity Federation
+## 11. Dependencias y supply chain
+
+Todas las entradas `uses:` deben estar fijadas a un commit SHA completo. Las acciones Docker, incluido actionlint, deben usar `@sha256:<digest>`. `verify_action_pinning.py` y los workflow contract tests bloquean tags mutables.
+
+CI ejecuta audits separados para `dashboard/` y `dataform/`. El JSON se valida con `npm_audit_gate.py`; cualquier finding critical no autorizado falla. `.github/npm-audit-allowlist.json` no acepta excepciones globales: cada registro debe identificar GHSA/CVE, paquete, version exacta, superficie, razon, owner, issue y fecha de expiracion. Un cambio de paquete/version, registro incompleto o fecha vencida falla cerrado.
+
+Para renovar una excepcion:
+
+1. confirmar que no existe una actualizacion compatible;
+2. abrir o actualizar el issue de remediacion;
+3. limitar la entrada al advisory, paquete y version exactos;
+4. asignar owner y expiracion corta;
+5. obtener revision independiente mediante PR;
+6. nunca reducir el umbral ni usar `--audit-level` como sustituto del gate.
+
+Dependabot debe conservar entradas para Actions, npm de dashboard/Dataform, Terraform y pip en `/`.
+
+## 12. Workload Identity Federation
 
 La migracion desde `GCP_SA_KEY` hacia Workload Identity Federation pertenece a WP-10. Mientras tanto, el secret solo aparece en workflows de deploy y nunca en `ci.yml`. Esta limitacion debe permanecer visible como riesgo residual.

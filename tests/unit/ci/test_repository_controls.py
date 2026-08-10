@@ -37,6 +37,7 @@ class RepositoryControlTests(unittest.TestCase):
         self.assertIn(("npm", "/dashboard"), configured)
         self.assertIn(("npm", "/dataform"), configured)
         self.assertIn(("terraform", "/terraform"), configured)
+        self.assertIn(("pip", "/"), configured)
         for requirement in ROOT.glob("cloud-functions/*/requirements.txt"):
             directory = "/" + requirement.parent.relative_to(ROOT).as_posix()
             with self.subTest(directory=directory):
@@ -57,8 +58,8 @@ class RepositoryControlTests(unittest.TestCase):
             "production",
             "required reviewers",
             "disabled_manually",
-            "previous_revision",
-            "update-traffic",
+            "status.traffic",
+            "--to-revisions",
             "master",
         ):
             with self.subTest(requirement=requirement):

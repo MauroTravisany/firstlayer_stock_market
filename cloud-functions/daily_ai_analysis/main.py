@@ -6,6 +6,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from conf.conf import load_config
+from runtime_health import health_response
 from custom_function.ai_analysis import (
     analyze_ticker,
     build_analysis_row,
@@ -47,6 +48,9 @@ def parse_tickers(value):
 
 
 def main(request):
+    probe = health_response(request, "stockaianalysis")
+    if probe is not None:
+        return probe
     request_json = request.get_json(silent=True) or {}
     dry_run = parse_bool(request_json.get("dry_run", request.args.get("dry_run")), False)
     send_alert = parse_bool(request_json.get("send_alert", request.args.get("send_alert")), True)

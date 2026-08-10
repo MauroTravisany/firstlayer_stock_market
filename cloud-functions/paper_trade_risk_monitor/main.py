@@ -4,6 +4,8 @@ import os
 import sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from runtime_health import health_response
+
 logging.basicConfig(level=logging.INFO)
 
 
@@ -35,6 +37,9 @@ def request_values(request):
 
 
 def main(request):
+    probe = health_response(request, "papertraderiskmonitor")
+    if probe is not None:
+        return probe
     request_json = request_values(request)
     dry_run = parse_bool(request_json.get("dry_run", request.args.get("dry_run")), True)
     if request_json.get("execute") is True or str(request.args.get("execute")).lower() == "true":

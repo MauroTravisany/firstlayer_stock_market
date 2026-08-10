@@ -79,6 +79,20 @@ class ReleaseArtifactTests(unittest.TestCase):
                 self.artifacts, self.inventory, SHA
             )
 
+    def test_loaded_image_id_matches_metadata(self):
+        metadata = next(self.artifacts.rglob("metadata.json"))
+        result = verify_release_artifacts.verify_loaded_image_id(
+            metadata, "sha256:" + "b" * 64
+        )
+        self.assertEqual(result["status"], "PASS")
+
+    def test_tampered_loaded_image_metadata_is_rejected(self):
+        metadata = next(self.artifacts.rglob("metadata.json"))
+        with self.assertRaises(verify_release_artifacts.ArtifactVerificationError):
+            verify_release_artifacts.verify_loaded_image_id(
+                metadata, "sha256:" + "c" * 64
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -19,6 +19,8 @@ concurrency:
 env:
   REGION: us-east1
   ARTIFACT_REPOSITORY: cloud-run-source-deploy
+  DATAFORM_REPOSITORY: portfolio-valuation
+  DATAFORM_RELEASE: production
 
 jobs:
   build:
@@ -34,7 +36,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout the exact CI commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
@@ -45,24 +47,23 @@ jobs:
           CI_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           set -euo pipefail
-          gh run download "${CI_RUN_ID}" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --pattern "cloud-run-image-*-${APPROVED_SHA}" \
-            --dir release-artifacts
+          gh run download "${CI_RUN_ID}"             --repo "${GITHUB_REPOSITORY}"             --pattern "cloud-run-image-*-${APPROVED_SHA}"             --dir release-artifacts
 
-      - name: Verify artifact provenance and checksums
+      - name: Verify artifact provenance, current main and checksums
         env:
           APPROVED_SHA: ${{ github.event.workflow_run.head_sha }}
           GH_TOKEN: ${{ github.token }}
+          WORKFLOW_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          WORKFLOW_EVENT: ${{ github.event.workflow_run.event }}
+          WORKFLOW_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WORKFLOW_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+        shell: bash
         run: |
           set -euo pipefail
           test "${APPROVED_SHA}" = "$(git rev-parse HEAD)"
           current_main="$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq '.sha')"
-          test "${APPROVED_SHA}" = "${current_main}"
-          python scripts/ci/verify_release_artifacts.py \
-            --artifacts release-artifacts \
-            --inventory scripts/ci/cloud_run_services.json \
-            --approved-sha "${APPROVED_SHA}"
+          python scripts/ci/verify_main_sha.py             --event-name workflow_run             --conclusion "${WORKFLOW_CONCLUSION}"             --workflow-event "${WORKFLOW_EVENT}"             --head-branch "${WORKFLOW_HEAD_BRANCH}"             --head-repository "${WORKFLOW_HEAD_REPOSITORY}"             --repository "${GITHUB_REPOSITORY}"             --head-sha "${APPROVED_SHA}"             --current-main-sha "${current_main}"
+          python scripts/ci/verify_release_artifacts.py             --artifacts release-artifacts             --inventory scripts/ci/cloud_run_services.json             --approved-sha "${APPROVED_SHA}"
           mapfile -t metadata_files < <(find release-artifacts -name metadata.json -type f | sort)
           test "${#metadata_files[@]}" -eq 8
           for metadata in "${metadata_files[@]}"; do
@@ -85,12 +86,13 @@ jobs:
       name: production
     permissions:
       actions: read
-      contents: read
+      contents: write
     steps:
-      - name: Checkout approved release scripts
-        uses: actions/checkout@v4
+      - name: Checkout approved release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
 
       - name: Download the same verified CI artifacts
         env:
@@ -99,44 +101,44 @@ jobs:
           CI_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           set -euo pipefail
-          gh run download "${CI_RUN_ID}" \
-            --repo "${GITHUB_REPOSITORY}" \
-            --pattern "cloud-run-image-*-${APPROVED_SHA}" \
-            --dir release-artifacts
+          gh run download "${CI_RUN_ID}"             --repo "${GITHUB_REPOSITORY}"             --pattern "cloud-run-image-*-${APPROVED_SHA}"             --dir release-artifacts
 
-      - name: Reverify artifact provenance before authentication
+      - name: Reverify approved current-main SHA before authentication
         env:
           APPROVED_SHA: ${{ github.event.workflow_run.head_sha }}
           GH_TOKEN: ${{ github.token }}
+          WORKFLOW_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          WORKFLOW_EVENT: ${{ github.event.workflow_run.event }}
+          WORKFLOW_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WORKFLOW_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+        shell: bash
         run: |
           set -euo pipefail
           test "${APPROVED_SHA}" = "$(git rev-parse HEAD)"
           current_main="$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq '.sha')"
-          test "${APPROVED_SHA}" = "${current_main}"
-          python scripts/ci/verify_release_artifacts.py \
-            --artifacts release-artifacts \
-            --inventory scripts/ci/cloud_run_services.json \
-            --approved-sha "${APPROVED_SHA}"
+          python scripts/ci/verify_main_sha.py             --event-name workflow_run             --conclusion "${WORKFLOW_CONCLUSION}"             --workflow-event "${WORKFLOW_EVENT}"             --head-branch "${WORKFLOW_HEAD_BRANCH}"             --head-repository "${WORKFLOW_HEAD_REPOSITORY}"             --repository "${GITHUB_REPOSITORY}"             --head-sha "${APPROVED_SHA}"             --current-main-sha "${current_main}"
+          python scripts/ci/verify_release_artifacts.py             --artifacts release-artifacts             --inventory scripts/ci/cloud_run_services.json             --approved-sha "${APPROVED_SHA}"
 
       - name: Authenticate to Google Cloud after approval
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
       - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
-      - name: Verify approved SHA and publish immutable digests
+      - name: Publish verified build-once images by digest
         env:
           APPROVED_SHA: ${{ github.event.workflow_run.head_sha }}
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
         shell: bash
         run: |
           set -euo pipefail
-          test "${APPROVED_SHA}" = "${GITHUB_SHA}"
+          test "${APPROVED_SHA}" = "$(git rev-parse HEAD)"
           gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          mkdir -p release-evidence traffic-snapshots
           : > approved-images.tsv
           : > release-manifest.ndjson
           mapfile -t metadata_files < <(find release-artifacts -name metadata.json -type f | sort)
@@ -148,22 +150,60 @@ jobs:
             test "$(jq -r '.git_sha' "${metadata}")" = "${APPROVED_SHA}"
             (cd "${artifact_dir}" && sha256sum --check image.tar.gz.sha256)
             docker load --input "${artifact_dir}/image.tar.gz"
+            actual_image_id="$(docker image inspect --format '{{.Id}}' "${local_image}")"
+            python scripts/ci/verify_release_artifacts.py               --metadata "${metadata}"               --actual-image-id "${actual_image_id}"
             remote_image="${REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REPOSITORY}/${service}"
             docker tag "${local_image}" "${remote_image}:${APPROVED_SHA}"
             docker push "${remote_image}:${APPROVED_SHA}"
             digest="$(gcloud artifacts docker images describe "${remote_image}:${APPROVED_SHA}" --format='value(image_summary.digest)')"
             [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
             immutable_image="${remote_image}@${digest}"
-            [[ "${immutable_image}" == *@sha256:* ]]
+            [[ "${immutable_image}" == *"@sha256:"* ]]
             printf '%s\t%s\n' "${service}" "${immutable_image}" >> approved-images.tsv
-            jq -n \
-              --arg service "${service}" \
-              --arg git_sha "${APPROVED_SHA}" \
-              --arg image_digest "${immutable_image}" \
-              --arg environment "production" \
-              '{service:$service,git_sha:$git_sha,image_digest:$image_digest,environment:$environment}' \
-              >> release-manifest.ndjson
+            jq -n               --arg service "${service}"               --arg git_sha "${APPROVED_SHA}"               --arg image_digest "${immutable_image}"               --arg environment production               '{service:$service,git_sha:$git_sha,image_digest:$image_digest,environment:$environment}'               >> release-manifest.ndjson
           done
+
+      - name: Prepare exact Dataform tree and validated compilation
+        env:
+          APPROVED_SHA: ${{ github.event.workflow_run.head_sha }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_main="$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq '.sha')"
+          test "${APPROVED_SHA}" = "${current_main}"
+          test "${APPROVED_SHA}" = "$(git rev-parse HEAD)"
+          repository="projects/${GCP_PROJECT_ID}/locations/${REGION}/repositories/${DATAFORM_REPOSITORY}"
+          release="${repository}/releaseConfigs/${DATAFORM_RELEASE}"
+          token="$(gcloud auth print-access-token)"
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer ${token}"             "https://dataform.googleapis.com/v1beta1/${release}"             > release-evidence/dataform-release-previous.json
+          test "$(jq -r '.gitCommitish' release-evidence/dataform-release-previous.json)" = dataform-production
+          test -n "$(jq -r '.releaseCompilationResult' release-evidence/dataform-release-previous.json)"
+          jq -e '(.disabled == true) or ((.cronSchedule // "") == "")' release-evidence/dataform-release-previous.json >/dev/null
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          dataform_tree_sha="$(git rev-parse "${APPROVED_SHA}:dataform")"
+          parent_args=()
+          if git fetch origin dataform-production --depth=1; then
+            parent_args=(-p FETCH_HEAD)
+          fi
+          snapshot_commit_sha="$(printf 'WP-01 exact Dataform snapshot for %s\n' "${APPROVED_SHA}" | git commit-tree "${dataform_tree_sha}" "${parent_args[@]}")"
+          git push origin "${snapshot_commit_sha}:refs/heads/dataform-production"
+          remote_snapshot="$(git ls-remote origin refs/heads/dataform-production | cut -f1)"
+          test "${snapshot_commit_sha}" = "${remote_snapshot}"
+
+          jq -n --arg release "${release}" '{releaseConfig:$release}'             > release-evidence/dataform-compilation-request.json
+          curl --fail-with-body --silent --show-error -X POST             -H "Authorization: Bearer ${token}"             -H "Content-Type: application/json"             --data-binary @release-evidence/dataform-compilation-request.json             "https://dataform.googleapis.com/v1beta1/${repository}/compilationResults"             > release-evidence/dataform-compilation.json
+          compilation_id="$(jq -r '.name' release-evidence/dataform-compilation.json)"
+          test -n "${compilation_id}"
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer ${token}"             "https://dataform.googleapis.com/v1beta1/${compilation_id}"             > release-evidence/dataform-compilation.json
+          test "$(jq '[.compilationErrors[]?] | length' release-evidence/dataform-compilation.json)" = 0
+          test "$(jq -r '.resolvedGitCommitSha' release-evidence/dataform-compilation.json)" = "${snapshot_commit_sha}"
+          test "$(jq -r '.releaseConfig' release-evidence/dataform-compilation.json)" = "${release}"
+          jq -n             --arg git_sha "${APPROVED_SHA}"             --arg tree_sha "${dataform_tree_sha}"             --arg snapshot_commit_sha "${snapshot_commit_sha}"             --arg compilation_id "${compilation_id}"             --arg release "${release}"             '{git_sha:$git_sha,dataform_tree_sha:$tree_sha,snapshot_commit_sha:$snapshot_commit_sha,compilation_id:$compilation_id,release:$release}'             > release-evidence/dataform-prepared.json
+          echo "DATAFORM_COMPILATION_VALID sha=${APPROVED_SHA} tree=${dataform_tree_sha} compilation=${compilation_id}"
 
       - name: Confirm Paper-only target configuration
         env:
@@ -174,96 +214,138 @@ jobs:
           for service in papertradeexecutor papertraderiskmonitor; do
             document="$(gcloud run services describe "${service}" --project "${GCP_PROJECT_ID}" --region "${REGION}" --platform managed --format=json)"
             mode="$(jq -r '.spec.template.spec.containers[0].env[]? | select(.name == "PAPER_EXECUTION_MODE") | .value' <<<"${document}")"
-            test "${mode}" = "paper"
-            if [[ "${service}" == "papertradeexecutor" ]]; then
-              echo "PAPER_EXECUTION_MODE=paper verified for papertradeexecutor"
-            else
-              echo "PAPER_EXECUTION_MODE=paper verified for papertraderiskmonitor"
-            fi
+            test "${mode}" = paper
+            echo "PAPER_EXECUTION_MODE=paper verified for ${service}"
           done
 
-      - name: Stage, smoke, promote or rollback
+      - name: Stage, functional smoke, promote and rollback atomically
+        id: promote
         env:
+          APPROVED_SHA: ${{ github.event.workflow_run.head_sha }}
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
         shell: bash
         run: |
           set -Eeuo pipefail
+          release_version="sha-${APPROVED_SHA:0:12}"
+          candidate_tag="candidate-${APPROVED_SHA:0:12}"
+          dataform_promoted=false
           : > staged-revisions.tsv
           : > promoted-revisions.tsv
 
-          rollback() {
+          rollback_all() {
+            original_status="$1"
+            trap - ERR
             set +e
-            if [[ -s promoted-revisions.tsv ]]; then
-              tac promoted-revisions.tsv | while IFS=$'\t' read -r service previous_revision; do
-                echo "ROLLBACK service=${service} revision=${previous_revision}"
-                gcloud run services update-traffic "${service}" \
-                  --project "${GCP_PROJECT_ID}" \
-                  --region "${REGION}" \
-                  --platform managed \
-                  --to-revisions "${previous_revision}=100" \
-                  --quiet
-              done
+            rollback_status=0
+            token="$(gcloud auth print-access-token)"
+            if [[ "${dataform_promoted}" == true ]]; then
+              previous_result="$(jq -r '.releaseCompilationResult' release-evidence/dataform-release-previous.json)"
+              release="$(jq -r '.name' release-evidence/dataform-release-previous.json)"
+              jq -n                 --arg name "${release}"                 --arg git_commitish dataform-production                 --arg result "${previous_result}"                 '{name:$name,gitCommitish:$git_commitish,releaseCompilationResult:$result}'                 > release-evidence/dataform-rollback-request.json
+              curl --fail-with-body --silent --show-error -X PATCH                 -H "Authorization: Bearer ${token}"                 -H "Content-Type: application/json"                 --data-binary @release-evidence/dataform-rollback-request.json                 "https://dataform.googleapis.com/v1beta1/${release}?updateMask=releaseCompilationResult"                 > release-evidence/dataform-release-rollback.json || rollback_status=1
+              test "$(jq -r '.releaseCompilationResult' release-evidence/dataform-release-rollback.json)" = "${previous_result}" || rollback_status=1
             fi
+            python scripts/ci/cloud_run_traffic.py restore-directory               --directory traffic-snapshots               --project "${GCP_PROJECT_ID}"               --region "${REGION}" || rollback_status=1
+            jq -n               --argjson original_status "${original_status}"               --argjson rollback_status "${rollback_status}"               '{status:"ROLLBACK_ATTEMPTED",original_exit:$original_status,rollback_exit:$rollback_status}'               > release-evidence/rollback-result.json
+            if [[ "${rollback_status}" -ne 0 ]]; then
+              echo "ROLLBACK_INCOMPLETE" >&2
+            else
+              echo "ROLLBACK_COMPLETE"
+            fi
+            exit "${original_status}"
           }
-          trap 'status=$?; rollback; exit ${status}' ERR
+          trap 'rollback_all $?' ERR
 
           while IFS=$'\t' read -r service immutable_image; do
-            [[ "${immutable_image}" == *@sha256:* ]]
-            previous_revision="$(gcloud run services describe "${service}" \
-              --project "${GCP_PROJECT_ID}" --region "${REGION}" --platform managed \
-              --format='value(status.latestReadyRevisionName)')"
-            test -n "${previous_revision}"
-            gcloud run services update "${service}" \
-              --project "${GCP_PROJECT_ID}" \
-              --region "${REGION}" \
-              --platform managed \
-              --image "${immutable_image}" \
-              --no-traffic \
-              --quiet
-            staged_revision="$(gcloud run services describe "${service}" \
-              --project "${GCP_PROJECT_ID}" --region "${REGION}" --platform managed \
-              --format='value(status.latestCreatedRevisionName)')"
-            test -n "${staged_revision}"
-            python scripts/ci/smoke_test_services.py \
-              --service "${service}" \
-              --revision "${staged_revision}" \
-              --project "${GCP_PROJECT_ID}" \
-              --region "${REGION}" \
-              --expected-image "${immutable_image}" \
-              --timeout-seconds 30
-            printf '%s\t%s\t%s\t%s\n' \
-              "${service}" "${previous_revision}" "${staged_revision}" "${immutable_image}" \
-              >> staged-revisions.tsv
+            python scripts/ci/cloud_run_traffic.py snapshot               --service "${service}"               --project "${GCP_PROJECT_ID}"               --region "${REGION}"               --output "traffic-snapshots/${service}.json"
           done < approved-images.tsv
 
-          while IFS=$'\t' read -r service previous_revision staged_revision immutable_image; do
-            gcloud run services update-traffic "${service}" \
-              --project "${GCP_PROJECT_ID}" \
-              --region "${REGION}" \
-              --platform managed \
-              --to-revisions "${staged_revision}=100" \
-              --quiet
-            printf '%s\t%s\n' "${service}" "${previous_revision}" >> promoted-revisions.tsv
-            python scripts/ci/smoke_test_services.py \
-              --service "${service}" \
-              --revision "${staged_revision}" \
-              --project "${GCP_PROJECT_ID}" \
-              --region "${REGION}" \
-              --expected-image "${immutable_image}" \
-              --timeout-seconds 30
+          while IFS=$'\t' read -r service immutable_image; do
+            [[ "${immutable_image}" == *"@sha256:"* ]]
+            image_digest="${immutable_image##*@}"
+            release_env="RELEASE_GIT_SHA=${APPROVED_SHA},RELEASE_VERSION=${release_version},RELEASE_IMAGE_DIGEST=${image_digest}"
+            if [[ "${service}" == papertradeexecutor || "${service}" == papertraderiskmonitor ]]; then
+              release_env="${release_env},PAPER_EXECUTION_MODE=paper"
+            fi
+            gcloud run services update "${service}"               --project "${GCP_PROJECT_ID}"               --region "${REGION}"               --platform managed               --image "${immutable_image}"               --no-traffic               --tag "${candidate_tag}"               --update-env-vars "${release_env}"               --quiet
+            service_document="$(gcloud run services describe "${service}" --project "${GCP_PROJECT_ID}" --region "${REGION}" --platform managed --format=json)"
+            staged_revision="$(jq -r '.status.latestCreatedRevisionName' <<<"${service_document}")"
+            service_url="$(jq -r '.status.url' <<<"${service_document}")"
+            candidate_url="$(jq -r --arg revision "${staged_revision}" --arg tag "${candidate_tag}" '.status.traffic[] | select(.revisionName == $revision and .tag == $tag) | .url' <<<"${service_document}")"
+            test -n "${staged_revision}"
+            test -n "${service_url}"
+            test -n "${candidate_url}"
+            python scripts/ci/smoke_test_services.py               --service "${service}"               --revision "${staged_revision}"               --project "${GCP_PROJECT_ID}"               --region "${REGION}"               --expected-image "${immutable_image}"               --expected-git-sha "${APPROVED_SHA}"               --expected-version "${release_version}"               --url "${candidate_url}/readyz"               --audience "${service_url}"               --timeout-seconds 30
+            printf '%s\t%s\t%s\t%s\n'               "${service}" "${staged_revision}" "${immutable_image}" "${service_url}"               >> staged-revisions.tsv
+          done < approved-images.tsv
+
+          while IFS=$'\t' read -r service staged_revision immutable_image service_url; do
+            gcloud run services update-traffic "${service}"               --project "${GCP_PROJECT_ID}"               --region "${REGION}"               --platform managed               --to-revisions "${staged_revision}=100"               --quiet
+            printf '%s\t%s\n' "${service}" "${staged_revision}" >> promoted-revisions.tsv
+            python scripts/ci/smoke_test_services.py               --service "${service}"               --revision "${staged_revision}"               --project "${GCP_PROJECT_ID}"               --region "${REGION}"               --expected-image "${immutable_image}"               --expected-git-sha "${APPROVED_SHA}"               --expected-version "${release_version}"               --url "${service_url}/healthz"               --audience "${service_url}"               --timeout-seconds 30
+            gcloud run services update-traffic "${service}"               --project "${GCP_PROJECT_ID}"               --region "${REGION}"               --platform managed               --remove-tags "${candidate_tag}"               --quiet
           done < staged-revisions.tsv
 
-          trap - ERR
-          echo "PROMOTION_COMPLETE sha=${GITHUB_SHA}"
+          token="$(gcloud auth print-access-token)"
+          release="$(jq -r '.release' release-evidence/dataform-prepared.json)"
+          compilation_id="$(jq -r '.compilation_id' release-evidence/dataform-prepared.json)"
+          jq -n             --arg name "${release}"             --arg git_commitish dataform-production             --arg result "${compilation_id}"             '{name:$name,gitCommitish:$git_commitish,releaseCompilationResult:$result}'             > release-evidence/dataform-promotion-request.json
+          curl --fail-with-body --silent --show-error -X PATCH             -H "Authorization: Bearer ${token}"             -H "Content-Type: application/json"             --data-binary @release-evidence/dataform-promotion-request.json             "https://dataform.googleapis.com/v1beta1/${release}?updateMask=releaseCompilationResult"             > release-evidence/dataform-release-new.json
+          dataform_promoted=true
+          test "$(jq -r '.releaseCompilationResult' release-evidence/dataform-release-new.json)" = "${compilation_id}"
+          python scripts/ci/dataform_promotion.py             --git-sha "${APPROVED_SHA}"             --tree-sha "$(jq -r '.dataform_tree_sha' release-evidence/dataform-prepared.json)"             --snapshot-commit-sha "$(jq -r '.snapshot_commit_sha' release-evidence/dataform-prepared.json)"             --compilation-json release-evidence/dataform-compilation.json             --previous-release-json release-evidence/dataform-release-previous.json             --current-release-json release-evidence/dataform-release-new.json             --output release-evidence/dataform-promotion-evidence.json
 
-      - name: Record immutable release evidence
-        if: success()
-        uses: actions/upload-artifact@v4
+          trap - ERR
+          jq -n --arg sha "${APPROVED_SHA}" '{status:"PROMOTION_COMPLETE",git_sha:$sha}'             > release-evidence/promotion-result.json
+          echo "PROMOTION_COMPLETE sha=${APPROVED_SHA}"
+
+      - name: Record immutable release, Dataform and rollback evidence
+        id: release_evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: cloud-run-release-${{ github.event.workflow_run.head_sha }}
+          name: cloud-run-and-dataform-release-${{ github.event.workflow_run.head_sha }}
           path: |
             release-manifest.ndjson
+            approved-images.tsv
             staged-revisions.tsv
             promoted-revisions.tsv
+            release-evidence/
+            traffic-snapshots/
           if-no-files-found: error
           retention-days: 90
+
+      - name: Roll back a promotion whose evidence could not be retained
+        if: failure() && steps.promote.outcome == 'success' && steps.release_evidence.outcome == 'failure'
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          rollback_status=0
+          token="$(gcloud auth print-access-token)"
+          previous_result="$(jq -r '.releaseCompilationResult' release-evidence/dataform-release-previous.json)"
+          release="$(jq -r '.name' release-evidence/dataform-release-previous.json)"
+          jq -n \
+            --arg name "${release}" \
+            --arg git_commitish dataform-production \
+            --arg result "${previous_result}" \
+            '{name:$name,gitCommitish:$git_commitish,releaseCompilationResult:$result}' \
+            > release-evidence/dataform-evidence-failure-rollback-request.json
+          curl --fail-with-body --silent --show-error -X PATCH \
+            -H "Authorization: Bearer ${token}" \
+            -H "Content-Type: application/json" \
+            --data-binary @release-evidence/dataform-evidence-failure-rollback-request.json \
+            "https://dataform.googleapis.com/v1beta1/${release}?updateMask=releaseCompilationResult" \
+            > release-evidence/dataform-evidence-failure-rollback.json || rollback_status=1
+          test "$(jq -r '.releaseCompilationResult' release-evidence/dataform-evidence-failure-rollback.json)" = "${previous_result}" || rollback_status=1
+          python scripts/ci/cloud_run_traffic.py restore-directory \
+            --directory traffic-snapshots \
+            --project "${GCP_PROJECT_ID}" \
+            --region "${REGION}" || rollback_status=1
+          if [[ "${rollback_status}" -ne 0 ]]; then
+            echo "ROLLBACK_INCOMPLETE_AFTER_EVIDENCE_FAILURE" >&2
+          else
+            echo "ROLLBACK_COMPLETE_AFTER_EVIDENCE_FAILURE"
+          fi
+          exit 1
