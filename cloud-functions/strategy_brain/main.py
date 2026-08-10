@@ -10,6 +10,7 @@ from google.cloud import bigquery
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from conf.conf import load_config
+from runtime_health import health_response
 
 logging.basicConfig(level=logging.INFO)
 
@@ -612,6 +613,9 @@ def _review(client, config, payload):
 
 
 def main(request):
+    probe = health_response(request, "strategybrain")
+    if probe is not None:
+        return probe
     payload = request.get_json(silent=True) or {}
     phase = payload.get("phase", "generate").lower()
     if phase not in {"generate", "review"}:

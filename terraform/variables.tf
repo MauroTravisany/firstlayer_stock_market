@@ -7,7 +7,7 @@ variable "project_id" {
 variable "region" {
   description = "La región de Google Cloud donde se alojarán los recursos"
   type        = string
-  default     = "us-east1"  # Cambia por la región que prefieras (ej: southamerica-east1)
+  default     = "us-east1" # Cambia por la región que prefieras (ej: southamerica-east1)
 }
 
 variable "dataset_id" {

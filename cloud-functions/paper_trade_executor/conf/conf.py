@@ -53,7 +53,7 @@ def load_config():
         or "https://paper-api.alpaca.markets"
     ).rstrip("/")
 
-    if "paper-api.alpaca.markets" not in alpaca_base_url:
+    if alpaca_base_url != "https://paper-api.alpaca.markets":
         raise RuntimeError("Safety guard: only Alpaca Paper API is allowed in this service")
 
     return {

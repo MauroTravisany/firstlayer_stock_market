@@ -1,22 +1,22 @@
 # Proveedor de Google Cloud
 provider "google" {
-  project = var.project_id     # El ID de tu proyecto en Google Cloud
-  region  = var.region         # La región donde se alojarán los recursos
+  project = var.project_id # El ID de tu proyecto en Google Cloud
+  region  = var.region     # La región donde se alojarán los recursos
 }
 
 
 # Crear el dataset en BigQuery
 resource "google_bigquery_dataset" "acciones_dataset" {
-  dataset_id = var.dataset_id  # Nombre del dataset
-  location   = var.region      # La región donde estará el dataset
+  dataset_id = var.dataset_id # Nombre del dataset
+  location   = var.region     # La región donde estará el dataset
 }
 
 # Tabla de datos recientes (último año)
 resource "google_bigquery_table" "tabla_recientes" {
-  dataset_id = google_bigquery_dataset.acciones_dataset.dataset_id
-  table_id   = var.tabla_recientes
+  dataset_id          = google_bigquery_dataset.acciones_dataset.dataset_id
+  table_id            = var.tabla_recientes
   deletion_protection = false
-  schema = <<EOF
+  schema              = <<EOF
   [
     {
       "name": "id",
@@ -97,10 +97,10 @@ resource "google_bigquery_table" "tabla_recientes" {
 
 # Tabla de datos históricos
 resource "google_bigquery_table" "tabla_historica" {
-  dataset_id = google_bigquery_dataset.acciones_dataset.dataset_id
-  table_id   = var.tabla_historica
+  dataset_id          = google_bigquery_dataset.acciones_dataset.dataset_id
+  table_id            = var.tabla_historica
   deletion_protection = false
-  schema = <<EOF
+  schema              = <<EOF
   [
     {
       "name": "id",
@@ -183,10 +183,10 @@ resource "google_bigquery_table" "tabla_historica" {
 
 # Tabla de indicadores diarios (SMA, RSI)
 resource "google_bigquery_table" "tabla_indicadores_diarios" {
-  dataset_id = google_bigquery_dataset.acciones_dataset.dataset_id
-  table_id   = "indicadores_acciones_diarios"
+  dataset_id          = google_bigquery_dataset.acciones_dataset.dataset_id
+  table_id            = "indicadores_acciones_diarios"
   deletion_protection = false
-  schema = <<EOF
+  schema              = <<EOF
   [
     {
       "name": "id",
@@ -226,16 +226,16 @@ resource "google_bigquery_table" "tabla_indicadores_diarios" {
     field = "fecha"
   }
 
-  
+
   clustering = ["ticker", "fecha"]
-  
+
 }
 
 resource "google_bigquery_table" "financial_statements" {
   dataset_id          = google_bigquery_dataset.acciones_dataset.dataset_id
   table_id            = "financial_statements"
   deletion_protection = false
-  schema = <<EOF
+  schema              = <<EOF
   [
     {"name": "ticker", "type": "STRING", "mode": "REQUIRED"},
     {"name": "fiscal_year", "type": "INTEGER", "mode": "REQUIRED"},
@@ -272,7 +272,7 @@ resource "google_bigquery_table" "financial_ratios_snapshot" {
   dataset_id          = google_bigquery_dataset.acciones_dataset.dataset_id
   table_id            = "financial_ratios_snapshot"
   deletion_protection = false
-  schema = <<EOF
+  schema              = <<EOF
   [
     {"name": "ticker", "type": "STRING", "mode": "REQUIRED"},
     {"name": "snapshot_date", "type": "DATE", "mode": "REQUIRED"},

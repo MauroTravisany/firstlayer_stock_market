@@ -1,0 +1,9 @@
+# Repository owner for audit-grade critical surfaces.
+/.github/workflows/ @MauroTravisany
+/cloud-functions/ @MauroTravisany
+/dataform/ @MauroTravisany
+/terraform/ @MauroTravisany
+/tools/ @MauroTravisany
+/scripts/ci/ @MauroTravisany
+/tests/ @MauroTravisany
+/docs/audit-grade/ @MauroTravisany

@@ -1,0 +1,10 @@
+[
+  {"service": "stockdaily", "context": "cloud-functions/daily_stocks"},
+  {"service": "stockfinancial", "context": "cloud-functions/financial_data"},
+  {"service": "stockmacrodata", "context": "cloud-functions/macro_data"},
+  {"service": "stockaianalysis", "context": "cloud-functions/daily_ai_analysis"},
+  {"service": "papertradingalerts", "context": "cloud-functions/paper_trading_alerts"},
+  {"service": "papertradeexecutor", "context": "cloud-functions/paper_trade_executor"},
+  {"service": "papertraderiskmonitor", "context": "cloud-functions/paper_trade_risk_monitor"},
+  {"service": "strategybrain", "context": "cloud-functions/strategy_brain"}
+]

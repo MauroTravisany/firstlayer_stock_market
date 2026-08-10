@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from conf.conf import load_config
+from runtime_health import health_response
 
 logging.basicConfig(level=logging.INFO)
 
@@ -103,6 +104,9 @@ def process_ticker(ticker, bucket_name, bq_table, target_date, asset_type="STOCK
 
 
 def main(request):
+    probe = health_response(request, "stockdaily")
+    if probe is not None:
+        return probe
     request_json = request.get_json(silent=True) or {}
     dry_run = parse_bool(request_json.get("dry_run", request.args.get("dry_run")), False)
     send_alert = parse_bool(request_json.get("send_alert", request.args.get("send_alert")), True)

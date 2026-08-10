@@ -1,660 +1,409 @@
 name: Deploy Cloud Run service
 
 on:
-  push:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
     branches:
       - main
-      - master
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-run-production
+  cancel-in-progress: false
+
+env:
+  REGION: us-east1
+  ARTIFACT_REPOSITORY: cloud-run-source-deploy
+  DATAFORM_REPOSITORY: portfolio-valuation
+  DATAFORM_RELEASE: production
 
 jobs:
-  deploy:
+  build:
+    name: Verify immutable CI artifacts
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-
+      actions: read
+      contents: read
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Checkout the exact CI commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
-      - name: Validate Python entrypoints
+      - name: Download artifacts from the triggering CI run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVED_SHA: ${{ github.event.workflow_run.head_sha }}
+          CI_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
-          python -m compileall -q \
-            cloud-functions/daily_stocks \
-            cloud-functions/financial_data \
-            cloud-functions/macro_data \
-            cloud-functions/daily_ai_analysis \
-            cloud-functions/paper_trading_alerts \
-            cloud-functions/paper_trade_executor \
-            cloud-functions/paper_trade_risk_monitor \
-            cloud-functions/strategy_brain
+          set -euo pipefail
+          gh run download "${CI_RUN_ID}"             --repo "${GITHUB_REPOSITORY}"             --pattern "cloud-run-image-*-${APPROVED_SHA}"             --dir release-artifacts
 
-      - name: Sync Dataform root branch
+      - name: Verify artifact provenance, current main and checksums
+        env:
+          APPROVED_SHA: ${{ github.event.workflow_run.head_sha }}
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          WORKFLOW_EVENT: ${{ github.event.workflow_run.event }}
+          WORKFLOW_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WORKFLOW_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+        shell: bash
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          DATAFORM_TREE="$(git rev-parse HEAD:dataform)"
-          if git fetch origin dataform-production --depth=1 2>/dev/null; then
-            CURRENT_TREE="$(git rev-parse FETCH_HEAD^{tree})"
-            if [ "${DATAFORM_TREE}" = "${CURRENT_TREE}" ]; then
-              echo "Dataform branch already matches this commit."
-              exit 0
-            fi
-            PARENT="-p FETCH_HEAD"
-          else
-            PARENT=""
-          fi
-          SNAPSHOT="$(printf 'Sync Dataform project from %s\n' "${GITHUB_SHA}" | git commit-tree "${DATAFORM_TREE}" ${PARENT})"
-          git push origin "${SNAPSHOT}:refs/heads/dataform-production"
+          set -euo pipefail
+          test "${APPROVED_SHA}" = "$(git rev-parse HEAD)"
+          current_main="$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq '.sha')"
+          python scripts/ci/verify_main_sha.py             --event-name workflow_run             --conclusion "${WORKFLOW_CONCLUSION}"             --workflow-event "${WORKFLOW_EVENT}"             --head-branch "${WORKFLOW_HEAD_BRANCH}"             --head-repository "${WORKFLOW_HEAD_REPOSITORY}"             --repository "${GITHUB_REPOSITORY}"             --head-sha "${APPROVED_SHA}"             --current-main-sha "${current_main}"
+          python scripts/ci/verify_release_artifacts.py             --artifacts release-artifacts             --inventory scripts/ci/cloud_run_services.json             --approved-sha "${APPROVED_SHA}"
+          mapfile -t metadata_files < <(find release-artifacts -name metadata.json -type f | sort)
+          test "${#metadata_files[@]}" -eq 8
+          for metadata in "${metadata_files[@]}"; do
+            artifact_dir="$(dirname "${metadata}")"
+            test "$(jq -r '.git_sha' "${metadata}")" = "${APPROVED_SHA}"
+            (cd "${artifact_dir}" && sha256sum --check image.tar.gz.sha256)
+          done
+          echo "CI_ARTIFACTS_VERIFIED sha=${APPROVED_SHA} count=${#metadata_files[@]}"
 
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
+  deploy:
+    name: Approve, deploy, smoke and promote
+    if: >-
+      needs.build.result == 'success' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_sha != ''
+    needs:
+      - build
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Checkout approved release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Download the same verified CI artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVED_SHA: ${{ github.event.workflow_run.head_sha }}
+          CI_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          gh run download "${CI_RUN_ID}"             --repo "${GITHUB_REPOSITORY}"             --pattern "cloud-run-image-*-${APPROVED_SHA}"             --dir release-artifacts
+
+      - name: Reverify approved current-main SHA before authentication
+        env:
+          APPROVED_SHA: ${{ github.event.workflow_run.head_sha }}
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          WORKFLOW_EVENT: ${{ github.event.workflow_run.event }}
+          WORKFLOW_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WORKFLOW_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${APPROVED_SHA}" = "$(git rev-parse HEAD)"
+          current_main="$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq '.sha')"
+          python scripts/ci/verify_main_sha.py             --event-name workflow_run             --conclusion "${WORKFLOW_CONCLUSION}"             --workflow-event "${WORKFLOW_EVENT}"             --head-branch "${WORKFLOW_HEAD_BRANCH}"             --head-repository "${WORKFLOW_HEAD_REPOSITORY}"             --repository "${GITHUB_REPOSITORY}"             --head-sha "${APPROVED_SHA}"             --current-main-sha "${current_main}"
+          python scripts/ci/verify_release_artifacts.py             --artifacts release-artifacts             --inventory scripts/ci/cloud_run_services.json             --approved-sha "${APPROVED_SHA}"
+
+      - name: Authenticate to Google Cloud after approval
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
-      
+
       - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
-      - name: Refresh Dataform production release
+      - name: Publish verified build-once images by digest
+        env:
+          APPROVED_SHA: ${{ github.event.workflow_run.head_sha }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        shell: bash
         run: |
-          REPO="projects/${{ secrets.GCP_PROJECT_ID }}/locations/us-east1/repositories/portfolio-valuation"
-          RELEASE="${REPO}/releaseConfigs/production"
-          TOKEN="$(gcloud auth print-access-token)"
-          COMPILATION="$(curl --fail-with-body -sS -X POST \
-            -H "Authorization: Bearer ${TOKEN}" \
+          set -euo pipefail
+          test "${APPROVED_SHA}" = "$(git rev-parse HEAD)"
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          mkdir -p release-evidence traffic-snapshots
+          : > approved-images.tsv
+          : > release-manifest.ndjson
+          mapfile -t metadata_files < <(find release-artifacts -name metadata.json -type f | sort)
+          test "${#metadata_files[@]}" -eq 8
+          for metadata in "${metadata_files[@]}"; do
+            artifact_dir="$(dirname "${metadata}")"
+            service="$(jq -r '.service' "${metadata}")"
+            local_image="$(jq -r '.local_image' "${metadata}")"
+            test "$(jq -r '.git_sha' "${metadata}")" = "${APPROVED_SHA}"
+            (cd "${artifact_dir}" && sha256sum --check image.tar.gz.sha256)
+            docker load --input "${artifact_dir}/image.tar.gz"
+            actual_image_id="$(docker image inspect --format '{{.Id}}' "${local_image}")"
+            python scripts/ci/verify_release_artifacts.py               --metadata "${metadata}"               --actual-image-id "${actual_image_id}"
+            remote_image="${REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${ARTIFACT_REPOSITORY}/${service}"
+            docker tag "${local_image}" "${remote_image}:${APPROVED_SHA}"
+            docker push "${remote_image}:${APPROVED_SHA}"
+            digest="$(gcloud artifacts docker images describe "${remote_image}:${APPROVED_SHA}" --format='value(image_summary.digest)')"
+            [[ "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]
+            immutable_image="${remote_image}@${digest}"
+            [[ "${immutable_image}" == *"@sha256:"* ]]
+            printf '%s\t%s\n' "${service}" "${immutable_image}" >> approved-images.tsv
+            jq -n               --arg service "${service}"               --arg git_sha "${APPROVED_SHA}"               --arg image_digest "${immutable_image}"               --arg environment production               '{service:$service,git_sha:$git_sha,image_digest:$image_digest,environment:$environment}'               >> release-manifest.ndjson
+          done
+
+      - name: Prepare exact Dataform tree and validated compilation
+        env:
+          APPROVED_SHA: ${{ github.event.workflow_run.head_sha }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_main="$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq '.sha')"
+          test "${APPROVED_SHA}" = "${current_main}"
+          test "${APPROVED_SHA}" = "$(git rev-parse HEAD)"
+          repository="projects/${GCP_PROJECT_ID}/locations/${REGION}/repositories/${DATAFORM_REPOSITORY}"
+          release="${repository}/releaseConfigs/${DATAFORM_RELEASE}"
+          token="$(gcloud auth print-access-token)"
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer ${token}"             "https://dataform.googleapis.com/v1beta1/${release}"             > release-evidence/dataform-release-previous.json
+          test "$(jq -r '.gitCommitish' release-evidence/dataform-release-previous.json)" = dataform-production
+          test -n "$(jq -r '.releaseCompilationResult' release-evidence/dataform-release-previous.json)"
+          jq -e '(.disabled == true) or ((.cronSchedule // "") == "")' release-evidence/dataform-release-previous.json >/dev/null
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          dataform_tree_sha="$(git rev-parse "${APPROVED_SHA}:dataform")"
+          production_ref="refs/heads/dataform-production"
+          previous_dataform_production_sha="$(git ls-remote --refs origin "${production_ref}" | cut -f1)"
+          [[ "${previous_dataform_production_sha}" =~ ^[0-9a-f]{40}$ ]]
+          git fetch --no-tags origin "${previous_dataform_production_sha}"
+          snapshot_commit_sha="$(printf 'WP-01 exact Dataform snapshot for %s\n' "${APPROVED_SHA}" | git commit-tree "${dataform_tree_sha}" -p "${previous_dataform_production_sha}")"
+          candidate_branch="dataform-candidate-${APPROVED_SHA:0:12}"
+          candidate_ref="refs/heads/${candidate_branch}"
+          python scripts/ci/dataform_branch_transaction.py create-candidate \
+            --candidate-ref "${candidate_ref}" \
+            --candidate-sha "${snapshot_commit_sha}" \
+            --evidence release-evidence/dataform-candidate-ref.json
+          test "$(git ls-remote --refs origin "${production_ref}" | cut -f1)" = "${previous_dataform_production_sha}"
+
+          jq -n \
+            --arg git_commitish "${candidate_branch}" \
+            --argjson code_config "$(jq '.codeCompilationConfig // {}' release-evidence/dataform-release-previous.json)" \
+            '{gitCommitish:$git_commitish,codeCompilationConfig:$code_config}' \
+            > release-evidence/dataform-compilation-request.json
+          curl --fail-with-body --silent --show-error -X POST             -H "Authorization: Bearer ${token}"             -H "Content-Type: application/json"             --data-binary @release-evidence/dataform-compilation-request.json             "https://dataform.googleapis.com/v1beta1/${repository}/compilationResults"             > release-evidence/dataform-compilation.json
+          compilation_id="$(jq -r '.name' release-evidence/dataform-compilation.json)"
+          test -n "${compilation_id}"
+          curl --fail-with-body --silent --show-error             -H "Authorization: Bearer ${token}"             "https://dataform.googleapis.com/v1beta1/${compilation_id}"             > release-evidence/dataform-compilation.json
+          test "$(jq '[.compilationErrors[]?] | length' release-evidence/dataform-compilation.json)" = 0
+          test "$(jq -r '.resolvedGitCommitSha' release-evidence/dataform-compilation.json)" = "${snapshot_commit_sha}"
+          test "$(jq -r '.gitCommitish' release-evidence/dataform-compilation.json)" = "${candidate_branch}"
+          test "$(git ls-remote --refs origin "${production_ref}" | cut -f1)" = "${previous_dataform_production_sha}"
+          jq -n \
+            --arg git_sha "${APPROVED_SHA}" \
+            --arg tree_sha "${dataform_tree_sha}" \
+            --arg snapshot_commit_sha "${snapshot_commit_sha}" \
+            --arg candidate_branch "${candidate_branch}" \
+            --arg candidate_ref "${candidate_ref}" \
+            --arg previous_dataform_production_sha "${previous_dataform_production_sha}" \
+            --arg compilation_id "${compilation_id}" \
+            --arg release "${release}" \
+            '{git_sha:$git_sha,dataform_tree_sha:$tree_sha,snapshot_commit_sha:$snapshot_commit_sha,candidate_branch:$candidate_branch,candidate_ref:$candidate_ref,previous_dataform_production_sha:$previous_dataform_production_sha,compilation_id:$compilation_id,release:$release}' \
+            > release-evidence/dataform-prepared.json
+          echo "DATAFORM_COMPILATION_VALID sha=${APPROVED_SHA} tree=${dataform_tree_sha} compilation=${compilation_id}"
+
+      - name: Confirm Paper-only target configuration
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for service in papertradeexecutor papertraderiskmonitor; do
+            document="$(gcloud run services describe "${service}" --project "${GCP_PROJECT_ID}" --region "${REGION}" --platform managed --format=json)"
+            mode="$(jq -r '.spec.template.spec.containers[0].env[]? | select(.name == "PAPER_EXECUTION_MODE") | .value' <<<"${document}")"
+            test "${mode}" = paper
+            echo "PAPER_EXECUTION_MODE=paper verified for ${service}"
+          done
+
+      - name: Stage, functional smoke, promote and rollback atomically
+        id: promote
+        env:
+          APPROVED_SHA: ${{ github.event.workflow_run.head_sha }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          release_version="sha-${APPROVED_SHA:0:12}"
+          candidate_tag="candidate-${APPROVED_SHA:0:12}"
+          dataform_branch_promoted=false
+          dataform_release_promoted=false
+          : > staged-revisions.tsv
+          : > promoted-revisions.tsv
+
+          rollback_all() {
+            original_status="$1"
+            trap - ERR
+            set +e
+            rollback_status=0
+            token="$(gcloud auth print-access-token)"
+            if [[ "${dataform_release_promoted}" == true ]]; then
+              previous_result="$(jq -r '.releaseCompilationResult' release-evidence/dataform-release-previous.json)"
+              release="$(jq -r '.name' release-evidence/dataform-release-previous.json)"
+              jq -n                 --arg name "${release}"                 --arg git_commitish dataform-production                 --arg result "${previous_result}"                 '{name:$name,gitCommitish:$git_commitish,releaseCompilationResult:$result}'                 > release-evidence/dataform-rollback-request.json
+              curl --fail-with-body --silent --show-error -X PATCH                 -H "Authorization: Bearer ${token}"                 -H "Content-Type: application/json"                 --data-binary @release-evidence/dataform-rollback-request.json                 "https://dataform.googleapis.com/v1beta1/${release}?updateMask=releaseCompilationResult"                 > release-evidence/dataform-release-rollback.json || rollback_status=1
+              test "$(jq -r '.releaseCompilationResult' release-evidence/dataform-release-rollback.json)" = "${previous_result}" || rollback_status=1
+            fi
+            if [[ "${dataform_branch_promoted}" == true ]]; then
+              python scripts/ci/dataform_branch_transaction.py rollback-production \
+                --previous-sha "$(jq -r '.previous_dataform_production_sha' release-evidence/dataform-prepared.json)" \
+                --candidate-sha "$(jq -r '.snapshot_commit_sha' release-evidence/dataform-prepared.json)" \
+                --evidence release-evidence/dataform-branch-rollback.json || rollback_status=1
+            fi
+            python scripts/ci/cloud_run_traffic.py restore-directory \
+              --directory traffic-snapshots \
+              --project "${GCP_PROJECT_ID}" \
+              --region "${REGION}" \
+              --evidence-directory release-evidence/traffic-rollback-verification || rollback_status=1
+            jq -n               --argjson original_status "${original_status}"               --argjson rollback_status "${rollback_status}"               '{status:"ROLLBACK_ATTEMPTED",original_exit:$original_status,rollback_exit:$rollback_status}'               > release-evidence/rollback-result.json
+            if [[ "${rollback_status}" -ne 0 ]]; then
+              echo "ROLLBACK_INCOMPLETE" >&2
+            else
+              echo "ROLLBACK_COMPLETE"
+            fi
+            exit "${original_status}"
+          }
+          trap 'rollback_all $?' ERR
+
+          while IFS=$'\t' read -r service immutable_image; do
+            python scripts/ci/cloud_run_traffic.py snapshot               --service "${service}"               --project "${GCP_PROJECT_ID}"               --region "${REGION}"               --output "traffic-snapshots/${service}.json"
+          done < approved-images.tsv
+
+          # Expand first: move the validated candidate with CAS, then bind the release.
+          previous_dataform_production_sha="$(jq -r '.previous_dataform_production_sha' release-evidence/dataform-prepared.json)"
+          snapshot_commit_sha="$(jq -r '.snapshot_commit_sha' release-evidence/dataform-prepared.json)"
+          python scripts/ci/dataform_branch_transaction.py promote-production \
+            --previous-sha "${previous_dataform_production_sha}" \
+            --candidate-sha "${snapshot_commit_sha}" \
+            --evidence release-evidence/dataform-branch-promotion.json
+          dataform_branch_promoted=true
+
+          token="$(gcloud auth print-access-token)"
+          release="$(jq -r '.release' release-evidence/dataform-prepared.json)"
+          compilation_id="$(jq -r '.compilation_id' release-evidence/dataform-prepared.json)"
+          jq -n             --arg name "${release}"             --arg git_commitish dataform-production             --arg result "${compilation_id}"             '{name:$name,gitCommitish:$git_commitish,releaseCompilationResult:$result}'             > release-evidence/dataform-promotion-request.json
+          curl --fail-with-body --silent --show-error -X PATCH             -H "Authorization: Bearer ${token}"             -H "Content-Type: application/json"             --data-binary @release-evidence/dataform-promotion-request.json             "https://dataform.googleapis.com/v1beta1/${release}?updateMask=releaseCompilationResult"             > release-evidence/dataform-release-new.json
+          dataform_release_promoted=true
+          test "$(jq -r '.releaseCompilationResult' release-evidence/dataform-release-new.json)" = "${compilation_id}"
+          test "$(git ls-remote --refs origin refs/heads/dataform-production | cut -f1)" = "${snapshot_commit_sha}"
+          python scripts/ci/dataform_promotion.py \
+            --git-sha "${APPROVED_SHA}" \
+            --tree-sha "$(jq -r '.dataform_tree_sha' release-evidence/dataform-prepared.json)" \
+            --snapshot-commit-sha "${snapshot_commit_sha}" \
+            --candidate-ref "$(jq -r '.candidate_ref' release-evidence/dataform-prepared.json)" \
+            --previous-production-sha "${previous_dataform_production_sha}" \
+            --final-production-sha "${snapshot_commit_sha}" \
+            --compilation-json release-evidence/dataform-compilation.json \
+            --previous-release-json release-evidence/dataform-release-previous.json \
+            --current-release-json release-evidence/dataform-release-new.json \
+            --output release-evidence/dataform-promotion-evidence.json
+
+          while IFS=$'\t' read -r service immutable_image; do
+            [[ "${immutable_image}" == *"@sha256:"* ]]
+            image_digest="${immutable_image##*@}"
+            release_env="RELEASE_GIT_SHA=${APPROVED_SHA},RELEASE_VERSION=${release_version},RELEASE_IMAGE_DIGEST=${image_digest}"
+            if [[ "${service}" == papertradeexecutor || "${service}" == papertraderiskmonitor ]]; then
+              release_env="${release_env},PAPER_EXECUTION_MODE=paper"
+            fi
+            if [[ "${service}" == strategybrain ]]; then
+              release_env="${release_env},BRAIN_EXECUTION_MODE=BACKTEST_ONLY"
+            fi
+            gcloud run services update "${service}"               --project "${GCP_PROJECT_ID}"               --region "${REGION}"               --platform managed               --image "${immutable_image}"               --no-traffic               --tag "${candidate_tag}"               --update-env-vars "${release_env}"               --quiet
+            service_document="$(gcloud run services describe "${service}" --project "${GCP_PROJECT_ID}" --region "${REGION}" --platform managed --format=json)"
+            staged_revision="$(jq -r '.status.latestCreatedRevisionName' <<<"${service_document}")"
+            service_url="$(jq -r '.status.url' <<<"${service_document}")"
+            candidate_url="$(jq -r --arg revision "${staged_revision}" --arg tag "${candidate_tag}" '.status.traffic[] | select(.revisionName == $revision and .tag == $tag) | .url' <<<"${service_document}")"
+            test -n "${staged_revision}"
+            test -n "${service_url}"
+            test -n "${candidate_url}"
+            python scripts/ci/smoke_test_services.py               --service "${service}"               --revision "${staged_revision}"               --project "${GCP_PROJECT_ID}"               --region "${REGION}"               --expected-image "${immutable_image}"               --expected-git-sha "${APPROVED_SHA}"               --expected-version "${release_version}"               --url "${candidate_url}/readyz"               --audience "${service_url}"               --timeout-seconds 30
+            printf '%s\t%s\t%s\t%s\n'               "${service}" "${staged_revision}" "${immutable_image}" "${service_url}"               >> staged-revisions.tsv
+          done < approved-images.tsv
+
+          while IFS=$'\t' read -r service staged_revision immutable_image service_url; do
+            gcloud run services update-traffic "${service}"               --project "${GCP_PROJECT_ID}"               --region "${REGION}"               --platform managed               --to-revisions "${staged_revision}=100"               --quiet
+            printf '%s\t%s\n' "${service}" "${staged_revision}" >> promoted-revisions.tsv
+            python scripts/ci/smoke_test_services.py               --service "${service}"               --revision "${staged_revision}"               --project "${GCP_PROJECT_ID}"               --region "${REGION}"               --expected-image "${immutable_image}"               --expected-git-sha "${APPROVED_SHA}"               --expected-version "${release_version}"               --url "${service_url}/healthz"               --audience "${service_url}"               --timeout-seconds 30
+            gcloud run services update-traffic "${service}"               --project "${GCP_PROJECT_ID}"               --region "${REGION}"               --platform managed               --remove-tags "${candidate_tag}"               --quiet
+          done < staged-revisions.tsv
+
+          trap - ERR
+          jq -n --arg sha "${APPROVED_SHA}" '{status:"PROMOTION_COMPLETE",git_sha:$sha}'             > release-evidence/promotion-result.json
+          echo "PROMOTION_COMPLETE sha=${APPROVED_SHA}"
+
+      - name: Record immutable release, Dataform and rollback evidence
+        id: release_evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cloud-run-and-dataform-release-${{ github.event.workflow_run.head_sha }}
+          path: |
+            release-manifest.ndjson
+            approved-images.tsv
+            staged-revisions.tsv
+            promoted-revisions.tsv
+            release-evidence/
+            traffic-snapshots/
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Roll back a promotion whose evidence could not be retained
+        if: failure() && steps.promote.outcome == 'success' && steps.release_evidence.outcome == 'failure'
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          rollback_status=0
+          token="$(gcloud auth print-access-token)"
+          previous_result="$(jq -r '.releaseCompilationResult' release-evidence/dataform-release-previous.json)"
+          release="$(jq -r '.name' release-evidence/dataform-release-previous.json)"
+          jq -n \
+            --arg name "${release}" \
+            --arg git_commitish dataform-production \
+            --arg result "${previous_result}" \
+            '{name:$name,gitCommitish:$git_commitish,releaseCompilationResult:$result}' \
+            > release-evidence/dataform-evidence-failure-rollback-request.json
+          curl --fail-with-body --silent --show-error -X PATCH \
+            -H "Authorization: Bearer ${token}" \
             -H "Content-Type: application/json" \
-            -d "{\"releaseConfig\":\"${RELEASE}\"}" \
-            "https://dataform.googleapis.com/v1beta1/${REPO}/compilationResults" \
-            | jq -r '.name')"
-          if [ -z "${COMPILATION}" ] || [ "${COMPILATION}" = "null" ]; then
-            echo "Dataform compilation did not return a result name." >&2
-            exit 1
-          fi
-          COMPILATION_ERRORS="$(curl --fail-with-body -sS \
-            -H "Authorization: Bearer ${TOKEN}" \
-            "https://dataform.googleapis.com/v1beta1/${COMPILATION}" \
-            | jq '[.compilationErrors[]?] | length')"
-          if [ "${COMPILATION_ERRORS}" != "0" ]; then
-            echo "Dataform compilation contains ${COMPILATION_ERRORS} error(s)." >&2
-            exit 1
-          fi
-          curl --fail-with-body -sS -X PATCH \
-            -H "Authorization: Bearer ${TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d "{\"gitCommitish\":\"dataform-production\",\"releaseCompilationResult\":\"${COMPILATION}\"}" \
-            "https://dataform.googleapis.com/v1beta1/${RELEASE}?updateMask=releaseCompilationResult"
-
-      - name: Deploy stock prices to Cloud Run
-        run: |
-          gcloud run deploy stockdaily \
-              --source ./cloud-functions/daily_stocks \
-              --platform managed \
-              --region us-east1 \
-              --no-allow-unauthenticated \
-              --clear-base-image \
-              --command python \
-              --args main.py \
-              --timeout 900 \
-              --concurrency 1 \
-              --max-instances 1 \
-              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PORTFOLIO_TABLE_ID=portfolio_assets,DATA_QUALITY_TABLE_ID=pipeline_data_quality_daily,ALERT_WEBHOOK_TYPE=auto,TIME_ZONE=America/Santiago,YAHOO_REQUEST_TIMEOUT_SECONDS=30"
-
-      - name: Configure stock prices intraday scheduler
-        run: |
-          SERVICE_URL="$(gcloud run services describe stockdaily --platform managed --region us-east1 --format='value(status.url)')"
-          SERVICE_ACCOUNT="stock-alert-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
-          if gcloud scheduler jobs describe stockdaily-daily --location us-east1 >/dev/null 2>&1; then
-            gcloud scheduler jobs update http stockdaily-daily \
-              --location us-east1 \
-              --schedule "0 */4 * * *" \
-              --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}?send_alert=false" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}/" \
-              --message-body "{}" \
-              --attempt-deadline 900s
+            --data-binary @release-evidence/dataform-evidence-failure-rollback-request.json \
+            "https://dataform.googleapis.com/v1beta1/${release}?updateMask=releaseCompilationResult" \
+            > release-evidence/dataform-evidence-failure-rollback.json || rollback_status=1
+          test "$(jq -r '.releaseCompilationResult' release-evidence/dataform-evidence-failure-rollback.json)" = "${previous_result}" || rollback_status=1
+          python scripts/ci/dataform_branch_transaction.py rollback-production \
+            --previous-sha "$(jq -r '.previous_dataform_production_sha' release-evidence/dataform-prepared.json)" \
+            --candidate-sha "$(jq -r '.snapshot_commit_sha' release-evidence/dataform-prepared.json)" \
+            --evidence release-evidence/dataform-evidence-failure-branch-rollback.json || rollback_status=1
+          python scripts/ci/cloud_run_traffic.py restore-directory \
+            --directory traffic-snapshots \
+            --project "${GCP_PROJECT_ID}" \
+            --region "${REGION}" \
+            --evidence-directory release-evidence/traffic-evidence-failure-rollback-verification || rollback_status=1
+          if [[ "${rollback_status}" -ne 0 ]]; then
+            echo "ROLLBACK_INCOMPLETE_AFTER_EVIDENCE_FAILURE" >&2
           else
-            gcloud scheduler jobs create http stockdaily-daily \
-              --location us-east1 \
-              --schedule "0 */4 * * *" \
-              --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}?send_alert=false" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}/" \
-              --message-body "{}" \
-              --attempt-deadline 900s
+            echo "ROLLBACK_COMPLETE_AFTER_EVIDENCE_FAILURE"
           fi
-
-      - name: Deploy macro and news data to Cloud Run
-        run: |
-          gcloud run deploy stockmacrodata \
-              --source ./cloud-functions/macro_data \
-              --platform managed \
-              --region us-east1 \
-              --no-allow-unauthenticated \
-              --clear-base-image \
-              --command python \
-              --args main.py \
-              --timeout 300 \
-              --concurrency 1 \
-              --max-instances 1 \
-              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},MACRO_MARKET_TABLE_ID=macro_market_snapshot,MACRO_NEWS_TABLE_ID=macro_news_signal,MACRO_EARNINGS_TABLE_ID=macro_earnings_calendar,PORTFOLIO_TABLE_ID=portfolio_assets,TIME_ZONE=America/Santiago,GDELT_TIMESPAN=4H,GDELT_MAX_RECORDS=75"
-
-      - name: Configure macro and news intraday scheduler
-        run: |
-          SERVICE_URL="$(gcloud run services describe stockmacrodata --platform managed --region us-east1 --format='value(status.url)')"
-          SERVICE_ACCOUNT="stock-alert-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
-          gcloud run services add-iam-policy-binding stockmacrodata \
-            --region us-east1 \
-            --member "serviceAccount:${SERVICE_ACCOUNT}" \
-            --role "roles/run.invoker" \
-            --quiet
-          if gcloud scheduler jobs describe stockmacrodata-intraday --location us-east1 >/dev/null 2>&1; then
-            gcloud scheduler jobs update http stockmacrodata-intraday \
-              --location us-east1 \
-              --schedule "10 */4 * * *" \
-              --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}" \
-              --message-body "{}" \
-              --attempt-deadline 300s
-          else
-            gcloud scheduler jobs create http stockmacrodata-intraday \
-              --location us-east1 \
-              --schedule "10 */4 * * *" \
-              --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}" \
-              --message-body "{}" \
-              --attempt-deadline 300s
-          fi
-
-      - name: Deploy financial data to Cloud Run
-        run: |
-          gcloud run deploy stockfinancial \
-              --source ./cloud-functions/financial_data \
-              --platform managed \
-              --region us-east1 \
-              --no-allow-unauthenticated \
-              --clear-base-image \
-              --timeout 900 \
-              --concurrency 1 \
-              --max-instances 1 \
-              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PORTFOLIO_TABLE_ID=portfolio_assets,PEER_UNIVERSE_TABLE_ID=peer_universe,DATA_QUALITY_TABLE_ID=pipeline_data_quality_daily,ALERT_WEBHOOK_TYPE=auto,TIME_ZONE=America/Santiago,FINANCIAL_STATEMENTS_TABLE_ID=financial_statements,FINANCIAL_RATIOS_TABLE_ID=financial_ratios_snapshot"
-
-      - name: Configure financial data scheduler
-        run: |
-          SERVICE_URL="$(gcloud run services describe stockfinancial --platform managed --region us-east1 --format='value(status.url)')"
-          SERVICE_ACCOUNT="stock-alert-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
-          gcloud run services add-iam-policy-binding stockfinancial \
-            --region us-east1 \
-            --member "serviceAccount:${SERVICE_ACCOUNT}" \
-            --role "roles/run.invoker" \
-            --quiet
-          if gcloud scheduler jobs describe stockfinancial-daily --location us-east1 >/dev/null 2>&1; then
-            gcloud scheduler jobs update http stockfinancial-daily \
-              --location us-east1 \
-              --schedule "30 19 * * 1-5" \
-              --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}" \
-              --message-body "{}" \
-              --attempt-deadline 900s
-          else
-            gcloud scheduler jobs create http stockfinancial-daily \
-              --location us-east1 \
-              --schedule "30 19 * * 1-5" \
-              --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}" \
-              --message-body "{}" \
-              --attempt-deadline 900s
-          fi
-
-      - name: Deploy AI analysis to Cloud Run
-        run: |
-          gcloud run deploy stockaianalysis \
-              --source ./cloud-functions/daily_ai_analysis \
-              --platform managed \
-              --region us-east1 \
-              --no-allow-unauthenticated \
-              --clear-base-image \
-              --timeout 1800 \
-              --memory 1Gi \
-              --concurrency 1 \
-              --max-instances 1 \
-              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},OPENAI_MODEL=gpt-5-mini,ALERT_WEBHOOK_TYPE=auto,PROMPT_VERSION=portfolio-ai-v7,AI_MAX_TICKERS=12,AI_ANALYSIS_TABLE_ID=portfolio_ai_analysis_daily,AI_SUMMARY_TABLE_ID=portfolio_ai_summary_daily,STATUS_CHANGES_TABLE_ID=portfolio_company_status_changes"
-
-      - name: Deploy paper trading alerts to Cloud Run
-        run: |
-          gcloud run deploy papertradingalerts \
-              --source ./cloud-functions/paper_trading_alerts \
-              --platform managed \
-              --region us-east1 \
-              --no-allow-unauthenticated \
-              --clear-base-image \
-              --command python \
-              --args main.py \
-              --timeout 300 \
-              --concurrency 1 \
-              --max-instances 1 \
-              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},OPENAI_MODEL=gpt-5-mini,ALERT_WEBHOOK_TYPE=auto,TRADING_SUMMARY_TABLE_ID=trading_directional_daily_summary,TRADING_SIGNALS_TABLE_ID=trading_directional_signals,TRADING_RESULTS_TABLE_ID=trading_directional_trade_results,ALPACA_EXECUTIONS_TABLE_ID=trading_alpaca_paper_executions,ALPACA_POSITIONS_TABLE_ID=trading_alpaca_paper_positions,TRADING_ALERTS_TABLE_ID=trading_alerts_sent,TRADING_FEEDBACK_TABLE_ID=trading_ai_feedback_daily,TRADING_WEEKLY_REVIEW_TABLE_ID=trading_weekly_ai_strategy_review,TRADING_AI_FEEDBACK=true,TRADING_PROMPT_VERSION=paper-trading-feedback-v2"
-
-      - name: Deploy strategy brain in backtest-only mode
-        run: |
-          gcloud run deploy strategybrain \
-              --source ./cloud-functions/strategy_brain \
-              --platform managed \
-              --region us-east1 \
-              --no-allow-unauthenticated \
-              --clear-base-image \
-              --command python \
-              --args main.py \
-              --timeout 900 \
-              --memory 1Gi \
-              --concurrency 1 \
-              --max-instances 1 \
-              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},OPENAI_MODEL=gpt-5-mini,BRAIN_AI_REVIEW_ENABLED=true"
-
-      - name: Configure strategy brain candidate scheduler
-        run: |
-          SERVICE_URL="$(gcloud run services describe strategybrain --platform managed --region us-east1 --format='value(status.url)')"
-          SERVICE_ACCOUNT="stock-alert-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
-          gcloud run services add-iam-policy-binding strategybrain \
-            --region us-east1 \
-            --member "serviceAccount:${SERVICE_ACCOUNT}" \
-            --role "roles/run.invoker" \
-            --quiet
-          if gcloud scheduler jobs describe strategy-brain-generate --location us-east1 >/dev/null 2>&1; then
-            gcloud scheduler jobs update http strategy-brain-generate \
-              --location us-east1 \
-              --schedule "0 1 * * 6" \
-              --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}" \
-              --message-body '{"phase":"generate","asset_scope":"MEGACAP_TECH"}' \
-              --attempt-deadline 900s
-          else
-            gcloud scheduler jobs create http strategy-brain-generate \
-              --location us-east1 \
-              --schedule "0 1 * * 6" \
-              --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}" \
-              --message-body '{"phase":"generate","asset_scope":"MEGACAP_TECH"}' \
-              --attempt-deadline 900s
-          fi
-
-      - name: Configure strategy brain review scheduler
-        run: |
-          SERVICE_URL="$(gcloud run services describe strategybrain --platform managed --region us-east1 --format='value(status.url)')"
-          SERVICE_ACCOUNT="stock-alert-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
-          if gcloud scheduler jobs describe strategy-brain-review --location us-east1 >/dev/null 2>&1; then
-            gcloud scheduler jobs update http strategy-brain-review \
-              --location us-east1 \
-              --schedule "0 13 * * 0" \
-              --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}" \
-              --message-body '{"phase":"review","asset_scope":"MEGACAP_TECH","ai_review":true}' \
-              --attempt-deadline 900s
-          else
-            gcloud scheduler jobs create http strategy-brain-review \
-              --location us-east1 \
-              --schedule "0 13 * * 0" \
-              --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}" \
-              --message-body '{"phase":"review","asset_scope":"MEGACAP_TECH","ai_review":true}' \
-              --attempt-deadline 900s
-          fi
-
-      - name: Deploy Alpaca paper trade executor to Cloud Run
-        run: |
-          gcloud run deploy papertradeexecutor \
-              --source ./cloud-functions/paper_trade_executor \
-              --platform managed \
-              --region us-east1 \
-              --no-allow-unauthenticated \
-              --clear-base-image \
-              --command python \
-              --args main.py \
-              --timeout 300 \
-              --concurrency 1 \
-              --max-instances 1 \
-              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PAPER_EXECUTION_MODE=paper,TRADING_SIGNALS_TABLE_ID=trading_champion_challenger_signals,TRADING_RESULTS_TABLE_ID=trading_directional_trade_results,ALPACA_EXECUTIONS_TABLE_ID=trading_alpaca_paper_executions,ALPACA_EQUITY_ORDER_CLASS=simple,ALPACA_ENABLE_CRYPTO_ORDERS=true,ALPACA_MAX_ORDERS_PER_RUN=3,ALPACA_MAX_ORDERS_PER_DAY=5,ALPACA_MAX_OPEN_POSITIONS=5,ALPACA_MAX_NOTIONAL_USD=10,ALPACA_MIN_SETUP_SCORE=0,ALPACA_REQUEST_TIMEOUT_SECONDS=20"
-
-      - name: Configure Alpaca paper trade executor scheduler
-        run: |
-          SERVICE_URL="$(gcloud run services describe papertradeexecutor --platform managed --region us-east1 --format='value(status.url)')"
-          SERVICE_ACCOUNT="stock-alert-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
-          gcloud run services add-iam-policy-binding papertradeexecutor \
-            --region us-east1 \
-            --member "serviceAccount:${SERVICE_ACCOUNT}" \
-            --role "roles/run.invoker" \
-            --quiet
-          if gcloud scheduler jobs describe paper-trade-executor-equities --location us-east1 >/dev/null 2>&1; then
-            gcloud scheduler jobs update http paper-trade-executor-equities \
-              --location us-east1 \
-              --schedule "55 */4 * * 1-5" \
-              --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}?execute=true&asset_scope=equities" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}" \
-              --message-body "{}" \
-              --attempt-deadline 300s
-          else
-            gcloud scheduler jobs create http paper-trade-executor-equities \
-              --location us-east1 \
-              --schedule "55 */4 * * 1-5" \
-              --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}?execute=true&asset_scope=equities" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}" \
-              --message-body "{}" \
-              --attempt-deadline 300s
-          fi
-          if gcloud scheduler jobs describe paper-trade-executor-crypto --location us-east1 >/dev/null 2>&1; then
-            gcloud scheduler jobs update http paper-trade-executor-crypto \
-              --location us-east1 \
-              --schedule "5 */4 * * *" \
-              --time-zone "UTC" \
-              --uri "${SERVICE_URL}?execute=true&asset_scope=crypto" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}" \
-              --message-body "{}" \
-              --attempt-deadline 300s
-          else
-            gcloud scheduler jobs create http paper-trade-executor-crypto \
-              --location us-east1 \
-              --schedule "5 */4 * * *" \
-              --time-zone "UTC" \
-              --uri "${SERVICE_URL}?execute=true&asset_scope=crypto" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}" \
-              --message-body "{}" \
-              --attempt-deadline 300s
-          fi
-          gcloud scheduler jobs delete paper-trade-executor-intraday --location us-east1 --quiet || true
-
-      - name: Deploy Alpaca paper risk monitor to Cloud Run
-        run: |
-          gcloud run deploy papertraderiskmonitor \
-              --source ./cloud-functions/paper_trade_risk_monitor \
-              --platform managed \
-              --region us-east1 \
-              --no-allow-unauthenticated \
-              --clear-base-image \
-              --command python \
-              --args main.py \
-              --timeout 120 \
-              --concurrency 1 \
-              --max-instances 1 \
-              --set-env-vars "PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},PAPER_EXECUTION_MODE=paper,ALPACA_EXECUTIONS_TABLE_ID=trading_alpaca_paper_executions,ALPACA_POSITIONS_TABLE_ID=trading_alpaca_paper_positions,STOCK_PRICES_TABLE_ID=valores_acciones_recientes,ALPACA_MAX_EXITS_PER_RUN=3,ALPACA_REQUEST_TIMEOUT_SECONDS=20"
-
-      - name: Configure Alpaca equity risk monitor scheduler
-        run: |
-          SERVICE_URL="$(gcloud run services describe papertraderiskmonitor --platform managed --region us-east1 --format='value(status.url)')"
-          SERVICE_ACCOUNT="stock-alert-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
-          gcloud run services add-iam-policy-binding papertraderiskmonitor \
-            --region us-east1 \
-            --member "serviceAccount:${SERVICE_ACCOUNT}" \
-            --role "roles/run.invoker" \
-            --quiet
-          if gcloud scheduler jobs describe paper-trade-risk-equities --location us-east1 >/dev/null 2>&1; then
-            gcloud scheduler jobs update http paper-trade-risk-equities \
-              --location us-east1 \
-              --schedule "*/15 9-16 * * 1-5" \
-              --time-zone "America/New_York" \
-              --uri "${SERVICE_URL}?execute=true&asset_scope=equities" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}" \
-              --message-body "{}" \
-              --attempt-deadline 120s
-          else
-            gcloud scheduler jobs create http paper-trade-risk-equities \
-              --location us-east1 \
-              --schedule "*/15 9-16 * * 1-5" \
-              --time-zone "America/New_York" \
-              --uri "${SERVICE_URL}?execute=true&asset_scope=equities" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}" \
-              --message-body "{}" \
-              --attempt-deadline 120s
-          fi
-
-      - name: Configure Alpaca crypto risk monitor scheduler
-        run: |
-          SERVICE_URL="$(gcloud run services describe papertraderiskmonitor --platform managed --region us-east1 --format='value(status.url)')"
-          SERVICE_ACCOUNT="stock-alert-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
-          if gcloud scheduler jobs describe paper-trade-risk-crypto --location us-east1 >/dev/null 2>&1; then
-            gcloud scheduler jobs update http paper-trade-risk-crypto \
-              --location us-east1 \
-              --schedule "*/30 * * * *" \
-              --time-zone "UTC" \
-              --uri "${SERVICE_URL}?execute=true&asset_scope=crypto" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}" \
-              --message-body "{}" \
-              --attempt-deadline 120s
-          else
-            gcloud scheduler jobs create http paper-trade-risk-crypto \
-              --location us-east1 \
-              --schedule "*/30 * * * *" \
-              --time-zone "UTC" \
-              --uri "${SERVICE_URL}?execute=true&asset_scope=crypto" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}" \
-              --message-body "{}" \
-              --attempt-deadline 120s
-          fi
-
-      - name: Configure daily AI candidate scheduler
-        run: |
-          SERVICE_URL="$(gcloud run services describe stockaianalysis --platform managed --region us-east1 --format='value(status.url)')"
-          SERVICE_ACCOUNT="stock-alert-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
-          if gcloud scheduler jobs describe stock-ai-analysis-daily --location us-east1 >/dev/null 2>&1; then
-            gcloud scheduler jobs update http stock-ai-analysis-daily \
-              --location us-east1 \
-              --schedule "45 20 * * 1-5" \
-              --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}?analysis_scope=candidates&send_alert=true" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}/" \
-              --message-body "{}" \
-              --attempt-deadline 1800s
-          else
-            gcloud scheduler jobs create http stock-ai-analysis-daily \
-              --location us-east1 \
-              --schedule "45 20 * * 1-5" \
-              --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}?analysis_scope=candidates&send_alert=true" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}/" \
-              --message-body "{}" \
-              --attempt-deadline 1800s
-          fi
-
-      - name: Configure daily AI remaining scheduler
-        run: |
-          SERVICE_URL="$(gcloud run services describe stockaianalysis --platform managed --region us-east1 --format='value(status.url)')"
-          SERVICE_ACCOUNT="stock-alert-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
-          if gcloud scheduler jobs describe stock-ai-analysis-remaining --location us-east1 >/dev/null 2>&1; then
-            gcloud scheduler jobs update http stock-ai-analysis-remaining \
-              --location us-east1 \
-              --schedule "20 21 * * 1-5" \
-              --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}?analysis_scope=remaining&send_alert=false" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}/" \
-              --message-body "{}" \
-              --attempt-deadline 1800s
-          else
-            gcloud scheduler jobs create http stock-ai-analysis-remaining \
-              --location us-east1 \
-              --schedule "20 21 * * 1-5" \
-              --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}?analysis_scope=remaining&send_alert=false" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}/" \
-              --message-body "{}" \
-              --attempt-deadline 1800s
-          fi
-
-      - name: Configure weekly AI summary scheduler
-        run: |
-          SERVICE_URL="$(gcloud run services describe stockaianalysis --platform managed --region us-east1 --format='value(status.url)')"
-          SERVICE_ACCOUNT="stock-alert-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
-          if gcloud scheduler jobs describe stock-ai-weekly-summary --location us-east1 >/dev/null 2>&1; then
-            gcloud scheduler jobs update http stock-ai-weekly-summary \
-              --location us-east1 \
-              --schedule "15 21 * * 5" \
-              --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}?summary_type=weekly" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}/" \
-              --message-body "{}" \
-              --attempt-deadline 1800s
-          else
-            gcloud scheduler jobs create http stock-ai-weekly-summary \
-              --location us-east1 \
-              --schedule "15 21 * * 5" \
-              --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}?summary_type=weekly" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}/" \
-              --message-body "{}" \
-              --attempt-deadline 1800s
-          fi
-
-      - name: Configure paper trading daily summary scheduler
-        run: |
-          SERVICE_URL="$(gcloud run services describe papertradingalerts --platform managed --region us-east1 --format='value(status.url)')"
-          SERVICE_ACCOUNT="stock-alert-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
-          gcloud run services add-iam-policy-binding papertradingalerts \
-            --region us-east1 \
-            --member "serviceAccount:${SERVICE_ACCOUNT}" \
-            --role "roles/run.invoker" \
-            --quiet
-          if gcloud scheduler jobs describe paper-trading-daily-summary --location us-east1 >/dev/null 2>&1; then
-            gcloud scheduler jobs update http paper-trading-daily-summary \
-              --location us-east1 \
-              --schedule "40 21 * * *" \
-              --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}" \
-              --message-body "{}" \
-              --attempt-deadline 300s
-          else
-            gcloud scheduler jobs create http paper-trading-daily-summary \
-              --location us-east1 \
-              --schedule "40 21 * * *" \
-              --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}" \
-              --message-body "{}" \
-              --attempt-deadline 300s
-          fi
-
-      - name: Configure paper trading weekly strategy review scheduler
-        run: |
-          SERVICE_URL="$(gcloud run services describe papertradingalerts --platform managed --region us-east1 --format='value(status.url)')"
-          SERVICE_ACCOUNT="stock-alert-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
-          gcloud run services add-iam-policy-binding papertradingalerts \
-            --region us-east1 \
-            --member "serviceAccount:${SERVICE_ACCOUNT}" \
-            --role "roles/run.invoker" \
-            --quiet
-          if gcloud scheduler jobs describe paper-trading-weekly-strategy-review --location us-east1 >/dev/null 2>&1; then
-            gcloud scheduler jobs update http paper-trading-weekly-strategy-review \
-              --location us-east1 \
-              --schedule "5 22 * * 5" \
-              --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}?review_type=weekly_strategy" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}" \
-              --message-body "{}" \
-              --attempt-deadline 300s
-          else
-            gcloud scheduler jobs create http paper-trading-weekly-strategy-review \
-              --location us-east1 \
-              --schedule "5 22 * * 5" \
-              --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}?review_type=weekly_strategy" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}" \
-              --message-body "{}" \
-              --attempt-deadline 300s
-          fi
-
-      - name: Configure paper trading weekly global summary scheduler
-        run: |
-          SERVICE_URL="$(gcloud run services describe papertradingalerts --platform managed --region us-east1 --format='value(status.url)')"
-          SERVICE_ACCOUNT="stock-alert-runner@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"
-          gcloud run services add-iam-policy-binding papertradingalerts \
-            --region us-east1 \
-            --member "serviceAccount:${SERVICE_ACCOUNT}" \
-            --role "roles/run.invoker" \
-            --quiet
-          if gcloud scheduler jobs describe paper-trading-weekly-global-summary --location us-east1 >/dev/null 2>&1; then
-            gcloud scheduler jobs update http paper-trading-weekly-global-summary \
-              --location us-east1 \
-              --schedule "20 22 * * 5" \
-              --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}?review_type=weekly_global_summary" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}" \
-              --message-body "{}" \
-              --attempt-deadline 300s
-          else
-            gcloud scheduler jobs create http paper-trading-weekly-global-summary \
-              --location us-east1 \
-              --schedule "20 22 * * 5" \
-              --time-zone "America/Santiago" \
-              --uri "${SERVICE_URL}?review_type=weekly_global_summary" \
-              --http-method POST \
-              --oidc-service-account-email "${SERVICE_ACCOUNT}" \
-              --oidc-token-audience "${SERVICE_URL}" \
-              --message-body "{}" \
-              --attempt-deadline 300s
-          fi
+          exit 1

@@ -7,6 +7,7 @@ from datetime import datetime
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from conf.conf import load_config
+from runtime_health import health_response
 
 logging.basicConfig(level=logging.INFO)
 
@@ -66,6 +67,9 @@ def _build_order_payload(signal, config, alpaca_symbol, is_crypto):
 
 
 def main(request):
+    probe = health_response(request, "papertradeexecutor")
+    if probe is not None:
+        return probe
     request_json = request.get_json(silent=True) or {}
     dry_run = parse_bool(request_json.get("dry_run", request.args.get("dry_run")), True)
     analysis_date = parse_date(request_json.get("analysis_date") or request.args.get("analysis_date"))

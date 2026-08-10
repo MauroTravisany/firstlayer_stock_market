@@ -6,11 +6,15 @@ import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from conf.conf import load_config
+from runtime_health import health_response
 
 logging.basicConfig(level=logging.INFO)
 
 
 def main(request):
+    probe = health_response(request, "stockmacrodata")
+    if probe is not None:
+        return probe
     try:
         config = load_config()
         request_json = request.get_json(silent=True) or {}
