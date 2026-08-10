@@ -11,7 +11,7 @@ def contract(columns=("ticker", "analysis_date"), phase="expand"):
         "destructive_changes": [],
         "expanded_schema": {"acciones_dataset.signal": list(columns)},
         "consumer_contracts": {
-            "legacy": {"acciones_dataset.signal": ["ticker"]},
+            "legacy": {"acciones_dataset.signal": list(columns)},
             "current": {"acciones_dataset.signal": list(columns)},
         },
     }
@@ -19,9 +19,9 @@ def contract(columns=("ticker", "analysis_date"), phase="expand"):
 
 class DataformCompatibilityTests(unittest.TestCase):
     def test_additive_expand_supports_old_and_new_consumers(self):
-        result = verify_dataform_compatibility.validate_transition(
-            contract(("ticker",)), contract()
-        )
+        previous = contract(("ticker",))
+        current = contract(("ticker", "analysis_date"))
+        result = verify_dataform_compatibility.validate_transition(previous, current)
         self.assertEqual(result["status"], "PASS")
         self.assertEqual(result["phase"], "expand")
 
@@ -29,6 +29,15 @@ class DataformCompatibilityTests(unittest.TestCase):
         current = contract(("analysis_date",))
         with self.assertRaises(verify_dataform_compatibility.CompatibilityError):
             verify_dataform_compatibility.validate_transition(contract(), current)
+
+    def test_legacy_consumer_cannot_keep_only_one_previous_column(self):
+        previous = contract(("ticker", "analysis_date"))
+        current = contract(("ticker", "analysis_date", "signal"))
+        current["consumer_contracts"]["legacy"] = {
+            "acciones_dataset.signal": ["ticker"]
+        }
+        with self.assertRaises(verify_dataform_compatibility.CompatibilityError):
+            verify_dataform_compatibility.validate_transition(previous, current)
 
     def test_missing_legacy_consumer_contract_fails(self):
         current = contract()
