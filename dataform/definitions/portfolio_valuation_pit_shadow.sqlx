@@ -2,7 +2,7 @@ config {
   type: "table",
   schema: dataform.projectConfig.vars.auditDataset,
   name: "portfolio_valuation_pit_shadow",
-  description: "Shadow-only valuation rebuilt from prior-session price and SEC filing facts available at each signal timestamp. Same-day close, forward ratios and cross-currency arithmetic are excluded.",
+  description: "Shadow-only valuation rebuilt from prior-session price and SEC filing facts available at each signal timestamp. Same-day close, forward ratios, cross-currency arithmetic and non-additive annual EPS derivations are excluded.",
   tags: ["audit-grade", "pit", "financials", "valuation", "shadow", "wp03"],
   bigquery: {
     partitionBy: "analysis_date",
@@ -66,7 +66,6 @@ base AS (
     t.currency_count,
     t.revenue_ttm,
     t.net_income_ttm,
-    t.eps_diluted_ttm,
     t.total_debt_latest,
     t.cash_and_equivalents_latest,
     t.shares_outstanding_latest,
@@ -84,8 +83,12 @@ base AS (
     CASE
       WHEN t.currency = "USD"
         AND p.previous_close > 0
-        AND t.eps_diluted_ttm > 0
-        THEN SAFE_DIVIDE(p.previous_close, t.eps_diluted_ttm)
+        AND t.shares_outstanding_latest > 0
+        AND t.net_income_ttm > 0
+        THEN SAFE_DIVIDE(
+          SAFE_MULTIPLY(p.previous_close, t.shares_outstanding_latest),
+          t.net_income_ttm
+        )
       ELSE NULL
     END AS pe_ttm_pit,
     CASE
