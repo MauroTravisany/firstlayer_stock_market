@@ -1,0 +1,88 @@
+contract_version: 1.0.0
+data_contract_version: audit-contracts-v1
+criticality: P0
+environments:
+- research
+- shadow
+point_in_time:
+  eligibility: BACKTEST_ELIGIBLE
+  reason: Events are eligible only from the immutable system observation timestamp; no historical publication timestamp is synthesized.
+  event_time_is_publication_time: true
+table:
+  name: earnings_events_pit
+  description: Immutable point-in-time observations of expected and reported earnings events.
+  granularity: One row per source observation and event kind.
+  logical_primary_key:
+  - event_id
+  append_only: true
+  partition_by: DATE(observed_at)
+  cluster_by:
+  - ticker
+  - event_kind
+  corporate_actions_policy: NOT_APPLICABLE
+temporal:
+  event_time: observed_at
+  available_at: available_at
+  ingested_at: ingested_at
+  timezone: UTC
+  point_in_time_policy: observed_at is the earliest proven system availability; source publication time remains null when unavailable.
+source:
+  system: observed Yahoo/yfinance earnings snapshots
+  version_field: event_id
+  original_timezone: UTC
+deduplication:
+  rule: event_id hashes the complete source observation; revision orders observations for the same ticker, kind and earnings date.
+retention:
+  policy: Retain all expected and reported observations to preserve reschedules and revisions.
+columns:
+- {name: event_id, type: STRING, mode: REQUIRED, description: Immutable event observation identity.}
+- {name: source_record_id, type: STRING, mode: REQUIRED, description: Hash of the original observed row.}
+- {name: ticker, type: STRING, mode: REQUIRED, description: Canonical ticker.}
+- {name: event_kind, type: STRING, mode: REQUIRED, description: EXPECTED or REPORTED.}
+- {name: earnings_date, type: DATE, mode: NULLABLE, description: Economic event date.}
+- {name: earnings_time, type: STRING, mode: NULLABLE, description: Source-provided earnings timing text.}
+- {name: eps_estimate, type: FLOAT64, mode: NULLABLE, description: EPS estimate observed at this revision.}
+- {name: reported_eps, type: FLOAT64, mode: NULLABLE, description: Reported EPS observed at this revision.}
+- {name: surprise_pct, type: FLOAT64, mode: NULLABLE, description: Source surprise percentage.}
+- {name: event_status, type: STRING, mode: NULLABLE, description: Source event status.}
+- {name: source, type: STRING, mode: REQUIRED, description: Source identifier from macro ingestion.}
+- {name: source_version, type: STRING, mode: REQUIRED, description: Observation adapter version.}
+- {name: source_published_at, type: TIMESTAMP, mode: NULLABLE, description: Source publication timestamp; null when source does not provide it.}
+- {name: observed_at, type: TIMESTAMP, mode: REQUIRED, description: Timestamp at which the system observed the row.}
+- {name: available_at, type: TIMESTAMP, mode: REQUIRED, description: Earliest eligible timestamp, equal to observed_at.}
+- {name: ingested_at, type: TIMESTAMP, mode: REQUIRED, description: Ingestion timestamp, equal to observed_at.}
+- {name: quality_status, type: STRING, mode: REQUIRED, description: Observation quality classification.}
+- {name: backtest_eligible, type: BOOL, mode: REQUIRED, description: True only from available_at forward.}
+- {name: eligibility_reason, type: STRING, mode: REQUIRED, description: Machine-readable eligibility rationale.}
+- {name: revision, type: INT64, mode: REQUIRED, description: Chronological observation revision.}
+assertions:
+  not_null:
+  - event_id
+  - source_record_id
+  - ticker
+  - event_kind
+  - source
+  - source_version
+  - observed_at
+  - available_at
+  - ingested_at
+  - quality_status
+  - backtest_eligible
+  - eligibility_reason
+  - revision
+  unique:
+  - - event_id
+  accepted_values:
+    event_kind: [EXPECTED, REPORTED]
+    quality_status: [OBSERVED_AT_INGESTION_ONLY]
+    backtest_eligible: [true]
+implementation:
+  mode: CODE_SCHEMA_REFERENCE
+  source_files:
+  - dataform/definitions/earnings_events_pit.sqlx
+  allow_additional_columns: false
+producers:
+- macro_earnings_calendar
+consumers:
+- trading_earnings_context_pit
+- audit_no_lookahead
