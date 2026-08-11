@@ -89,7 +89,7 @@ def validate_scope(
     if not IDENTIFIER.fullmatch(dataset_id):
         raise EvidenceError("dataset_id is not a valid BigQuery dataset identifier")
     if not SHADOW_DATASET.fullmatch(dataset_id):
-        raise EvidenceError("dataset_id must contain 'shadow' and be isolated from production")
+        raise EvidenceError("dataset_id must be isolated and its name contains 'shadow'")
     if not re.fullmatch(r"^[A-Za-z0-9-]+$", location):
         raise EvidenceError("location is invalid")
     return project_id, dataset_id, location
@@ -359,7 +359,7 @@ def evaluate_results(
                 "count": _count(raw, "duplicate_revision_count"),
             }
         )
-    if _count(raw, "eligible_row_count") <= 0:
+    if "eligible_row_count" in raw and _count(raw, "eligible_row_count") <= 0:
         problems.append({"code": "RAW_NO_ELIGIBLE_ROWS"})
     if _count(raw, "other_mapping_row_count"):
         warnings.append(
