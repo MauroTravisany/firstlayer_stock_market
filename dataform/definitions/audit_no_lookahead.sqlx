@@ -2,9 +2,9 @@ config {
   type: "assertion",
   schema: dataform.projectConfig.vars.auditDataset,
   name: "audit_no_lookahead",
-  description: "Fails if a PIT financial or earnings observation is consumed before its verified availability timestamp.",
+  description: "Fails if any financial or earnings observation consumed by WP-03 is newer than the UTC signal timestamp that consumed it.",
   tags: ["audit-grade", "pit", "assertion", "wp03"],
-  dependencies: ["trading_financial_context_pit", "earnings_events_pit"]
+  dependencies: ["trading_financial_context_pit", "trading_earnings_context", "portfolio_valuation_pit_shadow"]
 }
 
 SELECT
@@ -19,9 +19,43 @@ WHERE available_at IS NOT NULL
 UNION ALL
 
 SELECT
-  "EARNINGS_AVAILABLE_AFTER_OBSERVATION" AS violation,
+  "PRIOR_YEAR_FINANCIAL_AVAILABLE_AFTER_SIGNAL" AS violation,
   ticker,
-  observed_at AS evaluated_at,
-  available_at
-FROM ${ref("earnings_events_pit")}
-WHERE available_at < observed_at
+  signal_timestamp AS evaluated_at,
+  prior_year_available_at AS available_at
+FROM ${ref("trading_financial_context_pit")}
+WHERE prior_year_available_at IS NOT NULL
+  AND prior_year_available_at > signal_timestamp
+
+UNION ALL
+
+SELECT
+  "EXPECTED_EARNINGS_AVAILABLE_AFTER_SIGNAL" AS violation,
+  ticker,
+  signal_timestamp_utc AS evaluated_at,
+  expected_available_at AS available_at
+FROM ${ref("trading_earnings_context")}
+WHERE expected_available_at IS NOT NULL
+  AND expected_available_at > signal_timestamp_utc
+
+UNION ALL
+
+SELECT
+  "REPORTED_EARNINGS_AVAILABLE_AFTER_SIGNAL" AS violation,
+  ticker,
+  signal_timestamp_utc AS evaluated_at,
+  reported_available_at AS available_at
+FROM ${ref("trading_earnings_context")}
+WHERE reported_available_at IS NOT NULL
+  AND reported_available_at > signal_timestamp_utc
+
+UNION ALL
+
+SELECT
+  "VALUATION_FINANCIAL_AVAILABLE_AFTER_SIGNAL" AS violation,
+  ticker,
+  TIMESTAMP(signal_timestamp, "UTC") AS evaluated_at,
+  latest_financial_available_at AS available_at
+FROM ${ref("portfolio_valuation_pit_shadow")}
+WHERE latest_financial_available_at IS NOT NULL
+  AND latest_financial_available_at > TIMESTAMP(signal_timestamp, "UTC")
