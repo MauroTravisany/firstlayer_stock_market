@@ -8,7 +8,16 @@ import requests
 from .point_in_time import build_statement_revision, refresh_revision_identity
 
 SEC_DATA_BASE = "https://data.sec.gov"
-SEC_FORMS = {"10-Q", "10-Q/A", "10-K", "10-K/A", "20-F", "20-F/A", "40-F", "40-F/A"}
+SEC_FORMS = {
+    "10-Q",
+    "10-Q/A",
+    "10-K",
+    "10-K/A",
+    "20-F",
+    "20-F/A",
+    "40-F",
+    "40-F/A",
+}
 DURATION_FACTS = {
     "revenue",
     "gross_profit",
@@ -23,8 +32,14 @@ DURATION_FACTS = {
 def _headers():
     user_agent = os.environ.get("SEC_USER_AGENT", "")
     if not user_agent or "@" not in user_agent:
-        raise RuntimeError("SEC_USER_AGENT must identify the application and include a contact email")
-    return {"User-Agent": user_agent, "Accept-Encoding": "gzip, deflate", "Accept": "application/json"}
+        raise RuntimeError(
+            "SEC_USER_AGENT must identify the application and include a contact email"
+        )
+    return {
+        "User-Agent": user_agent,
+        "Accept-Encoding": "gzip, deflate",
+        "Accept": "application/json",
+    }
 
 
 def _get_json(url, timeout=30):
@@ -76,6 +91,7 @@ def recent_filings_by_accession(submissions):
     for document in _filing_documents(submissions):
         accessions = document.get("accessionNumber") or []
         for index, accession in enumerate(accessions):
+
             def value(name):
                 values = document.get(name) or []
                 return values[index] if index < len(values) else None
@@ -94,7 +110,9 @@ def recent_filings_by_accession(submissions):
     return rows
 
 
-def _matching_fact_rows(companyfacts, concepts, *, accession, period_end, unit_preferences):
+def _matching_fact_rows(
+    companyfacts, concepts, *, accession, period_end, unit_preferences
+):
     facts = companyfacts.get("facts") or {}
     for taxonomy in ("us-gaap", "ifrs-full", "dei"):
         namespace = facts.get(taxonomy) or {}
@@ -102,7 +120,9 @@ def _matching_fact_rows(companyfacts, concepts, *, accession, period_end, unit_p
             units = (namespace.get(concept) or {}).get("units") or {}
             for unit in unit_preferences:
                 for row in units.get(unit) or []:
-                    if row.get("accn") == accession and (not period_end or row.get("end") == period_end):
+                    if row.get("accn") == accession and (
+                        not period_end or row.get("end") == period_end
+                    ):
                         yield row, unit
 
 
@@ -195,6 +215,7 @@ def _fiscal_metadata(companyfacts, accession, period_end, currency):
         "RevenueFromContractWithCustomerExcludingAssessedTax",
         "Revenues",
         "SalesRevenueNet",
+        "Revenue",
         "NetIncomeLoss",
         "ProfitLoss",
     ]
@@ -232,17 +253,30 @@ def _debt_values(companyfacts, accession, period_end, currency):
     )
     total, _, _ = _choose_fact(
         companyfacts,
-        ["LongTermDebtAndFinanceLeaseObligations", "DebtAndFinanceLeaseObligations"],
+        [
+            "LongTermDebtAndFinanceLeaseObligations",
+            "DebtAndFinanceLeaseObligations",
+            "Borrowings",
+        ],
         **kwargs,
     )
     current, _, _ = _choose_fact(
         companyfacts,
-        ["LongTermDebtAndFinanceLeaseObligationsCurrent", "LongTermDebtCurrent", "DebtCurrent"],
+        [
+            "LongTermDebtAndFinanceLeaseObligationsCurrent",
+            "LongTermDebtCurrent",
+            "DebtCurrent",
+            "CurrentBorrowings",
+        ],
         **kwargs,
     )
     noncurrent, _, _ = _choose_fact(
         companyfacts,
-        ["LongTermDebtAndFinanceLeaseObligationsNoncurrent", "LongTermDebtNoncurrent"],
+        [
+            "LongTermDebtAndFinanceLeaseObligationsNoncurrent",
+            "LongTermDebtNoncurrent",
+            "NoncurrentBorrowings",
+        ],
         **kwargs,
     )
     if total is None and (current is not None or noncurrent is not None):
@@ -253,7 +287,9 @@ def _debt_values(companyfacts, accession, period_end, currency):
 def _assign_revision_metadata(revisions):
     grouped = defaultdict(list)
     for row in revisions:
-        grouped[(row["ticker"], row.get("fiscal_year"), row.get("fiscal_quarter"))].append(row)
+        grouped[
+            (row["ticker"], row.get("fiscal_year"), row.get("fiscal_quarter"))
+        ].append(row)
 
     for group in grouped.values():
         group.sort(
@@ -293,18 +329,62 @@ def build_sec_statement_revisions(
     filings = recent_filings_by_accession(submissions)
     revisions = []
     mappings = {
-        "revenue": (["RevenueFromContractWithCustomerExcludingAssessedTax", "Revenues", "SalesRevenueNet"], [currency]),
+        "revenue": (
+            [
+                "RevenueFromContractWithCustomerExcludingAssessedTax",
+                "Revenues",
+                "SalesRevenueNet",
+                "Revenue",
+            ],
+            [currency],
+        ),
         "gross_profit": (["GrossProfit"], [currency]),
-        "operating_income": (["OperatingIncomeLoss"], [currency]),
+        "operating_income": (
+            [
+                "OperatingIncomeLoss",
+                "ProfitLossFromOperatingActivities",
+                "OperatingProfitLoss",
+            ],
+            [currency],
+        ),
         "net_income": (["NetIncomeLoss", "ProfitLoss"], [currency]),
-        "eps_basic": (["EarningsPerShareBasic"], [f"{currency}/shares", f"{currency} / shares"]),
-        "eps_diluted": (["EarningsPerShareDiluted"], [f"{currency}/shares", f"{currency} / shares"]),
+        "eps_basic": (
+            ["EarningsPerShareBasic", "BasicEarningsLossPerShare"],
+            [f"{currency}/shares", f"{currency} / shares"],
+        ),
+        "eps_diluted": (
+            ["EarningsPerShareDiluted", "DilutedEarningsLossPerShare"],
+            [f"{currency}/shares", f"{currency} / shares"],
+        ),
         "total_assets": (["Assets"], [currency]),
         "total_liabilities": (["Liabilities"], [currency]),
-        "shareholders_equity": (["StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"], [currency]),
-        "operating_cash_flow": (["NetCashProvidedByUsedInOperatingActivities"], [currency]),
-        "cash_and_equivalents": (["CashAndCashEquivalentsAtCarryingValue", "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"], [currency]),
-        "shares_outstanding": (["EntityCommonStockSharesOutstanding", "CommonStockSharesOutstanding"], ["shares"]),
+        "shareholders_equity": (
+            [
+                "StockholdersEquity",
+                "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
+                "Equity",
+            ],
+            [currency],
+        ),
+        "operating_cash_flow": (
+            [
+                "NetCashProvidedByUsedInOperatingActivities",
+                "CashFlowsFromUsedInOperatingActivities",
+            ],
+            [currency],
+        ),
+        "cash_and_equivalents": (
+            [
+                "CashAndCashEquivalentsAtCarryingValue",
+                "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents",
+                "CashAndCashEquivalents",
+            ],
+            [currency],
+        ),
+        "shares_outstanding": (
+            ["EntityCommonStockSharesOutstanding", "CommonStockSharesOutstanding"],
+            ["shares"],
+        ),
     }
     cik10 = normalize_cik(cik)
     cik_numeric = str(int(cik10))
