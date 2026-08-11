@@ -9,6 +9,7 @@ from .sec_source import build_sec_statement_revisions, fetch_companyfacts, fetch
 DEFAULT_MAPPING_PATH = (
     Path(__file__).resolve().parents[1] / "config" / "ticker_cik_map.v1.json"
 )
+FINANCIAL_REPORTING_MODES = {"SEC_EDGAR", "NOT_APPLICABLE"}
 
 
 def _load_mapping_document(config):
@@ -23,7 +24,9 @@ def _load_mapping_document(config):
         try:
             document = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            raise RuntimeError(f"Unable to read versioned ticker/CIK mapping: {path}") from exc
+            raise RuntimeError(
+                f"Unable to read versioned ticker/CIK mapping: {path}"
+            ) from exc
 
     if not isinstance(document, dict):
         raise RuntimeError("Ticker/CIK mapping root must be an object")
@@ -48,37 +51,70 @@ def _ticker_cik_map(config):
         if not isinstance(raw, dict):
             raise RuntimeError(f"Ticker/CIK mapping entry {index} must be an object")
         ticker = str(raw.get("ticker") or "").strip().upper()
-        cik = "".join(character for character in str(raw.get("cik") or "") if character.isdigit())
-        currency = str(raw.get("reporting_currency") or "").strip().upper()
+        mode = str(raw.get("financial_reporting") or "SEC_EDGAR").strip().upper()
         if not ticker:
             raise RuntimeError(f"Ticker/CIK mapping entry {index} has no ticker")
         if ticker in mapping:
             raise RuntimeError(f"Ticker/CIK mapping contains duplicate ticker {ticker}")
-        if not cik or len(cik) > 10:
-            raise RuntimeError(f"Ticker/CIK mapping entry {ticker} has invalid CIK")
-        if len(currency) != 3 or not currency.isalpha():
+        if mode not in FINANCIAL_REPORTING_MODES:
             raise RuntimeError(
-                f"Ticker/CIK mapping entry {ticker} has invalid reporting_currency"
+                f"Ticker/CIK mapping entry {ticker} has invalid financial_reporting"
             )
-        mapping[ticker] = {
-            "cik": cik.zfill(10),
-            "reporting_currency": currency,
+
+        entry = {
+            "financial_reporting": mode,
             "issuer_name": str(raw.get("issuer_name") or "").strip() or None,
         }
+        if mode == "SEC_EDGAR":
+            cik = "".join(
+                character
+                for character in str(raw.get("cik") or "")
+                if character.isdigit()
+            )
+            currency = str(raw.get("reporting_currency") or "").strip().upper()
+            if not cik or len(cik) > 10:
+                raise RuntimeError(
+                    f"Ticker/CIK mapping entry {ticker} has invalid CIK"
+                )
+            if len(currency) != 3 or not currency.isalpha():
+                raise RuntimeError(
+                    f"Ticker/CIK mapping entry {ticker} has invalid reporting_currency"
+                )
+            entry.update(
+                {
+                    "cik": cik.zfill(10),
+                    "reporting_currency": currency,
+                }
+            )
+        mapping[ticker] = entry
     return mapping_version, mapping
 
 
 def save_pit_financial_statements_to_json(ticker, snapshot_date, config):
-    if not config.get("sec_user_agent"):
-        raise RuntimeError("SEC_USER_AGENT is required when USE_PIT_FINANCIALS=true")
-    os.environ["SEC_USER_AGENT"] = config["sec_user_agent"]
     mapping_version, mapping = _ticker_cik_map(config)
     mapping_entry = mapping.get(ticker.upper())
     if not mapping_entry:
         raise RuntimeError(
             f"No entry in mapping {mapping_version} for {ticker}; PIT ingestion fails closed"
         )
+    if mapping_entry["financial_reporting"] == "NOT_APPLICABLE":
+        return {
+            "not_applicable": True,
+            "statements_file": None,
+            "statements_count": 0,
+            "eligible_count": 0,
+            "mapping_version": mapping_version,
+            "data_status": "PIT_FINANCIAL_NOT_APPLICABLE",
+            "severity": "OK",
+            "message": (
+                f"Fundamental statements are not applicable to {ticker} under "
+                f"mapping {mapping_version}."
+            ),
+        }
 
+    if not config.get("sec_user_agent"):
+        raise RuntimeError("SEC_USER_AGENT is required when USE_PIT_FINANCIALS=true")
+    os.environ["SEC_USER_AGENT"] = config["sec_user_agent"]
     cik = mapping_entry["cik"]
     submissions = fetch_submissions(cik)
     companyfacts = fetch_companyfacts(cik)
@@ -94,11 +130,14 @@ def save_pit_financial_statements_to_json(ticker, snapshot_date, config):
     filename = f"{ticker}_financial_statements_pit_{snapshot_date}.json"
     write_json_lines(filename, revisions)
     return {
+        "not_applicable": False,
         "statements_file": filename,
         "statements_count": len(revisions),
         "eligible_count": len(eligible),
         "mapping_version": mapping_version,
-        "data_status": "PIT_FINANCIAL_OK" if eligible else "PIT_FINANCIAL_NO_ELIGIBLE_ROWS",
+        "data_status": (
+            "PIT_FINANCIAL_OK" if eligible else "PIT_FINANCIAL_NO_ELIGIBLE_ROWS"
+        ),
         "severity": "OK" if eligible else "ERROR",
         "message": (
             f"SEC EDGAR returned {len(revisions)} immutable revisions under "
