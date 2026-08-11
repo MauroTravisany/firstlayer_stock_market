@@ -21,8 +21,8 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(first.schema_snapshot_hash, second.schema_snapshot_hash)
         observed = json.loads((root / "contracts/manifest.json").read_text())
         expected = data_contracts.manifest_document(first)
-        self.assertEqual(len(observed["contracts"]), len(first.contracts))
         self.assertEqual(observed, expected)
+        self.assertEqual(len(observed["contracts"]), len(first.contracts))
 
     def test_schema_drift_fails_for_missing_changed_and_extra_columns(self):
         root = Path(__file__).resolve().parents[3]
