@@ -11,4 +11,4 @@ COPY . .
 
 EXPOSE 8080
 
-CMD ["functions-framework", "--target=main", "--source=main_wp02.py", "--port=8080"]
+CMD ["python", "main.py"]

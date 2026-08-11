@@ -1,20 +1,61 @@
+import hashlib
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-
-
-@unittest.skipUnless(
-    (ROOT / "cloud-functions/strategy_brain/main_wp02.py").is_file(),
-    "WP-02 runtime wrapper is not present in isolated staging",
+STRATEGY_BRAIN = ROOT / "cloud-functions/strategy_brain"
+LEGACY_MAIN_SHA256 = (
+    "0a7886382206553e71857020336fa71d828030019741841d79ce6a27dc6a6df3"
 )
+
+
 class RegistryWiringTests(unittest.TestCase):
-    def test_strategy_brain_image_uses_registry_wrapper(self):
-        dockerfile = (ROOT / "cloud-functions/strategy_brain/Dockerfile").read_text()
-        wrapper = (ROOT / "cloud-functions/strategy_brain/main_wp02.py").read_text()
-        self.assertIn("--source=main_wp02.py", dockerfile)
-        self.assertIn("install(legacy)", wrapper)
-        self.assertIn("return legacy.main(request)", wrapper)
+    def test_main_is_the_only_audited_runtime_entrypoint(self):
+        dockerfile = (STRATEGY_BRAIN / "Dockerfile").read_text()
+        wrapper = (STRATEGY_BRAIN / "main.py").read_text()
+
+        self.assertIn("import legacy_main as legacy", wrapper)
+        self.assertIn("from experiment_registry_adapter import install", wrapper)
+        install_index = wrapper.index("install(legacy)")
+        delegate_index = wrapper.index("return legacy.main(request)")
+        self.assertLess(install_index, delegate_index)
+        self.assertFalse((STRATEGY_BRAIN / "main_wp02.py").exists())
+        self.assertIn('CMD ["python", "main.py"]', dockerfile)
+        self.assertNotIn("main_wp02.py", dockerfile)
+
+    def test_legacy_main_is_the_frozen_historical_implementation(self):
+        legacy_path = STRATEGY_BRAIN / "legacy_main.py"
+        source = legacy_path.read_text(encoding="utf-8").replace("\r\n", "\n")
+
+        self.assertIn("def _generate(", source)
+        self.assertIn("def _review(", source)
+        self.assertEqual(
+            hashlib.sha256(source.encode("utf-8")).hexdigest(),
+            LEGACY_MAIN_SHA256,
+        )
+
+    def test_registry_context_precedes_legacy_candidate_generation(self):
+        source = (
+            STRATEGY_BRAIN / "experiment_registry_adapter.py"
+        ).read_text()
+        context_index = source.index("context = create_context(payload, config, legacy)")
+        generate_index = source.index("result = original_generate(client, config, payload)")
+
+        self.assertLess(context_index, generate_index)
+        self.assertIn('"production_change_allowed": False', source)
+
+    def test_health_probes_short_circuit_before_business_operations(self):
+        source = (STRATEGY_BRAIN / "legacy_main.py").read_text()
+        probe_index = source.index('probe = health_response(request, "strategybrain")')
+        return_index = source.index("return probe", probe_index)
+        payload_index = source.index("payload = request.get_json", return_index)
+        config_index = source.index("config = load_config()", return_index)
+        generate_index = source.index("result = _generate(", config_index)
+
+        self.assertLess(probe_index, return_index)
+        self.assertLess(return_index, payload_index)
+        self.assertLess(payload_index, config_index)
+        self.assertLess(config_index, generate_index)
 
     def test_backtest_variants_require_committed_registry_lineage(self):
         source = (

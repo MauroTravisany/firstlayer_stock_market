@@ -89,6 +89,70 @@ def _assert_payload(status, payload, expected_status):
         raise IntegrationError("malformed health response")
 
 
+def _docker_cmd(target):
+    value = _run(
+        ["docker", "inspect", "--format", "{{json .Config.Cmd}}", target]
+    )
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise IntegrationError("docker returned malformed command metadata") from exc
+
+
+def _assert_strategy_brain_runtime(image, container):
+    expected_cmd = ["python", "main.py"]
+    image_cmd = _docker_cmd(image)
+    container_cmd = _docker_cmd(container)
+    if image_cmd != expected_cmd or container_cmd != expected_cmd:
+        raise IntegrationError(
+            "Strategy Brain image and container must execute python main.py"
+        )
+
+    introspection = (
+        "import json\n"
+        "from pathlib import Path\n"
+        "import legacy_main\n"
+        "import main\n"
+        "payload = {\n"
+        '  "entrypoint_module": Path(main.__file__).name,\n'
+        '  "legacy_module": Path(legacy_main.__file__).name,\n'
+        '  "legacy_identity": main.legacy is legacy_main,\n'
+        '  "registry_installed": bool(getattr(legacy_main, "_WP02_REGISTRY_INSTALLED", False)),\n'
+        '  "generate_wrapped": legacy_main._generate.__module__ == "experiment_registry_adapter",\n'
+        '  "review_wrapped": legacy_main._review.__module__ == "experiment_registry_adapter",\n'
+        '  "alternate_entrypoint_exists": Path("/app/main_wp02.py").exists(),\n'
+        '  "process_cmd": [part.decode() for part in Path("/proc/1/cmdline").read_bytes().split(b"\\0") if part],\n'
+        "}\n"
+        "print(json.dumps(payload, sort_keys=True))\n"
+    )
+    output = _run(
+        ["docker", "exec", container, "python", "-c", introspection],
+        timeout=20,
+    )
+    try:
+        runtime = json.loads(output.splitlines()[-1])
+    except (IndexError, json.JSONDecodeError) as exc:
+        raise IntegrationError(
+            "Strategy Brain runtime introspection was malformed"
+        ) from exc
+
+    expected = {
+        "entrypoint_module": "main.py",
+        "legacy_module": "legacy_main.py",
+        "legacy_identity": True,
+        "registry_installed": True,
+        "generate_wrapped": True,
+        "review_wrapped": True,
+        "alternate_entrypoint_exists": False,
+        "process_cmd": expected_cmd,
+    }
+    if runtime != expected:
+        raise IntegrationError(
+            f"Strategy Brain runtime wiring mismatch: {runtime}"
+        )
+    return {**runtime, "image_cmd": image_cmd, "container_cmd": container_cmd}
+
+
 def check_image(image, service, timeout):
     results = []
     for label, environment, expected_ready in (
@@ -104,7 +168,18 @@ def check_image(image, service, timeout):
             _assert_payload(status, ready, expected_ready)
             if expected_ready == 503 and ready.get("status") != "not_ready":
                 raise IntegrationError("missing configuration did not produce not_ready")
-            results.append({"fixture": label, "health": 200, "ready": status, "mutation_performed": False})
+            result = {
+                "fixture": label,
+                "health": 200,
+                "ready": status,
+                "mutation_performed": False,
+                "requests": ["GET /healthz", "GET /readyz"],
+            }
+            if service == "strategybrain":
+                result["runtime"] = _assert_strategy_brain_runtime(
+                    image, container
+                )
+            results.append(result)
         finally:
             if container:
                 subprocess.run(["docker", "rm", "--force", container], capture_output=True, timeout=20, check=False)

@@ -20,6 +20,14 @@ class ContainerReadinessIntegrationContractTests(unittest.TestCase):
             "mutation_performed",
             "PAPER_EXECUTION_MODE",
             "paper-api.alpaca.markets",
+            "_assert_strategy_brain_runtime",
+            'expected_cmd = ["python", "main.py"]',
+            '"/proc/1/cmdline"',
+            '"entrypoint_module": Path(main.__file__).name',
+            '"registry_installed"',
+            '"generate_wrapped"',
+            '"review_wrapped"',
+            '"alternate_entrypoint_exists"',
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, source)

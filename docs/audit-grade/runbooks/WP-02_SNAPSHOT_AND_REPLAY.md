@@ -1,17 +1,43 @@
-# WP-02 — Snapshot, experiment registry y replay
+# WP-02 - Snapshot, experiment registry, and replay
 
-## Estado operativo
+## Operating state
 
-Este runbook no autoriza despliegues ni ejecución productiva. Mientras los gates
-posteriores permanezcan abiertos:
+This runbook does not authorize deployment or production execution. Strategy
+Brain remains paused, candidates remain `BACKTEST_ONLY`, policy remains
+`SHADOW_ONLY`, `production_change_allowed` remains false, Alpaca remains Paper,
+and the Cloud Run deploy workflow remains disabled.
 
-- Strategy Brain continúa pausado;
-- los candidatos son `BACKTEST_ONLY`;
-- `production_change_allowed` permanece en `FALSE`;
-- Alpaca permanece Paper;
-- `Deploy Cloud Run service` permanece deshabilitado hasta autorización separada.
+## 1. Verify the deployable entrypoint
 
-## 1. Validar contratos en código
+Strategy Brain has one deployable path:
+
+```text
+Dockerfile -> CMD ["python", "main.py"]
+main.py -> import legacy_main as legacy
+main.py -> install(legacy)
+main(request) -> legacy.main(request)
+```
+
+`legacy_main.py` preserves the historical implementation. Do not add a second
+entrypoint or bypass `install(legacy)`. Both direct `python main.py` and
+Functions Framework imports must therefore instrument the same module before a
+request reaches `legacy.main`.
+
+Safe verification:
+
+```bash
+docker build --tag wp02-strategybrain cloud-functions/strategy_brain
+python scripts/ci/integration_test_containers.py \
+  --image wp02-strategybrain \
+  --service strategybrain
+```
+
+The result must show image, container, and process commands as
+`["python", "main.py"]`, `registry_installed=true`, both generation/review
+wrappers installed, `alternate_entrypoint_exists=false`, and
+`mutation_performed=false`.
+
+## 2. Validate contracts
 
 ```bash
 python scripts/ci/validate_data_contracts.py \
@@ -21,28 +47,26 @@ python scripts/ci/validate_data_contracts.py \
   --runtime-manifest cloud-functions/strategy_brain/contract_set_manifest.json
 ```
 
-El comando debe terminar con exit code 0 y producir los mismos
-`contract_set_hash` y `schema_snapshot_hash` versionados. Un cambio de contrato
-requiere regenerar ambos manifests y explicar la migración.
+The command must exit 0 and reproduce the versioned contract and schema hashes.
+A contract change requires regenerated manifests and an explicit migration.
 
-## 2. Validar schemas observados
+## 3. Validate observed schemas
 
-La exportación BigQuery es read-only y se realiza después de aplicar las tablas
-del registry en un entorno controlado:
+This step is blocked until a separately authorized, read-only BigQuery schema
+export is available:
 
 ```bash
 python scripts/ci/validate_observed_schemas.py \
   --contracts-dir contracts \
-  --observed-schema /ruta/observed_schemas.json
+  --observed-schema /path/to/observed_schemas.json
 ```
 
-No se permite convertir una discrepancia en warning. El schema observado debe
-corregirse o el contrato debe versionarse mediante una PR separada.
+Schema mismatches are errors, not warnings. This PR does not query GCP.
 
-## 3. Construir un snapshot
+## 4. Build and publish a shadow snapshot
 
-Preparar un manifest de fuentes con una fila por tabla/partición y su checksum
-SHA-256. Después ejecutar:
+After explicit authorization, prepare a source manifest containing one row per
+table/partition and its SHA-256 checksum, then run:
 
 ```bash
 python -m research.snapshot_manifest \
@@ -50,19 +74,19 @@ python -m research.snapshot_manifest \
   --source-manifest source_manifest.json \
   --source-cutoff 2026-08-10T23:59:59Z \
   --environment shadow \
-  --created-by operador \
+  --created-by operator \
   --quality-report quality_report.json \
   --publish \
   --output snapshot.json
 ```
 
-La publicación falla si el quality gate no es `PASS`. El registro publicado es
-inmutable y debe insertarse en `audit_data_snapshots` antes de iniciar un
-experimento.
+Publication fails unless the quality gate is `PASS`. A published snapshot is
+immutable and must exist in `audit_data_snapshots` before an experiment starts.
+No real snapshot is published by WP-02's PR.
 
-## 4. Iniciar Strategy Brain
+## 5. Start a controlled shadow experiment
 
-Una petición de generación debe incluir, como mínimo:
+Only after separate authorization and while preserving `BACKTEST_ONLY`:
 
 ```json
 {
@@ -70,18 +94,15 @@ Una petición de generación debe incluir, como mínimo:
   "attempt_id": "attempt-001",
   "data_snapshot_id": "snapshot_<sha256>",
   "universe_version": "megacap-tech-v1",
-  "hypothesis": "Hipótesis concreta y falsable"
+  "hypothesis": "Concrete, falsifiable hypothesis"
 }
 ```
 
-El adapter crea `experiment_id` y `run_id` antes de construir candidatos. Si el
-snapshot no está publicado, es mutable, no supera calidad o no coincide con el
-contract set, la petición falla cerrada.
+The adapter allocates `experiment_id` and `run_id` before it invokes candidate
+generation. An absent, mutable, unpublished, failed-quality, or contract-drifted
+snapshot fails closed. Strategy Brain remains paused during this PR.
 
-## 5. Replay read-only
-
-Exportar el bundle de experimento, snapshot, candidatos, artefactos y decisiones
-y ejecutar:
+## 6. Read-only replay
 
 ```bash
 python -m research.replay \
@@ -90,24 +111,22 @@ python -m research.replay \
   --output replay_plan.json
 ```
 
-El replay no escribe BigQuery ni llama al broker. Rechaza drift de dependencias,
-configuración, snapshot, lineage o checksums. Dos ejecuciones del mismo bundle
-deben producir el mismo `replay_plan_checksum`.
+Replay writes neither BigQuery nor broker state. It rejects dependency,
+configuration, snapshot, lineage, and checksum drift. The same bundle must
+produce the same `replay_plan_checksum`. Full economic replay is deferred to
+WP-07.
 
-## 6. Fallos y recuperación
+## 7. Failure handling
 
-- `REGISTRY_PENDING` no es consumible por Dataform.
-- Un fallo parcial marca la corrida `FAILED`; no se reusa el mismo intento como
-  si fuera una corrida limpia.
-- Para reintentar, crear un nuevo `attempt_id`, conservando el
-  `parent_experiment_id` cuando corresponda.
-- No editar registros terminales. Toda corrección crea una nueva corrida o un
-  nuevo snapshot.
-- No eliminar evidencia huérfana; sirve para reconstruir el fallo.
+- `REGISTRY_PENDING` is not consumable by Dataform.
+- Partial failure marks the run `FAILED`; it is not reused as a clean run.
+- Retry with a new `attempt_id`, retaining `parent_experiment_id` when needed.
+- Never edit terminal records; create a new run or snapshot.
+- Preserve orphaned evidence for failure reconstruction.
 
-## 7. Rollback
+## 8. Rollback boundary
 
-WP-02 es aditivo. El rollback operacional consiste en mantener Strategy Brain
-pausado y dejar consumidores legacy intactos. Las tablas audit nuevas no se
-borran. Si el adapter se deshabilita, ninguna nueva corrida se considera
-promocionable y los resultados previos conservan `LEGACY_PRE_AUDIT_GRADE`.
+WP-02 is additive. Operational rollback means keeping Strategy Brain paused and
+legacy consumers unchanged. Do not delete audit tables. If registry
+instrumentation is unavailable, no new run is promotion-eligible and prior
+results remain `LEGACY_PRE_AUDIT_GRADE`.
