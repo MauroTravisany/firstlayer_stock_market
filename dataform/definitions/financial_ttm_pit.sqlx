@@ -108,14 +108,19 @@ aggregated AS (
     ticker,
     COUNT(*) AS quarter_count,
     COUNTIF(quarter_structure_complete) AS normalized_quarter_count,
+    COUNTIF(revenue IS NOT NULL) AS revenue_quarter_count,
+    COUNTIF(net_income IS NOT NULL) AS net_income_quarter_count,
+    COUNTIF(gross_profit IS NOT NULL) AS gross_profit_quarter_count,
+    COUNTIF(operating_income IS NOT NULL) AS operating_income_quarter_count,
+    COUNTIF(eps_diluted IS NOT NULL) AS eps_diluted_quarter_count,
     MAX(available_at) AS latest_financial_available_at,
     ARRAY_AGG(revision_id ORDER BY fiscal_year DESC, fiscal_quarter DESC) AS ttm_revision_ids,
     ARRAY_AGG(quarter_value_basis ORDER BY fiscal_year DESC, fiscal_quarter DESC) AS ttm_value_basis,
-    SUM(revenue) AS revenue_ttm,
-    SUM(gross_profit) AS gross_profit_ttm,
-    SUM(operating_income) AS operating_income_ttm,
-    SUM(net_income) AS net_income_ttm,
-    SUM(eps_diluted) AS eps_diluted_ttm,
+    IF(COUNTIF(revenue IS NOT NULL) = 4, SUM(revenue), NULL) AS revenue_ttm,
+    IF(COUNTIF(gross_profit IS NOT NULL) = 4, SUM(gross_profit), NULL) AS gross_profit_ttm,
+    IF(COUNTIF(operating_income IS NOT NULL) = 4, SUM(operating_income), NULL) AS operating_income_ttm,
+    IF(COUNTIF(net_income IS NOT NULL) = 4, SUM(net_income), NULL) AS net_income_ttm,
+    IF(COUNTIF(eps_diluted IS NOT NULL) = 4, SUM(eps_diluted), NULL) AS eps_diluted_ttm,
     ARRAY_AGG(total_assets IGNORE NULLS ORDER BY fiscal_year DESC, fiscal_quarter DESC LIMIT 1)[SAFE_OFFSET(0)] AS total_assets_latest,
     ARRAY_AGG(total_liabilities IGNORE NULLS ORDER BY fiscal_year DESC, fiscal_quarter DESC LIMIT 1)[SAFE_OFFSET(0)] AS total_liabilities_latest,
     ARRAY_AGG(total_debt IGNORE NULLS ORDER BY fiscal_year DESC, fiscal_quarter DESC LIMIT 1)[SAFE_OFFSET(0)] AS total_debt_latest,
@@ -127,7 +132,10 @@ aggregated AS (
 )
 SELECT
   *,
-  quarter_count = 4 AND normalized_quarter_count = 4 AS ttm_complete,
+  quarter_count = 4
+    AND normalized_quarter_count = 4
+    AND revenue_quarter_count = 4
+    AND net_income_quarter_count = 4 AS ttm_complete,
   SAFE_DIVIDE(net_income_ttm, revenue_ttm) AS net_margin_ttm,
   SAFE_DIVIDE(gross_profit_ttm, revenue_ttm) AS gross_margin_ttm,
   SAFE_DIVIDE(operating_income_ttm, revenue_ttm) AS operating_margin_ttm,
