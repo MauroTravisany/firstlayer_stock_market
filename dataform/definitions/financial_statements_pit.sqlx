@@ -5,17 +5,28 @@ config {
   description: "Append-only financial statement revisions with verifiable market availability. Rows without available_at are never backtest eligible.",
   tags: ["audit-grade", "pit", "financials", "wp03"],
   assertions: {
-    nonNull: ["revision_id", "ticker", "period_end_date", "eligibility_reason"],
-    uniqueKey: ["revision_id"]
-  }
+    nonNull: ["revision_id", "ticker", "mapping_version", "revision_number", "is_restated", "period_end_date", "source_published_at", "available_at", "eligibility_reason", "quality_status"],
+    uniqueKey: ["revision_id"],
+    rowConditions: [
+      "backtest_eligible = TRUE",
+      "available_at = source_published_at",
+      "revision_number > 0",
+      "quality_status = 'ELIGIBLE_VERIFIED_PIT'"
+    ]
+  },
+  dependencies: ["financial_statements_pit_raw"]
 }
 
 SELECT
   revision_id,
   ticker,
   cik,
+  mapping_version,
   form_type,
   accession_number,
+  source_record_id,
+  revision_number,
+  is_restated,
   filing_date,
   source_published_at,
   available_at,
@@ -43,8 +54,10 @@ SELECT
   source_url,
   backtest_eligible,
   eligibility_reason,
+  quality_status,
   loaded_at
-FROM `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.vars.auditDataset}.financial_statements_pit_raw`
+FROM ${ref("financial_statements_pit_raw")}
 WHERE backtest_eligible = TRUE
   AND available_at IS NOT NULL
   AND source_published_at IS NOT NULL
+  AND quality_status = "ELIGIBLE_VERIFIED_PIT"
