@@ -2,98 +2,31 @@ config {
   type: "table",
   schema: dataform.projectConfig.vars.auditDataset,
   name: "financial_ttm_pit",
-  description: "Trailing-four-quarter financial metrics rebuilt independently for each signal timestamp from only revisions available at that instant. Annual filing duration values are converted to Q4 as FY minus Q1-Q3 when all components are available.",
+  description: "Trailing-four-consecutive-quarter financial metrics rebuilt for each signal timestamp from canonical PIT quarters only.",
   tags: ["audit-grade", "pit", "financials", "ttm", "wp03"],
   bigquery: {
     partitionBy: "analysis_date",
     clusterBy: ["ticker"]
   },
   assertions: {
-    nonNull: ["analysis_date", "signal_hour", "ticker"],
-    uniqueKey: ["analysis_date", "signal_hour", "ticker"]
+    nonNull: ["analysis_date", "signal_hour", "signal_timestamp", "ticker"],
+    uniqueKey: ["analysis_date", "signal_hour", "ticker"],
+    rowConditions: [
+      "latest_financial_available_at IS NULL OR latest_financial_available_at <= signal_timestamp"
+    ]
   },
-  dependencies: ["financial_statements_pit", "trading_price_features"]
+  dependencies: ["financial_quarters_pit"]
 }
 
-WITH price_slots AS (
+WITH ranked_quarters AS (
   SELECT
-    *,
-    TIMESTAMP(signal_timestamp, "UTC") AS signal_timestamp_utc
-  FROM ${ref("trading_price_features")}
-),
-available_revisions AS (
-  SELECT
-    p.analysis_date,
-    p.signal_hour,
-    p.signal_timestamp_utc AS signal_timestamp,
-    p.ticker,
-    s.*,
-    ROW_NUMBER() OVER (
-      PARTITION BY p.analysis_date, p.signal_hour, p.ticker, s.fiscal_year, s.fiscal_quarter
-      ORDER BY s.available_at DESC, s.filing_date DESC, s.revision_id DESC
-    ) AS revision_rank
-  FROM price_slots p
-  LEFT JOIN ${ref("financial_statements_pit")} s
-    ON s.ticker = p.ticker
-   AND s.available_at <= p.signal_timestamp_utc
-   AND s.backtest_eligible = TRUE
-   AND s.fiscal_quarter IN (1, 2, 3, 4)
-),
-dedup_quarters AS (
-  SELECT * EXCEPT(revision_rank)
-  FROM available_revisions
-  WHERE revision_rank = 1
-),
-with_fy_components AS (
-  SELECT
-    *,
-    COUNTIF(fiscal_quarter IN (1, 2, 3)) OVER fiscal_year_window AS q123_count,
-    COUNTIF(fiscal_quarter IN (1, 2, 3) AND revenue IS NOT NULL) OVER fiscal_year_window AS q123_revenue_count,
-    COUNTIF(fiscal_quarter IN (1, 2, 3) AND gross_profit IS NOT NULL) OVER fiscal_year_window AS q123_gross_profit_count,
-    COUNTIF(fiscal_quarter IN (1, 2, 3) AND operating_income IS NOT NULL) OVER fiscal_year_window AS q123_operating_income_count,
-    COUNTIF(fiscal_quarter IN (1, 2, 3) AND net_income IS NOT NULL) OVER fiscal_year_window AS q123_net_income_count,
-    COUNTIF(fiscal_quarter IN (1, 2, 3) AND eps_diluted IS NOT NULL) OVER fiscal_year_window AS q123_eps_count,
-    SUM(IF(fiscal_quarter IN (1, 2, 3), revenue, NULL)) OVER fiscal_year_window AS q123_revenue,
-    SUM(IF(fiscal_quarter IN (1, 2, 3), gross_profit, NULL)) OVER fiscal_year_window AS q123_gross_profit,
-    SUM(IF(fiscal_quarter IN (1, 2, 3), operating_income, NULL)) OVER fiscal_year_window AS q123_operating_income,
-    SUM(IF(fiscal_quarter IN (1, 2, 3), net_income, NULL)) OVER fiscal_year_window AS q123_net_income,
-    SUM(IF(fiscal_quarter IN (1, 2, 3), eps_diluted, NULL)) OVER fiscal_year_window AS q123_eps_diluted
-  FROM dedup_quarters
-  WHERE revision_id IS NOT NULL
-  WINDOW fiscal_year_window AS (
-    PARTITION BY analysis_date, signal_hour, ticker, fiscal_year
-  )
-),
-normalized_quarters AS (
-  SELECT
-    * EXCEPT(
-      revenue, gross_profit, operating_income, net_income, eps_diluted,
-      q123_count, q123_revenue_count, q123_gross_profit_count,
-      q123_operating_income_count, q123_net_income_count, q123_eps_count,
-      q123_revenue, q123_gross_profit, q123_operating_income,
-      q123_net_income, q123_eps_diluted
-    ),
-    CASE WHEN fiscal_quarter = 4 THEN IF(q123_revenue_count = 3, revenue - q123_revenue, NULL) ELSE revenue END AS revenue,
-    CASE WHEN fiscal_quarter = 4 THEN IF(q123_gross_profit_count = 3, gross_profit - q123_gross_profit, NULL) ELSE gross_profit END AS gross_profit,
-    CASE WHEN fiscal_quarter = 4 THEN IF(q123_operating_income_count = 3, operating_income - q123_operating_income, NULL) ELSE operating_income END AS operating_income,
-    CASE WHEN fiscal_quarter = 4 THEN IF(q123_net_income_count = 3, net_income - q123_net_income, NULL) ELSE net_income END AS net_income,
-    CASE WHEN fiscal_quarter = 4 THEN IF(q123_eps_count = 3, eps_diluted - q123_eps_diluted, NULL) ELSE eps_diluted END AS eps_diluted,
-    CASE
-      WHEN fiscal_quarter != 4 THEN "REPORTED_QUARTER"
-      WHEN q123_count = 3 THEN "DERIVED_Q4_FROM_FY_MINUS_Q1_Q2_Q3"
-      ELSE "INCOMPLETE_Q4_NORMALIZATION"
-    END AS quarter_value_basis,
-    fiscal_quarter != 4 OR q123_count = 3 AS quarter_structure_complete
-  FROM with_fy_components
-),
-ranked_quarters AS (
-  SELECT
-    *,
+    q.*,
+    fiscal_year * 4 + fiscal_quarter AS fiscal_quarter_ordinal,
     ROW_NUMBER() OVER (
       PARTITION BY analysis_date, signal_hour, ticker
       ORDER BY fiscal_year DESC, fiscal_quarter DESC, period_end_date DESC
     ) AS quarter_recency
-  FROM normalized_quarters
+  FROM ${ref("financial_quarters_pit")} q
 ),
 last_four AS (
   SELECT *
@@ -107,6 +40,10 @@ aggregated AS (
     ANY_VALUE(signal_timestamp) AS signal_timestamp,
     ticker,
     COUNT(*) AS quarter_count,
+    COUNT(DISTINCT fiscal_quarter_ordinal) AS distinct_quarter_count,
+    MAX(fiscal_quarter_ordinal) - MIN(fiscal_quarter_ordinal) AS quarter_ordinal_span,
+    COUNT(DISTINCT currency) AS currency_count,
+    ANY_VALUE(currency HAVING MAX fiscal_quarter_ordinal) AS currency,
     COUNTIF(quarter_structure_complete) AS normalized_quarter_count,
     COUNTIF(revenue IS NOT NULL) AS revenue_quarter_count,
     COUNTIF(net_income IS NOT NULL) AS net_income_quarter_count,
@@ -115,7 +52,11 @@ aggregated AS (
     COUNTIF(eps_diluted IS NOT NULL) AS eps_diluted_quarter_count,
     MAX(available_at) AS latest_financial_available_at,
     ARRAY_AGG(revision_id ORDER BY fiscal_year DESC, fiscal_quarter DESC) AS ttm_revision_ids,
+    ARRAY_AGG(revision_number ORDER BY fiscal_year DESC, fiscal_quarter DESC) AS ttm_revision_numbers,
+    ARRAY_AGG(is_restated ORDER BY fiscal_year DESC, fiscal_quarter DESC) AS ttm_restatement_flags,
+    ARRAY_AGG(mapping_version ORDER BY fiscal_year DESC, fiscal_quarter DESC) AS ttm_mapping_versions,
     ARRAY_AGG(quarter_value_basis ORDER BY fiscal_year DESC, fiscal_quarter DESC) AS ttm_value_basis,
+    ARRAY_AGG(derivation_component_revision_ids ORDER BY fiscal_year DESC, fiscal_quarter DESC) AS ttm_derivation_component_revision_ids,
     IF(COUNTIF(revenue IS NOT NULL) = 4, SUM(revenue), NULL) AS revenue_ttm,
     IF(COUNTIF(gross_profit IS NOT NULL) = 4, SUM(gross_profit), NULL) AS gross_profit_ttm,
     IF(COUNTIF(operating_income IS NOT NULL) = 4, SUM(operating_income), NULL) AS operating_income_ttm,
@@ -129,15 +70,23 @@ aggregated AS (
     ARRAY_AGG(shareholders_equity IGNORE NULLS ORDER BY fiscal_year DESC, fiscal_quarter DESC LIMIT 1)[SAFE_OFFSET(0)] AS shareholders_equity_latest
   FROM last_four
   GROUP BY analysis_date, signal_hour, ticker
+),
+completed AS (
+  SELECT
+    *,
+    quarter_count = 4
+      AND distinct_quarter_count = 4
+      AND quarter_ordinal_span = 3
+      AND currency_count = 1
+      AND normalized_quarter_count = 4
+      AND revenue_quarter_count = 4
+      AND net_income_quarter_count = 4 AS ttm_complete
+  FROM aggregated
 )
 SELECT
   *,
-  quarter_count = 4
-    AND normalized_quarter_count = 4
-    AND revenue_quarter_count = 4
-    AND net_income_quarter_count = 4 AS ttm_complete,
-  SAFE_DIVIDE(net_income_ttm, revenue_ttm) AS net_margin_ttm,
-  SAFE_DIVIDE(gross_profit_ttm, revenue_ttm) AS gross_margin_ttm,
-  SAFE_DIVIDE(operating_income_ttm, revenue_ttm) AS operating_margin_ttm,
-  SAFE_DIVIDE(total_debt_latest, shareholders_equity_latest) AS debt_to_equity_latest
-FROM aggregated
+  IF(ttm_complete, SAFE_DIVIDE(net_income_ttm, NULLIF(revenue_ttm, 0)), NULL) AS net_margin_ttm,
+  IF(ttm_complete, SAFE_DIVIDE(gross_profit_ttm, NULLIF(revenue_ttm, 0)), NULL) AS gross_margin_ttm,
+  IF(ttm_complete, SAFE_DIVIDE(operating_income_ttm, NULLIF(revenue_ttm, 0)), NULL) AS operating_margin_ttm,
+  SAFE_DIVIDE(total_debt_latest, NULLIF(shareholders_equity_latest, 0)) AS debt_to_equity_latest
+FROM completed
