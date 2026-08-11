@@ -58,7 +58,9 @@ class SecSourceTests(unittest.TestCase):
             if taxonomy == "ifrs-full"
             else "RevenueFromContractWithCustomerExcludingAssessedTax"
         )
-        income_concept = "ProfitLoss" if taxonomy == "ifrs-full" else "NetIncomeLoss"
+        income_concept = (
+            "ProfitLoss" if taxonomy == "ifrs-full" else "NetIncomeLoss"
+        )
         return {
             "facts": {
                 taxonomy: {
@@ -149,7 +151,7 @@ class SecSourceTests(unittest.TestCase):
         self.assertEqual("EUR", rows[0]["currency"])
         self.assertTrue(rows[0]["backtest_eligible"])
 
-    def test_period_revisions_are_numbered_and_preserved(self):
+    def test_source_revisions_remain_immutable_and_preserve_amendments(self):
         submissions = {
             "filings": {
                 "recent": {
@@ -200,8 +202,11 @@ class SecSourceTests(unittest.TestCase):
         rows = self.build(
             submissions=submissions, companyfacts=companyfacts
         )
-        self.assertEqual([1, 2], [row["revision_number"] for row in rows])
-        self.assertEqual([False, True], [row["is_restated"] for row in rows])
+        self.assertEqual(
+            [False, True], [row["source_is_amendment"] for row in rows]
+        )
+        self.assertNotIn("revision_number", rows[0])
+        self.assertNotIn("is_restated", rows[0])
         self.assertNotEqual(rows[0]["revision_id"], rows[1]["revision_id"])
 
     def test_sec_user_agent_requires_contact(self):
