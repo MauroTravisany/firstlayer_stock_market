@@ -1,6 +1,5 @@
 import os
 import re
-from datetime import datetime, timezone
 
 import requests
 
@@ -48,50 +47,66 @@ def recent_filings_by_accession(submissions):
         def value(name):
             values = recent.get(name) or []
             return values[index] if index < len(values) else None
+
         form = value("form")
         if form not in SEC_FORMS:
             continue
-        accepted = value("acceptanceDateTime")
-        filed = value("filingDate")
-        report = value("reportDate")
         rows[accession] = {
             "accession_number": accession,
             "form_type": form,
-            "filing_date": filed,
-            "source_published_at": accepted or (f"{filed}T23:59:59Z" if filed else None),
-            "period_end_date": report,
+            "filing_date": value("filingDate"),
+            "source_published_at": value("acceptanceDateTime"),
+            "period_end_date": value("reportDate"),
             "primary_document": value("primaryDocument"),
         }
     return rows
 
 
-def _choose_fact(companyfacts, concepts, *, accession, period_end, unit_preferences):
+def _matching_fact_rows(companyfacts, concepts, *, accession, period_end, unit_preferences):
     facts = companyfacts.get("facts") or {}
     for taxonomy in ("us-gaap", "ifrs-full"):
         namespace = facts.get(taxonomy) or {}
         for concept in concepts:
             units = (namespace.get(concept) or {}).get("units") or {}
             for unit in unit_preferences:
-                candidates = units.get(unit) or []
-                matches = [
-                    row for row in candidates
-                    if row.get("accn") == accession and (not period_end or row.get("end") == period_end)
-                ]
-                if matches:
-                    chosen = max(matches, key=lambda row: (row.get("filed") or "", row.get("fy") or 0))
-                    return chosen.get("val"), unit
-    return None, None
+                for row in units.get(unit) or []:
+                    if row.get("accn") == accession and (not period_end or row.get("end") == period_end):
+                        yield row, unit
 
 
-def _fiscal_quarter(filing):
-    form = filing["form_type"]
-    if form.startswith(("10-K", "20-F", "40-F")):
-        return 4
-    report = filing.get("period_end_date")
-    if not report:
-        return None
-    month = int(report[5:7])
-    return ((month - 1) // 3) + 1
+def _choose_fact(companyfacts, concepts, *, accession, period_end, unit_preferences):
+    matches = list(_matching_fact_rows(
+        companyfacts, concepts, accession=accession, period_end=period_end,
+        unit_preferences=unit_preferences,
+    ))
+    if not matches:
+        return None, None, None
+    chosen, unit = max(matches, key=lambda pair: (pair[0].get("filed") or "", pair[0].get("fy") or 0, pair[0].get("frame") or ""))
+    return chosen.get("val"), unit, chosen
+
+
+def _fiscal_metadata(companyfacts, accession, period_end):
+    concepts = [
+        "RevenueFromContractWithCustomerExcludingAssessedTax",
+        "Revenues",
+        "SalesRevenueNet",
+        "NetIncomeLoss",
+        "ProfitLoss",
+    ]
+    candidates = []
+    for concept in concepts:
+        for row, _unit in _matching_fact_rows(
+            companyfacts, [concept], accession=accession, period_end=period_end,
+            unit_preferences=["USD"],
+        ):
+            if row.get("fy") is not None and row.get("fp"):
+                candidates.append(row)
+    if not candidates:
+        return None, None
+    chosen = max(candidates, key=lambda row: (row.get("filed") or "", str(row.get("fp") or "")))
+    fp = str(chosen.get("fp") or "").upper()
+    quarter = {"Q1": 1, "Q2": 2, "Q3": 3, "FY": 4}.get(fp)
+    return int(chosen["fy"]), quarter
 
 
 def build_sec_statement_revisions(ticker, cik, submissions, companyfacts):
@@ -116,18 +131,25 @@ def build_sec_statement_revisions(ticker, cik, submissions, companyfacts):
         period_end = filing.get("period_end_date")
         if not period_end:
             continue
+        fiscal_year, fiscal_quarter = _fiscal_metadata(companyfacts, accession, period_end)
         facts = {}
         currency = None
         for field, (concepts, units) in mappings.items():
-            value, unit = _choose_fact(companyfacts, concepts, accession=accession, period_end=period_end, unit_preferences=units)
+            value, unit, _metadata = _choose_fact(
+                companyfacts, concepts, accession=accession, period_end=period_end,
+                unit_preferences=units,
+            )
             facts[field] = value
             if field == "revenue" and unit == "USD":
                 currency = "USD"
         facts["free_cash_flow"] = None
         accession_compact = accession.replace("-", "")
         primary_document = filing.get("primary_document") or ""
-        source_url = f"https://www.sec.gov/Archives/edgar/data/{cik_numeric}/{accession_compact}/{primary_document}" if primary_document else f"https://www.sec.gov/Archives/edgar/data/{cik_numeric}/{accession_compact}/"
-        filing_year = int(period_end[:4])
+        source_url = (
+            f"https://www.sec.gov/Archives/edgar/data/{cik_numeric}/{accession_compact}/{primary_document}"
+            if primary_document
+            else f"https://www.sec.gov/Archives/edgar/data/{cik_numeric}/{accession_compact}/"
+        )
         revisions.append(build_statement_revision(
             ticker=ticker,
             cik=cik10,
@@ -136,8 +158,8 @@ def build_sec_statement_revisions(ticker, cik, submissions, companyfacts):
             filing_date=filing.get("filing_date"),
             source_published_at=filing.get("source_published_at"),
             period_end_date=period_end,
-            fiscal_year=filing_year,
-            fiscal_quarter=_fiscal_quarter(filing),
+            fiscal_year=fiscal_year if fiscal_year is not None else int(period_end[:4]),
+            fiscal_quarter=fiscal_quarter,
             currency=currency,
             facts=facts,
             source_url=source_url,
