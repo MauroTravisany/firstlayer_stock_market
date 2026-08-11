@@ -21,11 +21,15 @@ class Wp03SqlContractTests(unittest.TestCase):
     def test_canonical_quarters_use_contemporaneous_q4_components(self):
         sql = self.read("financial_quarters_pit.sqlx")
         self.assertIn("c.available_at <= a.available_at", sql)
+        self.assertIn("c.mapping_version = a.mapping_version", sql)
         self.assertIn(
-            "DERIVED_Q4_FROM_FY_AND_CONTEMPORANEOUS_Q1_Q2_Q3", sql
+            "DERIVED_Q4_ADDITIVE_FACTS_ONLY_FROM_CONTEMPORANEOUS_Q1_Q2_Q3",
+            sql,
         )
         self.assertIn("derivation_component_revision_ids", sql)
         self.assertIn("component_currency_count", sql)
+        self.assertIn("CAST(NULL AS FLOAT64) AS eps_basic", sql)
+        self.assertIn("CAST(NULL AS FLOAT64) AS eps_diluted", sql)
 
     def test_earnings_context_uses_observation_availability(self):
         sql = self.read("trading_earnings_context_pit.sqlx")
@@ -46,13 +50,14 @@ class Wp03SqlContractTests(unittest.TestCase):
         self.assertIn("currency_count = 1", sql)
         self.assertIn("revenue_quarter_count = 4", sql)
         self.assertIn("net_income_quarter_count = 4", sql)
+        self.assertIn("ttm_derivation_lineage_json", sql)
 
     def test_pit_valuation_uses_prior_price_and_positive_denominators(self):
         sql = self.read("portfolio_valuation_pit_shadow.sqlx")
         self.assertNotIn("financial_ratios_snapshot", sql)
         self.assertNotIn("forward_pe", sql.lower())
         self.assertIn("p.previous_close AS valuation_price", sql)
-        self.assertIn("t.eps_diluted_ttm > 0", sql)
+        self.assertIn("t.net_income_ttm > 0", sql)
         self.assertIn("t.revenue_ttm > 0", sql)
         self.assertIn("t.shareholders_equity_latest > 0", sql)
         self.assertIn('reporting_currency != "USD"', sql)
