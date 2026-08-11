@@ -44,7 +44,11 @@ def load_config():
         "financial_ratios_table": f"{project_id}.{dataset_id}.{ratios_table_id}",
         "use_pit_financials": os.environ.get("USE_PIT_FINANCIALS", "false").strip().lower() == "true",
         "sec_user_agent": os.environ.get("SEC_USER_AGENT"),
-        "ticker_cik_map_json": os.environ.get("TICKER_CIK_MAP_JSON", "{}"),
+        "ticker_cik_map_path": os.environ.get("TICKER_CIK_MAP_PATH"),
+        "ticker_cik_map_version": os.environ.get(
+            "TICKER_CIK_MAP_VERSION", "sec-company-tickers-2026-08-11-v1"
+        ),
+        "ticker_cik_map_json": os.environ.get("TICKER_CIK_MAP_JSON"),
         "quality_table": f"{project_id}.{dataset_id}.{os.environ.get('DATA_QUALITY_TABLE_ID', 'pipeline_data_quality_daily')}",
         "alert_webhook_url": os.environ.get("ALERT_WEBHOOK_URL")
         or access_secret_version(os.environ.get("ALERT_WEBHOOK_URL_SECRET", "ALERT_WEBHOOK_URL"), required=False),
