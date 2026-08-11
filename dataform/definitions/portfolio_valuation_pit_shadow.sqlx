@@ -60,7 +60,7 @@ base AS (
     t.ttm_restatement_flags,
     t.ttm_mapping_versions,
     t.ttm_value_basis,
-    t.ttm_derivation_component_revision_ids,
+    t.ttm_derivation_lineage_json,
     t.ttm_complete,
     t.quarter_ordinal_span,
     t.currency_count,
