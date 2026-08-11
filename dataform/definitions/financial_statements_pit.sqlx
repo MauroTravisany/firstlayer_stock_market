@@ -1,0 +1,46 @@
+config {
+  type: "view",
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "financial_statements_pit",
+  description: "Append-only financial statement revisions with verifiable market availability. Rows without available_at are never backtest eligible.",
+  tags: ["audit-grade", "pit", "financials", "wp03"],
+  assertions: {
+    nonNull: ["revision_id", "ticker", "period_end_date", "eligibility_reason"],
+    uniqueKey: ["revision_id"]
+  }
+}
+
+SELECT
+  revision_id,
+  ticker,
+  cik,
+  form_type,
+  accession_number,
+  filing_date,
+  source_published_at,
+  available_at,
+  period_end_date,
+  fiscal_year,
+  fiscal_quarter,
+  currency,
+  revenue,
+  gross_profit,
+  operating_income,
+  net_income,
+  eps_basic,
+  eps_diluted,
+  total_assets,
+  total_liabilities,
+  total_debt,
+  shareholders_equity,
+  operating_cash_flow,
+  free_cash_flow,
+  source,
+  source_url,
+  backtest_eligible,
+  eligibility_reason,
+  loaded_at
+FROM `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.vars.auditDataset}.financial_statements_pit_raw`
+WHERE backtest_eligible = TRUE
+  AND available_at IS NOT NULL
+  AND source_published_at IS NOT NULL
