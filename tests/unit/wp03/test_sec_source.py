@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 import types
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -34,7 +35,7 @@ class SecSourceTests(unittest.TestCase):
         }}}
 
     def companyfacts(self):
-        fact = {"accn": "0000320193-26-000050", "end": "2026-03-28", "filed": "2026-05-02", "fy": 2026, "fp": "Q2", "val": 120.0}
+        fact = {"accn": "0000320193-26-000050", "end": "2026-03-28", "start": "2025-12-29", "filed": "2026-05-02", "fy": 2026, "fp": "Q2", "val": 120.0}
         return {"facts": {"us-gaap": {
             "RevenueFromContractWithCustomerExcludingAssessedTax": {"units": {"USD": [fact]}},
             "NetIncomeLoss": {"units": {"USD": [{**fact, "val": 30.0}]}},
@@ -54,6 +55,38 @@ class SecSourceTests(unittest.TestCase):
     def test_recent_filing_keeps_verified_acceptance_timestamp(self):
         rows = sec.recent_filings_by_accession(self.submissions())
         self.assertEqual("2026-05-02T13:30:00.000Z", rows["0000320193-26-000050"]["source_published_at"])
+
+    def test_supplemental_history_is_normalized_with_recent_filings(self):
+        submissions = self.submissions()
+        submissions["_supplemental_filings"] = [{
+            "accessionNumber": ["0000320193-20-000010"],
+            "form": ["10-K"],
+            "filingDate": ["2020-10-30"],
+            "acceptanceDateTime": ["2020-10-30T18:00:00.000Z"],
+            "reportDate": ["2020-09-26"],
+            "primaryDocument": ["aapl-20200926.htm"],
+        }]
+        rows = sec.recent_filings_by_accession(submissions)
+        self.assertEqual(2, len(rows))
+        self.assertIn("0000320193-20-000010", rows)
+        self.assertIn("0000320193-26-000050", rows)
+
+    def test_fetch_submissions_loads_referenced_history_files(self):
+        main = {
+            "filings": {
+                "recent": self.submissions()["filings"]["recent"],
+                "files": [{"name": "CIK0000320193-submissions-001.json"}],
+            }
+        }
+        historical = {
+            "accessionNumber": ["0000320193-19-000100"],
+            "form": ["10-K"],
+        }
+        with mock.patch.object(sec, "_get_json", side_effect=[main, historical]) as get_json:
+            result = sec.fetch_submissions("320193")
+        self.assertEqual([historical], result["_supplemental_filings"])
+        self.assertEqual(2, get_json.call_count)
+        self.assertTrue(get_json.call_args_list[1].args[0].endswith("/submissions/CIK0000320193-submissions-001.json"))
 
     def test_sec_user_agent_requires_contact(self):
         previous = os.environ.get("SEC_USER_AGENT")
