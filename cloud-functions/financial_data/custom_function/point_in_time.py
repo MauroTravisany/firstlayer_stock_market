@@ -29,14 +29,28 @@ def normalize_timestamp(value):
     return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def _fiscal_metadata_valid(form_type, fiscal_year, fiscal_quarter):
+    if fiscal_year is None:
+        return False
+    normalized = str(form_type or "").upper()
+    if normalized.startswith("10-Q"):
+        return fiscal_quarter in {1, 2, 3}
+    if normalized.startswith(("10-K", "20-F", "40-F")):
+        return fiscal_quarter == 4
+    return False
+
+
 def build_statement_revision(*, ticker, cik, form_type, accession_number, filing_date,
                              source_published_at, period_end_date, fiscal_year,
                              fiscal_quarter, currency, facts, source_url,
                              source="SEC_EDGAR"):
     available_at = normalize_timestamp(source_published_at)
     normalized_form = str(form_type or "").upper()
-    quarterly_form = normalized_form.startswith("10-Q")
-    fiscal_metadata_valid = fiscal_year is not None and (not quarterly_form or fiscal_quarter in {1, 2, 3})
+    normalized_year = int(fiscal_year) if fiscal_year is not None else None
+    normalized_quarter = int(fiscal_quarter) if fiscal_quarter is not None else None
+    fiscal_metadata_valid = _fiscal_metadata_valid(
+        normalized_form, normalized_year, normalized_quarter
+    )
     payload = {
         "ticker": ticker.upper(),
         "cik": str(cik).zfill(10),
@@ -46,8 +60,8 @@ def build_statement_revision(*, ticker, cik, form_type, accession_number, filing
         "source_published_at": available_at,
         "available_at": available_at,
         "period_end_date": str(period_end_date) if period_end_date is not None else None,
-        "fiscal_year": int(fiscal_year) if fiscal_year is not None else None,
-        "fiscal_quarter": int(fiscal_quarter) if fiscal_quarter is not None else None,
+        "fiscal_year": normalized_year,
+        "fiscal_quarter": normalized_quarter,
         "currency": currency,
         "source": source,
         "source_url": source_url,
@@ -60,7 +74,7 @@ def build_statement_revision(*, ticker, cik, form_type, accession_number, filing
     elif not fiscal_metadata_valid:
         reason = "MISSING_VERIFIABLE_FISCAL_PERIOD"
     else:
-        reason = "VERIFIED_SOURCE_AVAILABILITY"
+        reason = "VERIFIED_SOURCE_AVAILABILITY_AND_FISCAL_METADATA"
     payload["eligibility_reason"] = reason
     immutable_basis = {k: v for k, v in payload.items() if k not in {"revision_id", "loaded_at"}}
     payload["revision_id"] = content_hash(immutable_basis)
