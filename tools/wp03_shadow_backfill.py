@@ -1,11 +1,14 @@
-"""Plan or execute a bounded WP-03 SEC filing backfill into the shadow raw table.
+"""Plan or execute a bounded WP-03 SEC filing backfill into an isolated shadow dataset.
 
 The command is read-only by default. BigQuery mutation requires all of:
 
 * ``--execute``;
 * ``--environment shadow``;
 * ``--acknowledge-shadow-write WP03_SHADOW_WRITE``;
-* an explicit bounded ticker list and fiscal-year range.
+* an exact clean git checkout supplied through ``--expected-git-sha``;
+* an explicit bounded ticker list and fiscal-year range;
+* a dataset whose name contains ``shadow`` and whose labels are
+  ``environment=shadow`` and ``work_package=wp03``.
 
 It never deploys services, changes schedulers, invokes Dataform, or touches broker APIs.
 """
@@ -17,6 +20,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import types
@@ -32,6 +36,8 @@ CUSTOM_DIR = REPO_ROOT / "cloud-functions" / "financial_data" / "custom_function
 DEFAULT_MAPPING_VERSION = "sec-company-tickers-2026-08-11-v1"
 ACKNOWLEDGEMENT = "WP03_SHADOW_WRITE"
 MAX_TICKERS_PER_RUN = 10
+MAX_FISCAL_YEAR_SPAN = 10
+SHADOW_DATASET_ID = re.compile(r"^[A-Za-z0-9_]*shadow[A-Za-z0-9_]*$", re.IGNORECASE)
 
 
 def _canonical_json(value: Any) -> str:
@@ -69,15 +75,34 @@ def _load_runtime_modules():
     return loaded
 
 
-def _git_sha() -> str:
+def _run_git(*args: str) -> str:
     result = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
+        ["git", *args],
         cwd=REPO_ROOT,
         check=True,
         capture_output=True,
         text=True,
     )
     return result.stdout.strip()
+
+
+def _git_sha() -> str:
+    return _run_git("rev-parse", "HEAD")
+
+
+def verify_clean_checkout(expected_git_sha: str) -> str:
+    expected = str(expected_git_sha or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{40}", expected):
+        raise ValueError("expected_git_sha must be a full 40-character commit SHA")
+    current = _git_sha().lower()
+    if current != expected:
+        raise RuntimeError(
+            f"Git SHA mismatch: expected {expected}, current checkout is {current}"
+        )
+    dirty = _run_git("status", "--porcelain", "--untracked-files=all")
+    if dirty:
+        raise RuntimeError("WP-03 backfill requires a clean checkout")
+    return current
 
 
 def parse_tickers(value: str) -> list[str]:
@@ -92,6 +117,22 @@ def parse_tickers(value: str) -> list[str]:
             f"At most {MAX_TICKERS_PER_RUN} tickers are allowed per bounded run"
         )
     return tickers
+
+
+def _validate_year_range(start_year: int, end_year: int) -> None:
+    if start_year > end_year:
+        raise ValueError("start_year cannot be after end_year")
+    if end_year - start_year + 1 > MAX_FISCAL_YEAR_SPAN:
+        raise ValueError(
+            f"Fiscal-year range may span at most {MAX_FISCAL_YEAR_SPAN} years"
+        )
+
+
+def _validated_shadow_dataset_id(value: str) -> str:
+    dataset_id = str(value or "").strip()
+    if not SHADOW_DATASET_ID.fullmatch(dataset_id):
+        raise ValueError("dataset_id must be an isolated dataset whose name contains 'shadow'")
+    return dataset_id
 
 
 def _filter_years(rows: Iterable[dict[str, Any]], start_year: int, end_year: int):
@@ -114,8 +155,7 @@ def build_backfill_plan(
     expected_mapping_version: str,
     mapping_path: Path | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    if start_year > end_year:
-        raise ValueError("start_year cannot be after end_year")
+    _validate_year_range(start_year, end_year)
     modules = _load_runtime_modules()
     mapping_module = modules["financial_mapping"]
     sec_source = modules["sec_source"]
@@ -231,11 +271,18 @@ def execute_shadow_write(
     table_id: str,
     location: str,
 ) -> dict[str, Any]:
+    dataset_id = _validated_shadow_dataset_id(dataset_id)
     bigquery, pit_ops = _load_bigquery_modules()
     destination = pit_ops._validated_table_id(
         f"{project_id}.{dataset_id}.{table_id}"
     )
     client = bigquery.Client(project=project_id, location=location)
+    dataset = client.get_dataset(f"{project_id}.{dataset_id}")
+    labels = dataset.labels or {}
+    if labels.get("environment") != "shadow" or labels.get("work_package") != "wp03":
+        raise RuntimeError(
+            "Shadow dataset must be labeled environment=shadow and work_package=wp03"
+        )
     destination_table = client.get_table(destination)
     expected_shape = _schema_shape(pit_ops.PIT_STATEMENTS_SCHEMA)
     actual_shape = _schema_shape(destination_table.schema)
@@ -246,6 +293,7 @@ def execute_shadow_write(
     if not rows:
         return {
             "destination_table": destination,
+            "dataset_labels": labels,
             "staged_rows": 0,
             "inserted_rows": 0,
         }
@@ -266,6 +314,7 @@ def execute_shadow_write(
         merge_job.result()
         return {
             "destination_table": destination,
+            "dataset_labels": labels,
             "staged_rows": len(rows),
             "inserted_rows": merge_job.num_dml_affected_rows or 0,
         }
@@ -288,6 +337,7 @@ def main() -> int:
     parser.add_argument("--tickers", required=True)
     parser.add_argument("--start-year", type=int, required=True)
     parser.add_argument("--end-year", type=int, required=True)
+    parser.add_argument("--expected-git-sha", required=True)
     parser.add_argument(
         "--mapping-version", default=DEFAULT_MAPPING_VERSION
     )
@@ -308,6 +358,13 @@ def main() -> int:
         raise SystemExit("WP-03 backfill is restricted to environment=shadow")
     if args.table_id != "financial_statements_pit_raw":
         raise SystemExit("WP-03 backfill may only target financial_statements_pit_raw")
+    try:
+        verify_clean_checkout(args.expected_git_sha)
+        _validate_year_range(args.start_year, args.end_year)
+    except (ValueError, RuntimeError, subprocess.CalledProcessError) as exc:
+        raise SystemExit(str(exc)) from exc
+    if not os.environ.get("SEC_USER_AGENT"):
+        raise SystemExit("SEC_USER_AGENT is required for SEC access")
     if args.execute:
         if args.acknowledge_shadow_write != ACKNOWLEDGEMENT:
             raise SystemExit(
@@ -315,8 +372,10 @@ def main() -> int:
             )
         if not args.project_id or not args.dataset_id:
             raise SystemExit("--execute requires --project-id and --dataset-id")
-        if not os.environ.get("SEC_USER_AGENT"):
-            raise SystemExit("SEC_USER_AGENT is required for SEC access")
+        try:
+            _validated_shadow_dataset_id(args.dataset_id)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
 
     tickers = parse_tickers(args.tickers)
     plan, rows = build_backfill_plan(
