@@ -15,13 +15,19 @@ config {
   dependencies: ["earnings_events_pit", "trading_price_features"]
 }
 
-WITH expected_asof AS (
+WITH price_slots AS (
+  SELECT
+    *,
+    TIMESTAMP(signal_timestamp, "UTC") AS signal_timestamp_utc
+  FROM ${ref("trading_price_features")}
+),
+expected_asof AS (
   SELECT * EXCEPT(rn)
   FROM (
     SELECT
       p.analysis_date,
       p.signal_hour,
-      p.signal_timestamp,
+      p.signal_timestamp_utc,
       p.ticker,
       e.earnings_date,
       e.earnings_time,
@@ -32,11 +38,11 @@ WITH expected_asof AS (
         PARTITION BY p.analysis_date, p.signal_hour, p.ticker
         ORDER BY e.available_at DESC, e.event_id DESC
       ) AS rn
-    FROM ${ref("trading_price_features")} p
+    FROM price_slots p
     LEFT JOIN ${ref("earnings_events_pit")} e
       ON e.ticker = p.ticker
      AND e.event_kind = "EXPECTED"
-     AND e.available_at <= p.signal_timestamp
+     AND e.available_at <= p.signal_timestamp_utc
      AND e.backtest_eligible = TRUE
   )
   WHERE rn = 1
@@ -47,7 +53,7 @@ reported_asof AS (
     SELECT
       p.analysis_date,
       p.signal_hour,
-      p.signal_timestamp,
+      p.signal_timestamp_utc,
       p.ticker,
       e.earnings_date,
       e.reported_eps,
@@ -58,11 +64,11 @@ reported_asof AS (
         PARTITION BY p.analysis_date, p.signal_hour, p.ticker
         ORDER BY e.available_at DESC, e.event_id DESC
       ) AS rn
-    FROM ${ref("trading_price_features")} p
+    FROM price_slots p
     LEFT JOIN ${ref("earnings_events_pit")} e
       ON e.ticker = p.ticker
      AND e.event_kind = "REPORTED"
-     AND e.available_at <= p.signal_timestamp
+     AND e.available_at <= p.signal_timestamp_utc
      AND e.backtest_eligible = TRUE
   )
   WHERE rn = 1
@@ -70,6 +76,7 @@ reported_asof AS (
 SELECT
   p.analysis_date,
   p.signal_hour,
+  p.signal_timestamp_utc,
   p.ticker,
   x.earnings_date,
   DATE_DIFF(x.earnings_date, p.analysis_date, DAY) AS days_to_earnings,
@@ -107,7 +114,7 @@ SELECT
   x.available_at AS expected_available_at,
   r.available_at AS reported_available_at,
   CURRENT_TIMESTAMP() AS calculated_at
-FROM ${ref("trading_price_features")} p
+FROM price_slots p
 LEFT JOIN expected_asof x
   USING (analysis_date, signal_hour, ticker)
 LEFT JOIN reported_asof r
