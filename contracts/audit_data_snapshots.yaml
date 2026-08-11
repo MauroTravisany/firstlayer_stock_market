@@ -1,0 +1,138 @@
+contract_version: 1.0.0
+data_contract_version: audit-contracts-v1
+table:
+  name: audit_data_snapshots
+  description: Publication registry for validated data snapshots; content becomes immutable once PUBLISHED.
+  granularity: One row per data_snapshot_id.
+  logical_primary_key:
+  - data_snapshot_id
+  append_only: false
+  partition_by: DATE(created_at)
+  cluster_by:
+  - environment
+  - snapshot_status
+  corporate_actions_policy: NOT_APPLICABLE
+temporal:
+  event_time: created_at
+  available_at: published_at
+  ingested_at: created_at
+  timezone: UTC
+  point_in_time_policy: A snapshot is eligible only after snapshot_status=PUBLISHED and published_at is
+    non-null.
+source:
+  system: audit snapshot publisher
+  version_field: data_contract_version
+  original_timezone: UTC
+deduplication:
+  rule: Reject duplicate data_snapshot_id. Status may transition before publication; published content
+    is never overwritten.
+retention:
+  policy: Retain indefinitely for audit and replay.
+columns:
+- name: data_snapshot_id
+  type: STRING
+  mode: REQUIRED
+  description: Globally unique immutable snapshot identifier.
+- name: environment
+  type: STRING
+  mode: REQUIRED
+  description: Environment that produced the snapshot.
+  domain:
+  - research
+  - shadow
+  - paper
+  - staging
+- name: data_contract_version
+  type: STRING
+  mode: REQUIRED
+  description: Contract set version used to validate the snapshot.
+- name: contract_set_hash
+  type: STRING
+  mode: REQUIRED
+  description: SHA-256 of the canonical machine-readable contract set.
+- name: schema_snapshot_hash
+  type: STRING
+  mode: REQUIRED
+  description: SHA-256 of the validated schema snapshot used for publication.
+- name: snapshot_status
+  type: STRING
+  mode: REQUIRED
+  description: Lifecycle status.
+  domain:
+  - CREATED
+  - VALIDATING
+  - PUBLISHED
+  - REJECTED
+  - SUPERSEDED
+- name: source_manifest_json
+  type: STRING
+  mode: REQUIRED
+  description: Canonical JSON of source tables, partitions and source versions.
+- name: source_manifest_hash
+  type: STRING
+  mode: REQUIRED
+  description: SHA-256 of source_manifest_json.
+- name: content_checksum
+  type: STRING
+  mode: REQUIRED
+  description: SHA-256 of canonical snapshot content.
+- name: row_count
+  type: INT64
+  mode: NULLABLE
+  description: Total rows represented by the snapshot when meaningful.
+- name: quality_gate_json
+  type: STRING
+  mode: REQUIRED
+  description: Canonical quality-gate results.
+- name: immutable
+  type: BOOL
+  mode: REQUIRED
+  description: True only when the snapshot cannot be changed in place.
+- name: created_at
+  type: TIMESTAMP
+  mode: REQUIRED
+  description: UTC creation timestamp.
+- name: published_at
+  type: TIMESTAMP
+  mode: NULLABLE
+  description: UTC publication timestamp after all gates pass.
+- name: supersedes_snapshot_id
+  type: STRING
+  mode: NULLABLE
+  description: Prior snapshot superseded by this snapshot.
+assertions:
+  not_null:
+  - data_snapshot_id
+  - environment
+  - data_contract_version
+  - snapshot_status
+  - source_manifest_json
+  - source_manifest_hash
+  - content_checksum
+  - quality_gate_json
+  - immutable
+  - created_at
+  - contract_set_hash
+  - schema_snapshot_hash
+  unique:
+  - data_snapshot_id
+  accepted_values:
+    environment:
+    - research
+    - shadow
+    - paper
+    - staging
+    snapshot_status:
+    - CREATED
+    - VALIDATING
+    - PUBLISHED
+    - REJECTED
+    - SUPERSEDED
+producers:
+- packages/common/data_snapshots.py
+- tools/build_data_snapshot.py
+- future live snapshot writer
+consumers:
+- audit_experiment_runs
+- research/replay.py
+- quant validation

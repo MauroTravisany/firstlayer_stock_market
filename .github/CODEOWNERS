@@ -1,7 +1,10 @@
 # Repository owner for audit-grade critical surfaces.
 /.github/workflows/ @MauroTravisany
 /cloud-functions/ @MauroTravisany
+/contracts/ @MauroTravisany
 /dataform/ @MauroTravisany
+/packages/ @MauroTravisany
+/research/ @MauroTravisany
 /terraform/ @MauroTravisany
 /tools/ @MauroTravisany
 /scripts/ci/ @MauroTravisany

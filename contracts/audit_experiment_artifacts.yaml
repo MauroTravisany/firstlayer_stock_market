@@ -1,0 +1,120 @@
+contract_version: 1.0.0
+data_contract_version: audit-contracts-v1
+table:
+  name: audit_experiment_artifacts
+  description: Immutable checksummed artifacts produced by experiments.
+  granularity: One row per experiment_id, run_id and artifact_id.
+  logical_primary_key:
+  - experiment_id
+  - run_id
+  - artifact_id
+  append_only: true
+  partition_by: DATE(created_at)
+  cluster_by:
+  - experiment_id
+  - run_id
+  - artifact_type
+  corporate_actions_policy: NOT_APPLICABLE
+temporal:
+  event_time: created_at
+  available_at: created_at
+  ingested_at: created_at
+  timezone: UTC
+  point_in_time_policy: Registry metadata is available from created_at; no market-data eligibility is
+    implied.
+source:
+  system: experiment artifact writer
+  version_field: data_contract_version
+  original_timezone: UTC
+deduplication:
+  rule: Reject duplicate logical key ['experiment_id', 'run_id', 'artifact_id']; never silently overwrite
+    audit lineage.
+retention:
+  policy: Retain indefinitely for audit and replay.
+columns:
+- name: experiment_id
+  type: STRING
+  mode: REQUIRED
+  description: Owning experiment identity.
+- name: run_id
+  type: STRING
+  mode: REQUIRED
+  description: Owning run identity.
+- name: artifact_id
+  type: STRING
+  mode: REQUIRED
+  description: Deterministic artifact identity.
+- name: candidate_id
+  type: STRING
+  mode: NULLABLE
+  description: Candidate identity when artifact is candidate-specific.
+- name: artifact_type
+  type: STRING
+  mode: REQUIRED
+  description: Artifact classification.
+  domain:
+  - RESULT_SUMMARY
+  - TRADE_LEDGER
+  - EQUITY_CURVE
+  - REPORT_JSON
+  - REPORT_MARKDOWN
+  - MANIFEST
+  - LOG
+- name: uri
+  type: STRING
+  mode: REQUIRED
+  description: Immutable artifact location or repository-relative path.
+- name: media_type
+  type: STRING
+  mode: REQUIRED
+  description: IANA media type.
+- name: content_json
+  type: STRING
+  mode: NULLABLE
+  description: Canonical inline JSON when the registry stores the artifact content directly.
+- name: checksum
+  type: STRING
+  mode: REQUIRED
+  description: SHA-256 of artifact bytes.
+- name: size_bytes
+  type: INT64
+  mode: NULLABLE
+  description: Artifact size.
+- name: immutable
+  type: BOOL
+  mode: REQUIRED
+  description: Must be true for publishable experiments.
+- name: created_at
+  type: TIMESTAMP
+  mode: REQUIRED
+  description: UTC creation time.
+assertions:
+  not_null:
+  - experiment_id
+  - run_id
+  - artifact_id
+  - artifact_type
+  - uri
+  - media_type
+  - checksum
+  - immutable
+  - created_at
+  unique:
+  - experiment_id
+  - run_id
+  - artifact_id
+  accepted_values:
+    artifact_type:
+    - RESULT_SUMMARY
+    - TRADE_LEDGER
+    - EQUITY_CURVE
+    - REPORT_JSON
+    - REPORT_MARKDOWN
+    - MANIFEST
+    - LOG
+producers:
+- cloud-functions/strategy_brain/experiment_registry_adapter.py
+- research pipelines
+consumers:
+- research/replay.py
+- independent audit
