@@ -40,6 +40,10 @@ class CikMappingTests(unittest.TestCase):
         self.assertEqual("USD", mapping["AAPL"]["reporting_currency"])
         self.assertEqual("EUR", mapping["ASML"]["reporting_currency"])
         self.assertEqual("CLP", mapping["BCH"]["reporting_currency"])
+        self.assertEqual(
+            "NOT_APPLICABLE", mapping["BTC-USD"]["financial_reporting"]
+        )
+        self.assertNotIn("cik", mapping["BTC-USD"])
 
     def _write(self, document):
         directory = tempfile.TemporaryDirectory()
@@ -95,7 +99,7 @@ class CikMappingTests(unittest.TestCase):
                 }
             )
 
-    def test_missing_reporting_currency_fails_closed(self):
+    def test_missing_reporting_currency_fails_closed_for_sec_issuer(self):
         path = self._write(
             {
                 "mapping_version": "v1",
@@ -103,6 +107,49 @@ class CikMappingTests(unittest.TestCase):
             }
         )
         with self.assertRaisesRegex(RuntimeError, "reporting_currency"):
+            ingestion._ticker_cik_map(
+                {
+                    "ticker_cik_map_path": str(path),
+                    "ticker_cik_map_version": "v1",
+                }
+            )
+
+    def test_not_applicable_entry_needs_no_cik_or_currency(self):
+        path = self._write(
+            {
+                "mapping_version": "v1",
+                "entries": [
+                    {
+                        "ticker": "ETH-USD",
+                        "financial_reporting": "NOT_APPLICABLE",
+                    }
+                ],
+            }
+        )
+        version, mapping = ingestion._ticker_cik_map(
+            {
+                "ticker_cik_map_path": str(path),
+                "ticker_cik_map_version": "v1",
+            }
+        )
+        self.assertEqual("v1", version)
+        self.assertEqual(
+            "NOT_APPLICABLE", mapping["ETH-USD"]["financial_reporting"]
+        )
+
+    def test_unknown_reporting_mode_fails_closed(self):
+        path = self._write(
+            {
+                "mapping_version": "v1",
+                "entries": [
+                    {
+                        "ticker": "AAPL",
+                        "financial_reporting": "GUESS",
+                    }
+                ],
+            }
+        )
+        with self.assertRaisesRegex(RuntimeError, "financial_reporting"):
             ingestion._ticker_cik_map(
                 {
                     "ticker_cik_map_path": str(path),
