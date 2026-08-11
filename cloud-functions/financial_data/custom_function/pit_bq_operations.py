@@ -14,8 +14,7 @@ PIT_STATEMENT_COLUMNS = [
     "form_type",
     "accession_number",
     "source_record_id",
-    "revision_number",
-    "is_restated",
+    "source_is_amendment",
     "filing_date",
     "source_published_at",
     "available_at",
@@ -54,8 +53,7 @@ PIT_STATEMENTS_SCHEMA = [
     bigquery.SchemaField("form_type", "STRING"),
     bigquery.SchemaField("accession_number", "STRING"),
     bigquery.SchemaField("source_record_id", "STRING"),
-    bigquery.SchemaField("revision_number", "INTEGER", mode="REQUIRED"),
-    bigquery.SchemaField("is_restated", "BOOLEAN", mode="REQUIRED"),
+    bigquery.SchemaField("source_is_amendment", "BOOLEAN", mode="REQUIRED"),
     bigquery.SchemaField("filing_date", "DATE"),
     bigquery.SchemaField("source_published_at", "TIMESTAMP"),
     bigquery.SchemaField("available_at", "TIMESTAMP"),
@@ -125,7 +123,7 @@ def _merge_query(destination_table, temp_table):
           source_rows.*,
           ROW_NUMBER() OVER (
             PARTITION BY revision_id
-            ORDER BY loaded_at DESC, revision_number DESC
+            ORDER BY loaded_at DESC, source_record_id DESC
           ) AS source_rank
         FROM `{temp_table}` source_rows
       )
