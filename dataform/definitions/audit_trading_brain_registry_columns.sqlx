@@ -1,0 +1,45 @@
+config {
+  type: "operations",
+  tags: ["audit-grade", "wp02", "legacy-extension"]
+}
+
+ALTER TABLE `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.vars.auditDataset}.trading_brain_runs`
+  ADD COLUMN IF NOT EXISTS experiment_id STRING;
+ALTER TABLE `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.vars.auditDataset}.trading_brain_runs`
+  ADD COLUMN IF NOT EXISTS parent_experiment_id STRING;
+ALTER TABLE `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.vars.auditDataset}.trading_brain_runs`
+  ADD COLUMN IF NOT EXISTS environment STRING;
+ALTER TABLE `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.vars.auditDataset}.trading_brain_runs`
+  ADD COLUMN IF NOT EXISTS data_contract_version STRING;
+ALTER TABLE `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.vars.auditDataset}.trading_brain_runs`
+  ADD COLUMN IF NOT EXISTS contract_set_hash STRING;
+ALTER TABLE `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.vars.auditDataset}.trading_brain_runs`
+  ADD COLUMN IF NOT EXISTS schema_snapshot_hash STRING;
+ALTER TABLE `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.vars.auditDataset}.trading_brain_runs`
+  ADD COLUMN IF NOT EXISTS data_snapshot_id STRING;
+ALTER TABLE `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.vars.auditDataset}.trading_brain_runs`
+  ADD COLUMN IF NOT EXISTS data_snapshot_checksum STRING;
+ALTER TABLE `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.vars.auditDataset}.trading_brain_runs`
+  ADD COLUMN IF NOT EXISTS configuration_hash STRING;
+ALTER TABLE `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.vars.auditDataset}.trading_brain_runs`
+  ADD COLUMN IF NOT EXISTS dependency_lock_hash STRING;
+ALTER TABLE `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.vars.auditDataset}.trading_brain_runs`
+  ADD COLUMN IF NOT EXISTS feature_set_version STRING;
+ALTER TABLE `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.vars.auditDataset}.trading_brain_runs`
+  ADD COLUMN IF NOT EXISTS execution_model_version STRING;
+ALTER TABLE `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.vars.auditDataset}.trading_brain_runs`
+  ADD COLUMN IF NOT EXISTS cost_model_version STRING;
+ALTER TABLE `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.vars.auditDataset}.trading_brain_runs`
+  ADD COLUMN IF NOT EXISTS hypothesis_count INT64;
+
+ALTER TABLE `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.vars.auditDataset}.trading_brain_weight_candidates`
+  ADD COLUMN IF NOT EXISTS experiment_id STRING;
+ALTER TABLE `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.vars.auditDataset}.trading_brain_weight_candidates`
+  ADD COLUMN IF NOT EXISTS configuration_hash STRING;
+ALTER TABLE `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.vars.auditDataset}.trading_brain_weight_candidates`
+  ADD COLUMN IF NOT EXISTS hypothesis_index INT64;
+ALTER TABLE `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.vars.auditDataset}.trading_brain_weight_candidates`
+  ADD COLUMN IF NOT EXISTS production_change_allowed BOOL;
+
+ALTER TABLE `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.vars.auditDataset}.trading_brain_ai_audits`
+  ADD COLUMN IF NOT EXISTS experiment_id STRING;

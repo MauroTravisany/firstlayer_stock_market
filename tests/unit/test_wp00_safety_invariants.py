@@ -24,7 +24,14 @@ class Wp00SafetyInvariantTest(unittest.TestCase):
         self.assertEqual(executable_modes, {"SHADOW_ONLY"})
 
     def test_strategy_brain_source_cannot_allow_production_change(self):
-        source = self.read("cloud-functions/strategy_brain/main.py")
+        source = "\n".join(
+            self.read(path)
+            for path in (
+                "cloud-functions/strategy_brain/main.py",
+                "cloud-functions/strategy_brain/legacy_main.py",
+                "cloud-functions/strategy_brain/experiment_registry_adapter.py",
+            )
+        )
 
         self.assertNotRegex(source, r'["\']production_change_allowed["\']\s*:\s*True')
         self.assertIn('"production_change_allowed": False', source)

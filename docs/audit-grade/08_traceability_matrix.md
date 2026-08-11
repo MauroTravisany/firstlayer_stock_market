@@ -27,6 +27,20 @@ Una fila solo pasa a `PASS` con enlace a código, prueba ejecutada y evidencia r
 | BASE-07 | Validez estructural no equivale a readiness operacional | Un blocker bien registrado no impide que `--verify` retorne éxito | WP-00 | `validate_manifest_structure` + `validate_manifest_readiness` y `--strict` en [`tools/capture_baseline.py`](../../tools/capture_baseline.py) | `test_structure_allows_a_registered_operational_blocker`; tests CLI structural/strict; pre-pausa exit 3 y post-pausa exit 0 | [`WP-00.md`](evidence/WP-00.md) | PASS | 2026-08-08 |
 | BASE-08 | Fallback BigQuery solo se decide por metadata conocida | Permisos, SQL, timeout o red degradados silenciosamente a lectura live | WP-00 | clasificación `BASE TABLE`/`VIEW` en [`tools/capture_baseline.py`](../../tools/capture_baseline.py) | tests de VIEW, permiso, autenticación, SQL, timeout, red y error inesperado (exit 0); captura final `SINGLE_SYSTEM_TIME_AS_OF` | [`baseline_manifest.json`](evidence/baseline_manifest.json) | PASS | 2026-08-08 |
 
+## 0.1 Contratos, snapshots y experiment registry
+
+| ID | Requisito/invariante | Riesgo cubierto | WP | Implementación | Prueba ejecutada | Evidencia | Estado | Revisado |
+|---|---|---|---|---|---|---|---|---|
+| REG-01 | Contratos machine-readable comparten versión y hashes canónicos | Semántica tribal o manifests inconsistentes | WP-02 | [`contracts/`](../../contracts), [`data_contracts.py`](../../packages/common/data_contracts.py), [`validate_data_contracts.py`](../../scripts/ci/validate_data_contracts.py) | 180 tests locales; 12 contratos; CI final exacto enlazado desde PR #63 | [`WP-02.md`](evidence/WP-02.md) | PASS | 2026-08-11 |
+| REG-02 | Schema drift de tabla/columna/tipo/modo falla cerrado | Ejecutar sobre schemas incompatibles | WP-02 | [`validate_observed_schemas.py`](../../scripts/ci/validate_observed_schemas.py) | Fixtures negativas PASS; comparación contra BigQuery live sigue bloqueada | [`WP-02.md`](evidence/WP-02.md) | PASS | 2026-08-11 |
+| REG-03 | Snapshot es content-addressed, quality-gated e inmutable | Experimento sin inputs congelados | WP-02 | [`data_snapshots.py`](../../packages/common/data_snapshots.py), [`snapshot_manifest.py`](../../research/snapshot_manifest.py), `audit_data_snapshots` | Identidad repetible, quality gate, inmutabilidad y tamper rejection; publicación shadow real bloqueada | [`WP-02.md`](evidence/WP-02.md) | PASS | 2026-08-11 |
+| REG-04 | `experiment_id` existe antes de candidatos y config/dependencias tienen hash | Candidatos huérfanos o corrida irreproducible | WP-02 | [`experiment_identity.py`](../../cloud-functions/strategy_brain/experiment_identity.py), [`main.py`](../../cloud-functions/strategy_brain/main.py), `audit_experiment_runs` | Wiring/order tests y runtime Docker prueban instalación previa a generación | [`WP-02.md`](evidence/WP-02.md) | PASS | 2026-08-11 |
+| REG-05 | IDs y claves compuestas aíslan experiment/run/candidate | Colisiones o contaminación cross-run | WP-02 | [`experiment_registry_storage.py`](../../cloud-functions/strategy_brain/experiment_registry_storage.py), `audit_experiment_candidates` | Corridas distintas, parent explícito y rechazo cross-run; propagación legacy total queda PARTIAL | [`WP-02.md`](evidence/WP-02.md) | PARTIAL | 2026-08-11 |
+| REG-06 | Conjunto incompleto no es visible ni publicable | Backtest sobre candidatos parcialmente persistidos | WP-02 | `REGISTRY_PENDING` + commit a `BACKTEST_ONLY`; [`trading_backtest_context_variants.sqlx`](../../dataform/definitions/trading_backtest_context_variants.sqlx); invariant assertion | Publicación incompleta rechazada; Dataform compila 226 acciones | [`WP-02.md`](evidence/WP-02.md) | PASS | 2026-08-11 |
+| REG-07 | Artefactos/decisiones son inmutables, checksummed y sin autoridad productiva | Evidencia manipulada o auto-promoción | WP-02 | [`experiment_registry.py`](../../packages/common/experiment_registry.py), tablas artifacts/decisions | Identidad, checksum, tamper rejection y `production_change_allowed=false` | [`WP-02.md`](evidence/WP-02.md) | PASS | 2026-08-11 |
+| REG-08 | Replay read-only valida snapshot, lineage, locks y checksums | Resultado imposible de reconstruir | WP-02 | [`research/replay.py`](../../research/replay.py) | Skeleton determinístico PASS; replay cuantitativo completo queda PARTIAL para WP-07 | [`WP-02.md`](evidence/WP-02.md) | PARTIAL | 2026-08-11 |
+| REG-09 | El entrypoint desplegable no puede omitir el registry | Command persistente ejecuta implementación legacy sin instrumentación | WP-02 | [`Dockerfile`](../../cloud-functions/strategy_brain/Dockerfile), [`main.py`](../../cloud-functions/strategy_brain/main.py), [`legacy_main.py`](../../cloud-functions/strategy_brain/legacy_main.py) | 8/8 builds y probes; Strategy Brain image/container/PID1=`python main.py`, registry instalado, sin mutaciones | [`WP-02.md`](evidence/WP-02.md) | PASS | 2026-08-11 |
+
 ## 1. Datos point-in-time
 
 | ID | Requisito/invariante | Riesgo actual | WP | Evidencia requerida | Estado inicial |
@@ -37,7 +51,7 @@ Una fila solo pasa a `PASS` con enlace a código, prueba ejecutada y evidencia r
 | PIT-04 | YoY sobre serie trimestral deduplicada | LAG se calcula tras join multiplicado | WP-03 | golden quarterly fixture | MISSING |
 | PIT-05 | Earnings calendar y reported separados | Riesgo de retroactividad | WP-03 | event version tests | MISSING |
 | PIT-06 | Macro vintage cuando es revisable | Valor actual puede contaminar historia | WP-03/07 | vintage contract/report | PLANNED |
-| PIT-07 | Universo versionado | Watchlist actual filtra historia | WP-02/07 | universe_version en experiment | MISSING |
+| PIT-07 | Universo versionado | `universe_version` queda fijado en el experimento, pero aún falta membership PIT | WP-02/07 | registry + futura tabla de membresía | PARTIAL |
 
 ## 2. Precios y corporate actions
 
@@ -65,19 +79,19 @@ Una fila solo pasa a `PASS` con enlace a código, prueba ejecutada y evidencia r
 | BT-08 | No solapamiento one-slot | Implementación SQL existente | WP-05 | property/golden test | IMPLEMENTED_UNVERIFIED |
 | BT-09 | Costos stress | Solo costo base | WP-05/07 | 1x/1.5x/2x report | MISSING |
 | BT-10 | Benchmarks | No publicados | WP-05/07 | benchmark ledgers | MISSING |
-| BT-11 | Ledger auditable/checksum | Resultados dispersos | WP-02/05 | immutable ledger | MISSING |
+| BT-11 | Ledger auditable/checksum | Registry de artefactos ya existe; ledger económico se implementa en WP-05 | WP-02/05 | immutable ledger | PARTIAL |
 
 ## 4. Strategy Brain
 
 | ID | Requisito/invariante | Riesgo actual | WP | Evidencia requerida | Estado inicial |
 |---|---|---|---|---|---|
-| BR-01 | candidate ID globalmente único | Prefijo truncado puede colisionar | WP-06 | two-run test | FAIL |
-| BR-02 | Join aislado por run/experiment | Join por candidate_id | WP-06 | zero cross-run rows | FAIL |
+| BR-01 | candidate ID globalmente único | Adapter genera `cand_<sha256>` con experiment/run/config; falta validación live | WP-02/06 | two-run test + live shadow | PARTIAL |
+| BR-02 | Join aislado por run/experiment | Registry y variantes usan claves compuestas; otros modelos legacy se revisan en WP-06 | WP-02/06 | zero cross-run rows | PARTIAL |
 | BR-03 | `best_eligible` controla decisión | Se usa best overall | WP-06 | divergent-candidates test | FAIL |
 | BR-04 | Capital inicial en drawdown | Seed ausente | WP-05/06 | first-loss test | FAIL |
 | BR-05 | Candidate budget explícito | Familias truncadas silenciosamente | WP-06 | expected family test | FAIL |
 | BR-06 | Validation separada de test | Validation se reutiliza adaptativamente | WP-06/07 | locked-test access test | FAIL |
-| BR-07 | Hypothesis count | No completo | WP-02/06/07 | registry/report | MISSING |
+| BR-07 | Hypothesis count | Registry exige count exacto, índices únicos/contiguos y cobertura completa | WP-02/06/07 | registry/report | PASS |
 | BR-08 | Penalización multiple testing | No implementada | WP-07 | adjusted result | MISSING |
 | BR-09 | Reducción de notional no simula alpha | Ranking puede premiarla | WP-06/07 | normalized-risk test | MISSING |
 | BR-10 | IA no autoaprueba | IA entrega confidence/repetitions/status | WP-06/11 | mechanical evidence fields | FAIL |
@@ -95,7 +109,7 @@ Una fila solo pasa a `PASS` con enlace a código, prueba ejecutada y evidencia r
 | QV-07 | Estabilidad por fold/año/activo/régimen | Parcial | WP-07 | stability tables | MISSING |
 | QV-08 | Sensibilidad parámetros vecinos | No existe | WP-07/12 | surface report | MISSING |
 | QV-09 | Cost stress | No existe formalmente | WP-07 | stress report | MISSING |
-| QV-10 | Resultado reproducible por ID | No existe completo | WP-02/07 | replay checksum | MISSING |
+| QV-10 | Resultado reproducible por ID | Skeleton replay valida IDs, snapshot y locks; falta replay cuantitativo completo | WP-02/07 | replay checksum | PARTIAL |
 
 ## 6. Executor y broker
 
@@ -117,12 +131,12 @@ Una fila solo pasa a `PASS` con enlace a código, prueba ejecutada y evidencia r
 
 | ID | Requisito/invariante | Riesgo actual | WP | Evidencia requerida | Estado actual |
 |---|---|---|---|---|---|
-| CI-01 | `main` única rama canónica | Workflows productivos ya no aceptan `master`, pero la default branch remota aún es `master` y sólo existe el ruleset `master_only` | WP-01 | [workflow contracts y lectura GitHub](evidence/WP-01.md#estado-remoto-y-pasos-manuales) | PARTIAL |
-| CI-02 | CI antes de deploy | El deploy versionado sólo consume un `workflow_run` exitoso de `CI` para el SHA exacto de un push a `main`; el workflow permanece deshabilitado hasta configurar gates remotos | WP-01 | [contratos y arquitectura CI/CD](evidence/WP-01.md#arquitectura-resultante) | PASS |
+| CI-01 | `main` única rama canónica | Default branch y ruleset `protect-main` ya están activos; `master` no despliega | WP-01 | lectura GitHub post-merge + workflow contracts | PASS |
+| CI-02 | CI antes de deploy | El deploy versionado sólo consume un `workflow_run` exitoso de `CI` para el SHA exacto de un push a `main`; el workflow permanece deshabilitado hasta autorización | WP-01 | [contratos y arquitectura CI/CD](evidence/WP-01.md#arquitectura-resultante) | PASS |
 | CI-03 | Tests cuantitativos en CI | CI ejecuta los tests Python existentes, pero la cobertura cuantitativa audit-grade completa pertenece a WP-05/WP-07 | WP-01/05/07 | [suite ejecutada](evidence/WP-01.md#verificación-ejecutada) | PARTIAL |
 | CI-04 | Dataform test dataset/dry-run | Dataform compila de forma reproducible; aún no existe dataset aislado ni dry-run BigQuery para todas las acciones | WP-01/05 | [compilación Dataform](evidence/WP-01.md#verificación-ejecutada) | PARTIAL |
 | CI-05 | Build once/promote digest | CI construye una vez, valida checksum e image ID y deploy exige el artefacto del run exacto y digest inmutable; no existe evidencia de promoción live porque deploy está deshabilitado | WP-01/10 | [artefactos inmutables y builds locales](evidence/WP-01.md#build-once-e-identidad) | PARTIAL |
-| CI-06 | Environment approval | `deploy.yml` exige `environment: production`, pero la API remota responde 404 porque el environment aún no fue creado | WP-01 | [lectura GitHub y runbook](evidence/WP-01.md#estado-remoto-y-pasos-manuales) | PARTIAL |
+| CI-06 | Environment approval | `production` existe y se limita a `main`; falta un segundo reviewer humano independiente | WP-01 | lectura GitHub environment/rules | PARTIAL |
 | CI-07 | Invariantes de seguridad del repositorio | Riesgo de habilitar ejecución, reactivar Strategy Brain, desplegar ramas no autorizadas o promover legacy | WP-01 | [checker y pruebas negativas](evidence/WP-01.md#invariantes-de-seguridad) | PASS |
 | CI-08 | Sintaxis y permisos mínimos de workflows | Riesgo de YAML inválido o permisos `write` innecesarios | WP-01 | [actionlint y contratos](evidence/WP-01.md#verificación-ejecutada) | PASS |
 | CI-09 | Promoción Dataform auditada | Candidato exacto se compila sin mover producción; la rama productiva usa CAS y rollback de release+rama. No se ejecutó contra production | WP-01 | [promoción transaccional y pruebas](evidence/WP-01.md#promocion-dataform-transaccional-por-referencia) | PARTIAL |

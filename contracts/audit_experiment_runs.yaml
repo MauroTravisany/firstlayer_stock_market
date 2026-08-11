@@ -1,0 +1,244 @@
+contract_version: 1.0.0
+data_contract_version: audit-contracts-v1
+criticality: P0
+environments:
+- research
+- shadow
+point_in_time:
+  eligibility: REGISTRY_ONLY
+  reason: Registry metadata is not market input data.
+table:
+  name: audit_experiment_runs
+  description: One audit-grade experiment identity and controlled lifecycle.
+  granularity: One row per experiment_id and run_id.
+  logical_primary_key:
+  - experiment_id
+  - run_id
+  append_only: false
+  partition_by: DATE(created_at)
+  cluster_by:
+  - status
+  - environment
+  - strategy_version
+  corporate_actions_policy: NOT_APPLICABLE
+temporal:
+  event_time: created_at
+  available_at: created_at
+  ingested_at: created_at
+  timezone: UTC
+  point_in_time_policy: Registry metadata is not market input data.
+source:
+  system: audit registry
+  version_field: data_contract_version
+  original_timezone: UTC
+deduplication:
+  rule: Reject duplicate logical key ['experiment_id', 'run_id']; never silently overwrite audit lineage.
+retention:
+  policy: Retain indefinitely for audit and replay.
+columns:
+- name: experiment_id
+  type: STRING
+  mode: REQUIRED
+  description: Canonical UUID allocated before candidates.
+- name: run_id
+  type: STRING
+  mode: REQUIRED
+  description: Content-addressed execution-attempt identity.
+- name: parent_experiment_id
+  type: STRING
+  mode: NULLABLE
+  description: Parent experiment identity.
+- name: created_at
+  type: TIMESTAMP
+  mode: REQUIRED
+  description: UTC creation timestamp.
+- name: status
+  type: STRING
+  mode: REQUIRED
+  description: Experiment lifecycle state.
+  domain:
+  - CREATED
+  - CANDIDATES_READY
+  - RUNNING
+  - COMPLETED
+  - REJECTED
+  - FAILED
+  - CANCELLED
+- name: hypothesis
+  type: STRING
+  mode: REQUIRED
+  description: Human-readable falsifiable hypothesis.
+- name: git_sha
+  type: STRING
+  mode: REQUIRED
+  description: Exact source commit.
+- name: image_digest
+  type: STRING
+  mode: NULLABLE
+  description: Immutable container digest.
+- name: dataform_compilation_id
+  type: STRING
+  mode: NULLABLE
+  description: Exact Dataform compilation identity.
+- name: environment
+  type: STRING
+  mode: REQUIRED
+  description: Execution environment.
+  domain:
+  - research
+  - shadow
+  - paper
+  - staging
+- name: data_contract_version
+  type: STRING
+  mode: REQUIRED
+  description: Contract set version.
+- name: contract_set_hash
+  type: STRING
+  mode: REQUIRED
+  description: Canonical contract-set SHA-256.
+- name: schema_snapshot_hash
+  type: STRING
+  mode: REQUIRED
+  description: SHA-256 of the canonical schema snapshot used by the experiment.
+- name: data_snapshot_id
+  type: STRING
+  mode: REQUIRED
+  description: Immutable input snapshot identity.
+- name: data_snapshot_checksum
+  type: STRING
+  mode: REQUIRED
+  description: Input snapshot checksum.
+- name: universe_version
+  type: STRING
+  mode: REQUIRED
+  description: Point-in-time universe version.
+- name: feature_set_version
+  type: STRING
+  mode: REQUIRED
+  description: Feature-set version.
+- name: strategy_version
+  type: STRING
+  mode: REQUIRED
+  description: Strategy version.
+- name: execution_model_version
+  type: STRING
+  mode: REQUIRED
+  description: Execution-model version.
+- name: cost_model_version
+  type: STRING
+  mode: REQUIRED
+  description: Cost-model version.
+- name: configuration_json
+  type: STRING
+  mode: REQUIRED
+  description: Canonical configuration JSON.
+- name: configuration_hash
+  type: STRING
+  mode: REQUIRED
+  description: SHA-256 of configuration JSON.
+- name: dependency_lock_hash
+  type: STRING
+  mode: REQUIRED
+  description: SHA-256 of dependency lock manifest.
+- name: random_seed
+  type: INT64
+  mode: NULLABLE
+  description: Random seed when relevant.
+- name: train_start
+  type: DATE
+  mode: NULLABLE
+  description: Training start.
+- name: train_end
+  type: DATE
+  mode: NULLABLE
+  description: Training end.
+- name: validation_start
+  type: DATE
+  mode: NULLABLE
+  description: Validation start.
+- name: validation_end
+  type: DATE
+  mode: NULLABLE
+  description: Validation end.
+- name: test_start
+  type: DATE
+  mode: NULLABLE
+  description: Locked test start.
+- name: test_end
+  type: DATE
+  mode: NULLABLE
+  description: Locked test end.
+- name: hypothesis_count
+  type: INT64
+  mode: REQUIRED
+  description: Number of tested candidates.
+- name: production_change_allowed
+  type: BOOL
+  mode: REQUIRED
+  description: Must remain false.
+  domain:
+  - false
+- name: results_checksum
+  type: STRING
+  mode: NULLABLE
+  description: Canonical completed-results checksum.
+- name: completed_at
+  type: TIMESTAMP
+  mode: NULLABLE
+  description: UTC terminal timestamp.
+- name: failure_reason
+  type: STRING
+  mode: NULLABLE
+  description: Sanitized terminal failure reason when status is FAILED.
+assertions:
+  not_null:
+  - experiment_id
+  - run_id
+  - created_at
+  - status
+  - hypothesis
+  - git_sha
+  - environment
+  - data_contract_version
+  - contract_set_hash
+  - schema_snapshot_hash
+  - data_snapshot_id
+  - data_snapshot_checksum
+  - universe_version
+  - feature_set_version
+  - strategy_version
+  - execution_model_version
+  - cost_model_version
+  - configuration_json
+  - configuration_hash
+  - dependency_lock_hash
+  - hypothesis_count
+  - production_change_allowed
+  unique:
+  - - experiment_id
+    - run_id
+  accepted_values:
+    status:
+    - CREATED
+    - CANDIDATES_READY
+    - RUNNING
+    - COMPLETED
+    - REJECTED
+    - FAILED
+    - CANCELLED
+    environment:
+    - research
+    - shadow
+    - paper
+    - staging
+    production_change_allowed:
+    - false
+implementation:
+  mode: DATAFORM_CREATE
+  dataform_definition: dataform/definitions/audit_experiment_runs.sqlx
+producers:
+- cloud-functions/strategy_brain/experiment_registry_adapter.py
+consumers:
+- research/replay.py
+- quant validation

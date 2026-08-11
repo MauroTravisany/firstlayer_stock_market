@@ -1,0 +1,147 @@
+contract_version: 1.0.0
+data_contract_version: audit-contracts-v1
+criticality: P0
+environments:
+- research
+- shadow
+point_in_time:
+  eligibility: REGISTRY_ONLY
+  reason: Registry metadata is not market input data.
+table:
+  name: audit_experiment_decisions
+  description: Append-only mechanical and human decisions with evidence and no production authority.
+  granularity: One row per experiment_id, run_id and decision_id.
+  logical_primary_key:
+  - experiment_id
+  - run_id
+  - decision_id
+  append_only: true
+  partition_by: DATE(created_at)
+  cluster_by:
+  - experiment_id
+  - run_id
+  - decision_type
+  corporate_actions_policy: NOT_APPLICABLE
+temporal:
+  event_time: created_at
+  available_at: created_at
+  ingested_at: created_at
+  timezone: UTC
+  point_in_time_policy: Registry metadata is not market input data.
+source:
+  system: audit registry
+  version_field: data_contract_version
+  original_timezone: UTC
+deduplication:
+  rule: Reject duplicate logical key ['experiment_id', 'run_id', 'decision_id']; never silently overwrite audit lineage.
+retention:
+  policy: Retain indefinitely for audit and replay.
+columns:
+- name: experiment_id
+  type: STRING
+  mode: REQUIRED
+  description: Owning experiment.
+- name: run_id
+  type: STRING
+  mode: REQUIRED
+  description: Owning run.
+- name: decision_id
+  type: STRING
+  mode: REQUIRED
+  description: Deterministic decision identity.
+- name: candidate_id
+  type: STRING
+  mode: NULLABLE
+  description: Candidate affected by decision.
+- name: decision_type
+  type: STRING
+  mode: REQUIRED
+  description: Decision class.
+  domain:
+  - MECHANICAL_REVIEW
+  - HUMAN_REVIEW
+  - REPLAY_VALIDATION
+  - PUBLICATION_GATE
+- name: decision_status
+  type: STRING
+  mode: REQUIRED
+  description: Decision outcome.
+  domain:
+  - ACCEPTED_FOR_RESEARCH
+  - REJECTED
+  - INSUFFICIENT_EVIDENCE
+  - BLOCKED
+  - RECORDED
+- name: reason_code
+  type: STRING
+  mode: REQUIRED
+  description: Stable reason code.
+- name: evidence_json
+  type: STRING
+  mode: REQUIRED
+  description: Canonical evidence JSON.
+- name: actor_type
+  type: STRING
+  mode: REQUIRED
+  description: Actor class.
+  domain:
+  - SYSTEM
+  - HUMAN
+  - AI_INTERPRETATION
+- name: actor_id
+  type: STRING
+  mode: NULLABLE
+  description: Actor identity.
+- name: production_change_allowed
+  type: BOOL
+  mode: REQUIRED
+  description: Must remain false.
+  domain:
+  - false
+- name: created_at
+  type: TIMESTAMP
+  mode: REQUIRED
+  description: UTC decision timestamp.
+assertions:
+  not_null:
+  - experiment_id
+  - run_id
+  - decision_id
+  - decision_type
+  - decision_status
+  - reason_code
+  - evidence_json
+  - actor_type
+  - production_change_allowed
+  - created_at
+  unique:
+  - - experiment_id
+    - run_id
+    - decision_id
+  accepted_values:
+    decision_type:
+    - MECHANICAL_REVIEW
+    - HUMAN_REVIEW
+    - REPLAY_VALIDATION
+    - PUBLICATION_GATE
+    decision_status:
+    - ACCEPTED_FOR_RESEARCH
+    - REJECTED
+    - INSUFFICIENT_EVIDENCE
+    - BLOCKED
+    - RECORDED
+    actor_type:
+    - SYSTEM
+    - HUMAN
+    - AI_INTERPRETATION
+    production_change_allowed:
+    - false
+implementation:
+  mode: DATAFORM_CREATE
+  dataform_definition: dataform/definitions/audit_experiment_decisions.sqlx
+producers:
+- cloud-functions/strategy_brain/experiment_registry_adapter.py
+- future human approval service
+consumers:
+- research/replay.py
+- independent audit

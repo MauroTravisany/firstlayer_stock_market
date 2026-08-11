@@ -1,0 +1,189 @@
+contract_version: 1.0.0
+data_contract_version: audit-contracts-v1
+criticality: P0
+environments:
+- paper
+point_in_time:
+  eligibility: NOT_BACKTEST_ELIGIBLE
+  reason: Operational paper records are not immutable research input and lack the WP-08 outbox state machine.
+table:
+  name: trading_alpaca_paper_executions
+  description: Current Alpaca Paper execution records before outbox/reconciliation migration.
+  granularity: One row per client_order_id.
+  logical_primary_key:
+  - client_order_id
+  append_only: false
+  partition_by: analysis_date
+  cluster_by:
+  - ticker
+  - execution_status
+  - client_order_id
+  corporate_actions_policy: NOT_APPLICABLE
+temporal:
+  event_time: created_at
+  available_at: created_at
+  ingested_at: updated_at
+  timezone: UTC
+  point_in_time_policy: Operational paper records are not immutable research input and lack the WP-08 outbox state machine.
+source:
+  system: Alpaca Paper executor
+  version_field: updated_at
+  original_timezone: UTC
+deduplication:
+  rule: Reject duplicate logical key ['client_order_id']; never silently overwrite audit lineage.
+retention:
+  policy: Retain indefinitely as broker audit evidence.
+columns:
+- name: analysis_date
+  type: DATE
+  mode: REQUIRED
+  description: analysis date
+- name: signal_timestamp
+  type: DATETIME
+  mode: NULLABLE
+  description: signal timestamp
+- name: paper_trade_id
+  type: STRING
+  mode: REQUIRED
+  description: paper trade id
+- name: ticker
+  type: STRING
+  mode: REQUIRED
+  description: ticker
+- name: alpaca_symbol
+  type: STRING
+  mode: REQUIRED
+  description: alpaca symbol
+- name: asset_type
+  type: STRING
+  mode: NULLABLE
+  description: asset type
+- name: strategy_version
+  type: STRING
+  mode: NULLABLE
+  description: strategy version
+- name: order_intent
+  type: STRING
+  mode: REQUIRED
+  description: order intent
+- name: client_order_id
+  type: STRING
+  mode: REQUIRED
+  description: client order id
+- name: alpaca_order_id
+  type: STRING
+  mode: NULLABLE
+  description: alpaca order id
+- name: broker_environment
+  type: STRING
+  mode: REQUIRED
+  description: broker environment
+- name: order_status
+  type: STRING
+  mode: NULLABLE
+  description: order status
+- name: order_side
+  type: STRING
+  mode: NULLABLE
+  description: order side
+- name: order_type
+  type: STRING
+  mode: NULLABLE
+  description: order type
+- name: time_in_force
+  type: STRING
+  mode: NULLABLE
+  description: time in force
+- name: order_class
+  type: STRING
+  mode: NULLABLE
+  description: order class
+- name: notional_usd
+  type: FLOAT64
+  mode: NULLABLE
+  description: notional usd
+- name: qty
+  type: FLOAT64
+  mode: NULLABLE
+  description: qty
+- name: theoretical_entry_price
+  type: FLOAT64
+  mode: NULLABLE
+  description: theoretical entry price
+- name: stop_loss
+  type: FLOAT64
+  mode: NULLABLE
+  description: stop loss
+- name: take_profit_1
+  type: FLOAT64
+  mode: NULLABLE
+  description: take profit 1
+- name: max_holding_days
+  type: INT64
+  mode: NULLABLE
+  description: max holding days
+- name: setup_score
+  type: FLOAT64
+  mode: NULLABLE
+  description: setup score
+- name: signal_reason
+  type: STRING
+  mode: NULLABLE
+  description: signal reason
+- name: request_id
+  type: STRING
+  mode: NULLABLE
+  description: request id
+- name: http_status
+  type: INT64
+  mode: NULLABLE
+  description: http status
+- name: execution_status
+  type: STRING
+  mode: REQUIRED
+  description: execution status
+- name: error_message
+  type: STRING
+  mode: NULLABLE
+  description: error message
+- name: order_payload_json
+  type: STRING
+  mode: NULLABLE
+  description: order payload json
+- name: order_response_json
+  type: STRING
+  mode: NULLABLE
+  description: order response json
+- name: created_at
+  type: TIMESTAMP
+  mode: REQUIRED
+  description: created at
+- name: updated_at
+  type: TIMESTAMP
+  mode: REQUIRED
+  description: updated at
+assertions:
+  not_null:
+  - analysis_date
+  - paper_trade_id
+  - ticker
+  - alpaca_symbol
+  - order_intent
+  - client_order_id
+  - broker_environment
+  - execution_status
+  - created_at
+  - updated_at
+  unique:
+  - - client_order_id
+  accepted_values: {}
+implementation:
+  mode: CODE_SCHEMA_REFERENCE
+  source_files:
+  - cloud-functions/paper_trade_executor/custom_function/bq_operations.py
+  allow_additional_columns: true
+producers:
+- papertradeexecutor
+consumers:
+- risk monitor
+- paper reconciliation

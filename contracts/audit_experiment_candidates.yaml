@@ -1,0 +1,132 @@
+contract_version: 1.0.0
+data_contract_version: audit-contracts-v1
+criticality: P0
+environments:
+- research
+- shadow
+point_in_time:
+  eligibility: REGISTRY_ONLY
+  reason: Registry metadata is not market input data.
+table:
+  name: audit_experiment_candidates
+  description: Candidate configurations isolated by experiment and run.
+  granularity: One row per experiment_id, run_id and candidate_id.
+  logical_primary_key:
+  - experiment_id
+  - run_id
+  - candidate_id
+  append_only: false
+  partition_by: DATE(created_at)
+  cluster_by:
+  - experiment_id
+  - run_id
+  - candidate_status
+  corporate_actions_policy: NOT_APPLICABLE
+temporal:
+  event_time: created_at
+  available_at: created_at
+  ingested_at: created_at
+  timezone: UTC
+  point_in_time_policy: Registry metadata is not market input data.
+source:
+  system: audit registry
+  version_field: data_contract_version
+  original_timezone: UTC
+deduplication:
+  rule: Reject duplicate logical key ['experiment_id', 'run_id', 'candidate_id']; never silently overwrite audit lineage.
+retention:
+  policy: Retain indefinitely for audit and replay.
+columns:
+- name: experiment_id
+  type: STRING
+  mode: REQUIRED
+  description: Owning experiment.
+- name: run_id
+  type: STRING
+  mode: REQUIRED
+  description: Owning run.
+- name: candidate_id
+  type: STRING
+  mode: REQUIRED
+  description: Global SHA-256 candidate identity.
+- name: generation
+  type: INT64
+  mode: REQUIRED
+  description: Generation starting at one.
+- name: hypothesis_index
+  type: INT64
+  mode: REQUIRED
+  description: Ordinal in hypothesis budget.
+- name: parent_candidate_id
+  type: STRING
+  mode: NULLABLE
+  description: Parent candidate.
+- name: candidate_status
+  type: STRING
+  mode: REQUIRED
+  description: Candidate lifecycle state.
+  domain:
+  - CREATED
+  - RUNNING
+  - COMPLETED
+  - REJECTED
+  - FAILED
+- name: configuration_json
+  type: STRING
+  mode: REQUIRED
+  description: Canonical candidate config.
+- name: configuration_hash
+  type: STRING
+  mode: REQUIRED
+  description: SHA-256 of candidate config.
+- name: production_change_allowed
+  type: BOOL
+  mode: REQUIRED
+  description: Must remain false.
+  domain:
+  - false
+- name: created_at
+  type: TIMESTAMP
+  mode: REQUIRED
+  description: UTC creation timestamp.
+- name: completed_at
+  type: TIMESTAMP
+  mode: NULLABLE
+  description: UTC terminal timestamp.
+- name: result_checksum
+  type: STRING
+  mode: NULLABLE
+  description: Candidate result checksum.
+assertions:
+  not_null:
+  - experiment_id
+  - run_id
+  - candidate_id
+  - generation
+  - hypothesis_index
+  - candidate_status
+  - configuration_json
+  - configuration_hash
+  - production_change_allowed
+  - created_at
+  unique:
+  - - experiment_id
+    - run_id
+    - candidate_id
+  accepted_values:
+    candidate_status:
+    - CREATED
+    - RUNNING
+    - COMPLETED
+    - REJECTED
+    - FAILED
+    production_change_allowed:
+    - false
+implementation:
+  mode: DATAFORM_CREATE
+  dataform_definition: dataform/definitions/audit_experiment_candidates.sqlx
+producers:
+- cloud-functions/strategy_brain/experiment_registry_adapter.py
+consumers:
+- research/replay.py
+- quant validation

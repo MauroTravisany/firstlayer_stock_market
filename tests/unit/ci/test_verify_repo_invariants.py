@@ -128,6 +128,13 @@ class RepoInvariantTests(unittest.TestCase):
         )
         self.assertViolation("PRODUCTION_CHANGE_ALLOWED")
 
+    def test_production_change_allowed_in_legacy_brain_is_rejected(self):
+        self.repo.write(
+            "cloud-functions/strategy_brain/legacy_main.py",
+            'candidate = {"production_change_allowed": True}',
+        )
+        self.assertViolation("PRODUCTION_CHANGE_ALLOWED")
+
     def test_non_paper_executor_mode_is_rejected(self):
         self.repo.write(
             "cloud-functions/paper_trade_executor/conf/conf.py",

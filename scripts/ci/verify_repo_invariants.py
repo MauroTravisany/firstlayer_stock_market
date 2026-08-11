@@ -162,17 +162,40 @@ def _policy_violations(root: Path) -> Iterable[Violation]:
             "champion/challenger policy must remain SHADOW_ONLY",
         )
 
-    brain_relative = "cloud-functions/strategy_brain/main.py"
-    brain = _read(root, brain_relative)
-    if brain is None:
-        yield Violation("STRATEGY_BRAIN_MISSING", brain_relative, "Strategy Brain source is required")
-    elif re.search(
-        r'["\']production_change_allowed["\']\s*:\s*(?:True|true)', brain
+    brain_relatives = (
+        "cloud-functions/strategy_brain/main.py",
+        "cloud-functions/strategy_brain/legacy_main.py",
+        "cloud-functions/strategy_brain/experiment_registry_adapter.py",
+    )
+    brain_sources = []
+    for brain_relative in brain_relatives:
+        brain = _read(root, brain_relative)
+        if brain is None:
+            if brain_relative.endswith("/main.py"):
+                yield Violation(
+                    "STRATEGY_BRAIN_MISSING",
+                    brain_relative,
+                    "Strategy Brain source is required",
+                )
+            continue
+        brain_sources.append(brain)
+        if re.search(
+            r'["\']production_change_allowed["\']\s*:\s*(?:True|true)',
+            brain,
+        ):
+            yield Violation(
+                "PRODUCTION_CHANGE_ALLOWED",
+                brain_relative,
+                "Strategy Brain cannot permit production changes",
+            )
+    if brain_sources and not any(
+        '"production_change_allowed": False' in source
+        for source in brain_sources
     ):
         yield Violation(
-            "PRODUCTION_CHANGE_ALLOWED",
-            brain_relative,
-            "Strategy Brain cannot permit production changes",
+            "PRODUCTION_CHANGE_GUARD_MISSING",
+            brain_relatives[0],
+            "Strategy Brain must explicitly deny production changes",
         )
 
 

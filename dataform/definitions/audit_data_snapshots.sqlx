@@ -1,0 +1,33 @@
+config {
+  type: "operations",
+  database: dataform.projectConfig.defaultDatabase,
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "audit_data_snapshots",
+  hasOutput: true,
+  tags: ["audit-grade", "wp02", "registry"]
+}
+
+CREATE TABLE IF NOT EXISTS ${self()} (
+  data_snapshot_id STRING NOT NULL,
+  environment STRING NOT NULL,
+  data_contract_version STRING NOT NULL,
+  contract_set_hash STRING NOT NULL,
+  schema_snapshot_hash STRING NOT NULL,
+  source_cutoff_at TIMESTAMP NOT NULL,
+  snapshot_status STRING NOT NULL,
+  source_manifest_json STRING NOT NULL,
+  source_manifest_hash STRING NOT NULL,
+  content_checksum STRING NOT NULL,
+  row_count INT64,
+  quality_gate_json STRING NOT NULL,
+  quality_gate_status STRING NOT NULL,
+  immutable BOOL NOT NULL,
+  created_at TIMESTAMP NOT NULL,
+  created_by STRING NOT NULL,
+  production_change_allowed BOOL NOT NULL,
+  published_at TIMESTAMP,
+  supersedes_snapshot_id STRING
+)
+PARTITION BY DATE(created_at)
+CLUSTER BY environment, snapshot_status
+OPTIONS(description = "Immutable audit-grade data snapshot publication registry.");

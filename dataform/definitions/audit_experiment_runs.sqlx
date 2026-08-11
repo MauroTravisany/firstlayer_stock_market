@@ -1,0 +1,49 @@
+config {
+  type: "operations",
+  database: dataform.projectConfig.defaultDatabase,
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "audit_experiment_runs",
+  hasOutput: true,
+  tags: ["audit-grade", "wp02", "registry"]
+}
+
+CREATE TABLE IF NOT EXISTS ${self()} (
+  experiment_id STRING NOT NULL,
+  run_id STRING NOT NULL,
+  parent_experiment_id STRING,
+  created_at TIMESTAMP NOT NULL,
+  status STRING NOT NULL,
+  hypothesis STRING NOT NULL,
+  git_sha STRING NOT NULL,
+  image_digest STRING,
+  dataform_compilation_id STRING,
+  environment STRING NOT NULL,
+  data_contract_version STRING NOT NULL,
+  contract_set_hash STRING NOT NULL,
+  schema_snapshot_hash STRING NOT NULL,
+  data_snapshot_id STRING NOT NULL,
+  data_snapshot_checksum STRING NOT NULL,
+  universe_version STRING NOT NULL,
+  feature_set_version STRING NOT NULL,
+  strategy_version STRING NOT NULL,
+  execution_model_version STRING NOT NULL,
+  cost_model_version STRING NOT NULL,
+  configuration_json STRING NOT NULL,
+  configuration_hash STRING NOT NULL,
+  dependency_lock_hash STRING NOT NULL,
+  random_seed INT64,
+  train_start DATE,
+  train_end DATE,
+  validation_start DATE,
+  validation_end DATE,
+  test_start DATE,
+  test_end DATE,
+  hypothesis_count INT64 NOT NULL,
+  production_change_allowed BOOL NOT NULL,
+  results_checksum STRING,
+  completed_at TIMESTAMP,
+  failure_reason STRING
+)
+PARTITION BY DATE(created_at)
+CLUSTER BY status, environment, strategy_version
+OPTIONS(description = "One audit-grade experiment identity with reproducible configuration and controlled lifecycle.");

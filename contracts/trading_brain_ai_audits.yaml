@@ -1,0 +1,127 @@
+contract_version: 1.0.0
+data_contract_version: audit-contracts-v1
+criticality: P0
+environments:
+- research
+- shadow
+point_in_time:
+  eligibility: NOT_BACKTEST_ELIGIBLE
+  reason: AI interpretation is non-binding and legacy validation is not final test evidence.
+table:
+  name: trading_brain_ai_audits
+  description: Legacy audit rows extended with experiment identity.
+  granularity: One row per run_id and created_at.
+  logical_primary_key:
+  - run_id
+  - created_at
+  append_only: true
+  partition_by: null
+  cluster_by: []
+  corporate_actions_policy: NOT_APPLICABLE
+temporal:
+  event_time: created_at
+  available_at: created_at
+  ingested_at: created_at
+  timezone: UTC
+  point_in_time_policy: AI interpretation is non-binding and legacy validation is not final test evidence.
+source:
+  system: Strategy Brain legacy audit table
+  version_field: model_name
+  original_timezone: UTC
+deduplication:
+  rule: Reject duplicate logical key ['run_id', 'created_at']; never silently overwrite audit lineage.
+retention:
+  policy: Retain indefinitely as non-binding interpretation evidence.
+columns:
+- name: run_id
+  type: STRING
+  mode: REQUIRED
+  description: run id
+- name: created_at
+  type: TIMESTAMP
+  mode: REQUIRED
+  description: created at
+- name: audit_status
+  type: STRING
+  mode: REQUIRED
+  description: audit status
+- name: selected_candidates_json
+  type: STRING
+  mode: REQUIRED
+  description: selected candidates json
+- name: evidence_json
+  type: STRING
+  mode: REQUIRED
+  description: evidence json
+- name: ai_interpretation
+  type: STRING
+  mode: NULLABLE
+  description: ai interpretation
+- name: model_name
+  type: STRING
+  mode: NULLABLE
+  description: model name
+- name: production_change_allowed
+  type: BOOL
+  mode: REQUIRED
+  description: production change allowed
+- name: generation
+  type: INT64
+  mode: NULLABLE
+  description: generation
+- name: generation_outcome
+  type: STRING
+  mode: NULLABLE
+  description: generation outcome
+- name: material_improvement
+  type: BOOL
+  mode: NULLABLE
+  description: material improvement
+- name: best_validation_score
+  type: FLOAT64
+  mode: NULLABLE
+  description: best validation score
+- name: convergence_reason
+  type: STRING
+  mode: NULLABLE
+  description: convergence reason
+- name: promotion_recommendation
+  type: STRING
+  mode: NULLABLE
+  description: promotion recommendation
+- name: asset_scope
+  type: STRING
+  mode: NULLABLE
+  description: asset scope
+- name: target_strategy_version
+  type: STRING
+  mode: NULLABLE
+  description: target strategy version
+- name: experiment_id
+  type: STRING
+  mode: NULLABLE
+  description: experiment id
+assertions:
+  not_null:
+  - run_id
+  - created_at
+  - audit_status
+  - selected_candidates_json
+  - evidence_json
+  - production_change_allowed
+  unique:
+  - - run_id
+    - created_at
+  accepted_values: {}
+implementation:
+  mode: DATAFORM_ALTER
+  dataform_definition: dataform/definitions/audit_trading_brain_registry_columns.sqlx
+  source_files:
+  - cloud-functions/strategy_brain/main.py
+  managed_columns:
+  - experiment_id
+  allow_additional_columns: true
+producers:
+- strategybrain
+consumers:
+- audit registry adapter

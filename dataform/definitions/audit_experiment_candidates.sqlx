@@ -1,0 +1,27 @@
+config {
+  type: "operations",
+  database: dataform.projectConfig.defaultDatabase,
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "audit_experiment_candidates",
+  hasOutput: true,
+  tags: ["audit-grade", "wp02", "registry"]
+}
+
+CREATE TABLE IF NOT EXISTS ${self()} (
+  experiment_id STRING NOT NULL,
+  run_id STRING NOT NULL,
+  candidate_id STRING NOT NULL,
+  generation INT64 NOT NULL,
+  hypothesis_index INT64 NOT NULL,
+  parent_candidate_id STRING,
+  candidate_status STRING NOT NULL,
+  configuration_json STRING NOT NULL,
+  configuration_hash STRING NOT NULL,
+  production_change_allowed BOOL NOT NULL,
+  created_at TIMESTAMP NOT NULL,
+  completed_at TIMESTAMP,
+  result_checksum STRING
+)
+PARTITION BY DATE(created_at)
+CLUSTER BY experiment_id, run_id, candidate_status
+OPTIONS(description = "Candidate configurations isolated by experiment and run.");
