@@ -82,10 +82,22 @@ SELECT
   pv.latest_financial_available_at,
   CASE
     WHEN l.ticker IS NULL THEN "PIT_ONLY"
-    WHEN p.pit_financial_revision_id IS NULL AND l.legacy_period_end_date IS NOT NULL THEN "LEGACY_USED_UNVERIFIABLE_FINANCIAL"
-    WHEN COALESCE(l.legacy_earnings_event_status, "NA") != COALESCE(p.pit_earnings_event_status, "NA") THEN "EARNINGS_CONTEXT_CHANGED"
-    WHEN COALESCE(lv.legacy_classification, "NA") != COALESCE(pv.classification_pit, "NA") THEN "VALUATION_CLASSIFICATION_CHANGED"
-    WHEN ABS(COALESCE(l.legacy_revenue_yoy, 0) - COALESCE(p.pit_revenue_yoy, 0)) > 0.000001 THEN "FUNDAMENTAL_GROWTH_CHANGED"
+    WHEN p.pit_financial_revision_id IS NULL
+      AND l.legacy_period_end_date IS NOT NULL
+      THEN "LEGACY_USED_UNVERIFIABLE_FINANCIAL"
+    WHEN COALESCE(l.legacy_earnings_event_status, "NA")
+      != COALESCE(p.pit_earnings_event_status, "NA")
+      THEN "EARNINGS_CONTEXT_CHANGED"
+    WHEN COALESCE(lv.legacy_classification, "NA")
+      != COALESCE(pv.classification_pit, "NA")
+      THEN "VALUATION_CLASSIFICATION_CHANGED"
+    WHEN (l.legacy_revenue_yoy IS NULL AND p.pit_revenue_yoy IS NOT NULL)
+      OR (l.legacy_revenue_yoy IS NOT NULL AND p.pit_revenue_yoy IS NULL)
+      THEN "FUNDAMENTAL_AVAILABILITY_CHANGED"
+    WHEN l.legacy_revenue_yoy IS NOT NULL
+      AND p.pit_revenue_yoy IS NOT NULL
+      AND ABS(l.legacy_revenue_yoy - p.pit_revenue_yoy) > 0.000001
+      THEN "FUNDAMENTAL_GROWTH_CHANGED"
     ELSE "NO_MATERIAL_DIFFERENCE"
   END AS pit_divergence_type,
   "DIAGNOSTIC_ONLY" AS comparison_use,
