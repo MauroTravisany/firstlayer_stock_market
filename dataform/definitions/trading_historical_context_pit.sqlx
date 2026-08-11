@@ -1,0 +1,111 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "trading_historical_context_pit",
+  description: "Shadow historical context with financial and earnings semantics replaced by point-in-time sources. Legacy fundamental status fields are deliberately excluded until the PIT valuation chain is complete.",
+  tags: ["audit-grade", "pit", "backtest", "shadow", "wp03"],
+  bigquery: {
+    partitionBy: "analysis_date",
+    clusterBy: ["ticker", "context_similarity_key"]
+  },
+  assertions: {
+    nonNull: ["analysis_date", "signal_hour", "ticker", "context_similarity_key"],
+    uniqueKey: ["analysis_date", "signal_hour", "ticker"]
+  },
+  dependencies: ["trading_historical_context", "trading_financial_context_pit", "trading_earnings_context"]
+}
+
+WITH financial AS (
+  SELECT * FROM ${ref("trading_financial_context_pit")}
+),
+earnings AS (
+  SELECT * FROM ${ref("trading_earnings_context")}
+)
+SELECT
+  legacy.* EXCEPT (
+    period_end_date,
+    report_date,
+    revenue_yoy,
+    net_margin_asof,
+    fcf_margin_asof,
+    debt_to_equity_asof,
+    company_lifecycle_context,
+    company_status,
+    status_group,
+    classification,
+    risk_level,
+    technical_trend,
+    fundamental_final_score,
+    fundamental_quality_score,
+    fundamental_valuation_score,
+    fundamental_risk_score,
+    earnings_date,
+    days_to_earnings,
+    earnings_event_status,
+    earnings_event_score,
+    earnings_context_note,
+    context_similarity_key,
+    calculated_at
+  ),
+  f.revision_id AS financial_revision_id,
+  f.period_end_date,
+  f.filing_date AS report_date,
+  f.source_published_at AS financial_source_published_at,
+  f.available_at AS financial_available_at,
+  f.prior_year_revision_id,
+  f.prior_year_available_at,
+  ROUND(f.revenue_yoy, 4) AS revenue_yoy,
+  ROUND(f.net_margin_asof, 4) AS net_margin_asof,
+  ROUND(f.fcf_margin_asof, 4) AS fcf_margin_asof,
+  ROUND(f.debt_to_equity_asof, 4) AS debt_to_equity_asof,
+  CASE
+    WHEN legacy.asset_type = "CRYPTO" THEN "CRYPTO_NO_COMPANY_STATUS"
+    WHEN f.revision_id IS NULL THEN "NO_PIT_FINANCIAL_CONTEXT"
+    WHEN f.revenue_yoy >= 0.15 AND COALESCE(f.net_margin_asof, 0) >= 0.08 THEN "GROWTH_QUALITY_PIT"
+    WHEN f.revenue_yoy >= 0.15 AND COALESCE(f.net_margin_asof, 0) < 0 THEN "GROWTH_MARGIN_PRESSURE_PIT"
+    WHEN f.revenue_yoy BETWEEN 0.03 AND 0.15 AND COALESCE(f.net_margin_asof, 0) >= 0.08 THEN "STABLE_QUALITY_PIT"
+    WHEN COALESCE(f.net_margin_asof, 0) < 0 THEN "TURNAROUND_RISK_PIT"
+    ELSE "STABLE_OR_MIXED_PIT"
+  END AS company_lifecycle_context,
+  "PIT_STATUS_PENDING" AS company_status,
+  "PIT_STATUS_PENDING" AS status_group,
+  "PIT_VALUATION_PENDING" AS classification,
+  "PIT_RISK_PENDING" AS risk_level,
+  legacy.technical_trend,
+  CAST(NULL AS FLOAT64) AS fundamental_final_score,
+  CAST(NULL AS FLOAT64) AS fundamental_quality_score,
+  CAST(NULL AS FLOAT64) AS fundamental_valuation_score,
+  CAST(NULL AS FLOAT64) AS fundamental_risk_score,
+  e.earnings_date,
+  e.days_to_earnings,
+  COALESCE(e.earnings_event_status, "NO_EARNINGS_DATA") AS earnings_event_status,
+  COALESCE(e.earnings_event_score, 0.0) AS earnings_event_score,
+  COALESCE(e.earnings_context_note, "Sin contexto PIT de resultados.") AS earnings_context_note,
+  e.expected_available_at,
+  e.reported_available_at,
+  CONCAT(
+    COALESCE(legacy.monetary_regime_proxy, "MONETARY_UNKNOWN"), "|",
+    COALESCE(legacy.historical_fear_regime, "FEAR_UNKNOWN"), "|",
+    COALESCE(legacy.political_regime_proxy, "POLITICAL_UNKNOWN"), "|",
+    CASE
+      WHEN legacy.asset_type = "CRYPTO" THEN "CRYPTO_NO_COMPANY_STATUS"
+      WHEN f.revision_id IS NULL THEN "NO_PIT_FINANCIAL_CONTEXT"
+      WHEN f.revenue_yoy >= 0.15 AND COALESCE(f.net_margin_asof, 0) >= 0.08 THEN "GROWTH_QUALITY_PIT"
+      WHEN f.revenue_yoy >= 0.15 AND COALESCE(f.net_margin_asof, 0) < 0 THEN "GROWTH_MARGIN_PRESSURE_PIT"
+      WHEN f.revenue_yoy BETWEEN 0.03 AND 0.15 AND COALESCE(f.net_margin_asof, 0) >= 0.08 THEN "STABLE_QUALITY_PIT"
+      WHEN COALESCE(f.net_margin_asof, 0) < 0 THEN "TURNAROUND_RISK_PIT"
+      ELSE "STABLE_OR_MIXED_PIT"
+    END, "|",
+    COALESCE(e.earnings_event_status, "NO_EARNINGS_DATA"), "|",
+    COALESCE(legacy.crypto_context_regime, "CRYPTO_NEUTRAL")
+  ) AS context_similarity_key,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM ${ref("trading_historical_context")} legacy
+LEFT JOIN financial f
+  ON f.analysis_date = legacy.analysis_date
+ AND f.signal_hour = legacy.signal_hour
+ AND f.ticker = legacy.ticker
+LEFT JOIN earnings e
+  ON e.analysis_date = legacy.analysis_date
+ AND e.signal_hour = legacy.signal_hour
+ AND e.ticker = legacy.ticker
