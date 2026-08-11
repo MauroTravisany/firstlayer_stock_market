@@ -40,8 +40,19 @@ def normalize_cik(cik):
 
 
 def fetch_submissions(cik):
+    """Fetch current and referenced historical submission files from SEC EDGAR."""
     cik10 = normalize_cik(cik)
-    return _get_json(f"{SEC_DATA_BASE}/submissions/CIK{cik10}.json")
+    document = _get_json(f"{SEC_DATA_BASE}/submissions/CIK{cik10}.json")
+    supplemental = []
+    for descriptor in (document.get("filings") or {}).get("files") or []:
+        name = descriptor.get("name")
+        if not name:
+            continue
+        payload = _get_json(f"{SEC_DATA_BASE}/submissions/{name}")
+        if isinstance(payload, dict):
+            supplemental.append(payload)
+    document["_supplemental_filings"] = supplemental
+    return document
 
 
 def fetch_companyfacts(cik):
@@ -49,26 +60,36 @@ def fetch_companyfacts(cik):
     return _get_json(f"{SEC_DATA_BASE}/api/xbrl/companyfacts/CIK{cik10}.json")
 
 
-def recent_filings_by_accession(submissions):
-    recent = (submissions.get("filings") or {}).get("recent") or {}
-    accessions = recent.get("accessionNumber") or []
-    rows = {}
-    for index, accession in enumerate(accessions):
-        def value(name):
-            values = recent.get(name) or []
-            return values[index] if index < len(values) else None
+def _filing_documents(submissions):
+    filings = submissions.get("filings") or {}
+    documents = list(submissions.get("_supplemental_filings") or [])
+    recent = filings.get("recent") or {}
+    if recent:
+        documents.append(recent)
+    return documents
 
-        form = value("form")
-        if form not in SEC_FORMS:
-            continue
-        rows[accession] = {
-            "accession_number": accession,
-            "form_type": form,
-            "filing_date": value("filingDate"),
-            "source_published_at": value("acceptanceDateTime"),
-            "period_end_date": value("reportDate"),
-            "primary_document": value("primaryDocument"),
-        }
+
+def recent_filings_by_accession(submissions):
+    """Normalize current + historical SEC submission arrays keyed by accession."""
+    rows = {}
+    for document in _filing_documents(submissions):
+        accessions = document.get("accessionNumber") or []
+        for index, accession in enumerate(accessions):
+            def value(name):
+                values = document.get(name) or []
+                return values[index] if index < len(values) else None
+
+            form = value("form")
+            if form not in SEC_FORMS:
+                continue
+            rows[accession] = {
+                "accession_number": accession,
+                "form_type": form,
+                "filing_date": value("filingDate"),
+                "source_published_at": value("acceptanceDateTime"),
+                "period_end_date": value("reportDate"),
+                "primary_document": value("primaryDocument"),
+            }
     return rows
 
 
@@ -129,7 +150,6 @@ def _choose_fact(companyfacts, concepts, *, accession, period_end, unit_preferen
 
     if duration_target is not None:
         chosen, unit = min(matches, key=rank)
-        # Reject ambiguous cumulative/YTD facts rather than treating them as one quarter.
         duration = _duration_days(chosen)
         tolerance = 35 if duration_target == 91 else 75
         if duration is None or abs(duration - duration_target) > tolerance:
