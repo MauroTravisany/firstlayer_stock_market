@@ -1,0 +1,49 @@
+name: Apply WP-02 staged payload
+
+on:
+  push:
+    branches:
+      - chatgpt/wp-02-data-contracts-experiment-registry
+    paths:
+      - .wp02-staging/ready
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-wp02-staged
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout staging branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/wp-02-data-contracts-experiment-registry
+          fetch-depth: 0
+
+      - name: Materialize verified WP-02 payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find .wp02-staging -maxdepth 1 -type f -name 'part-*' | wc -l)" -eq 12
+          cat .wp02-staging/part-* | base64 --decode > /tmp/wp02.tar.gz
+          tar -tzf /tmp/wp02.tar.gz > /tmp/wp02-files.txt
+          test "$(wc -l < /tmp/wp02-files.txt)" -eq 59
+          tar -xzf /tmp/wp02.tar.gz
+          git diff --check
+          rm -rf .wp02-staging
+          git rm .github/workflows/apply-wp02-staged.yml
+
+      - name: Commit complete WP-02 implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "feat: add audit-grade data contracts and experiment registry"
+          git push origin HEAD:chatgpt/wp-02-data-contracts-experiment-registry
