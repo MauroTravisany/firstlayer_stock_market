@@ -1,5 +1,6 @@
 config {
   type: "operations",
+  hasOutput: true,
   schema: dataform.projectConfig.vars.auditDataset,
   name: "financial_statements_pit_raw",
   description: "Creates the append-only SEC filing revision store used by WP-03.",
