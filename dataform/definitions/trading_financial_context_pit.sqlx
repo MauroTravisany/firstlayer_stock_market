@@ -31,6 +31,8 @@ WITH revision_series AS (
 quarterly_with_yoy AS (
   SELECT
     current.*,
+    prior.revision_id AS prior_year_revision_id,
+    prior.available_at AS prior_year_available_at,
     prior.revenue AS revenue_same_q_prev_year,
     prior.net_income AS net_income_same_q_prev_year,
     SAFE_DIVIDE(current.revenue - prior.revenue, ABS(prior.revenue)) AS revenue_yoy,
@@ -59,8 +61,12 @@ asof AS (
     s.filing_date,
     s.source_published_at,
     s.available_at,
+    s.prior_year_revision_id,
+    s.prior_year_available_at,
     s.revenue,
+    s.revenue_same_q_prev_year,
     s.net_income,
+    s.net_income_same_q_prev_year,
     s.free_cash_flow,
     s.total_debt,
     s.shareholders_equity,
