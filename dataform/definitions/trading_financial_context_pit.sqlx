@@ -41,6 +41,7 @@ latest_with_prior AS (
     prior.available_at AS prior_year_available_at,
     prior.currency AS prior_year_currency,
     prior.quarter_value_basis AS prior_year_quarter_value_basis,
+    prior.quarter_structure_complete AS prior_year_quarter_structure_complete,
     prior.revenue AS revenue_same_q_prev_year,
     prior.net_income AS net_income_same_q_prev_year,
     ROW_NUMBER() OVER (
@@ -84,6 +85,7 @@ SELECT
   prior_year_available_at,
   prior_year_currency,
   prior_year_quarter_value_basis,
+  prior_year_quarter_structure_complete,
   revenue,
   revenue_same_q_prev_year,
   net_income,
@@ -95,6 +97,7 @@ SELECT
   shareholders_equity,
   CASE
     WHEN quarter_structure_complete
+      AND COALESCE(prior_year_quarter_structure_complete, FALSE)
       AND revenue IS NOT NULL
       AND revenue_same_q_prev_year IS NOT NULL
       AND revenue_same_q_prev_year != 0
@@ -103,6 +106,7 @@ SELECT
   END AS revenue_yoy,
   CASE
     WHEN quarter_structure_complete
+      AND COALESCE(prior_year_quarter_structure_complete, FALSE)
       AND net_income IS NOT NULL
       AND net_income_same_q_prev_year IS NOT NULL
       AND net_income_same_q_prev_year != 0
