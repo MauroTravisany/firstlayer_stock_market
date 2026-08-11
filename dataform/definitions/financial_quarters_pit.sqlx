@@ -2,7 +2,7 @@ config {
   type: "table",
   schema: dataform.projectConfig.vars.auditDataset,
   name: "financial_quarters_pit",
-  description: "Canonical fiscal-quarter series at each signal timestamp. Q4 is derived from the annual filing and the Q1-Q3 revisions that were already available when that annual filing became public.",
+  description: "Canonical fiscal-quarter series at each signal timestamp. Q4 additive monetary facts are derived from the annual filing and Q1-Q3 revisions already available when that filing became public; non-additive EPS is not derived.",
   tags: ["audit-grade", "pit", "financials", "quarterly", "wp03"],
   bigquery: {
     partitionBy: "analysis_date",
@@ -68,8 +68,6 @@ annual_component_candidates AS (
     c.gross_profit,
     c.operating_income,
     c.net_income,
-    c.eps_basic,
-    c.eps_diluted,
     c.operating_cash_flow,
     ROW_NUMBER() OVER (
       PARTITION BY a.analysis_date, a.signal_hour, a.ticker, a.revision_id, c.fiscal_quarter
@@ -101,15 +99,11 @@ annual_component_summary AS (
     COUNTIF(gross_profit IS NOT NULL) AS component_gross_profit_count,
     COUNTIF(operating_income IS NOT NULL) AS component_operating_income_count,
     COUNTIF(net_income IS NOT NULL) AS component_net_income_count,
-    COUNTIF(eps_basic IS NOT NULL) AS component_eps_basic_count,
-    COUNTIF(eps_diluted IS NOT NULL) AS component_eps_diluted_count,
     COUNTIF(operating_cash_flow IS NOT NULL) AS component_operating_cash_flow_count,
     SUM(revenue) AS component_revenue,
     SUM(gross_profit) AS component_gross_profit,
     SUM(operating_income) AS component_operating_income,
     SUM(net_income) AS component_net_income,
-    SUM(eps_basic) AS component_eps_basic,
-    SUM(eps_diluted) AS component_eps_diluted,
     SUM(operating_cash_flow) AS component_operating_cash_flow,
     ARRAY_AGG(component_revision_id ORDER BY component_fiscal_quarter) AS component_revision_ids,
     MAX(component_available_at) AS component_max_available_at
@@ -182,8 +176,8 @@ derived_q4 AS (
     IF(s.component_gross_profit_count = 3, a.gross_profit - s.component_gross_profit, NULL) AS gross_profit,
     IF(s.component_operating_income_count = 3, a.operating_income - s.component_operating_income, NULL) AS operating_income,
     IF(s.component_net_income_count = 3, a.net_income - s.component_net_income, NULL) AS net_income,
-    IF(s.component_eps_basic_count = 3, a.eps_basic - s.component_eps_basic, NULL) AS eps_basic,
-    IF(s.component_eps_diluted_count = 3, a.eps_diluted - s.component_eps_diluted, NULL) AS eps_diluted,
+    CAST(NULL AS FLOAT64) AS eps_basic,
+    CAST(NULL AS FLOAT64) AS eps_diluted,
     a.total_assets,
     a.total_liabilities,
     a.total_debt,
@@ -195,7 +189,7 @@ derived_q4 AS (
     IF(s.component_operating_cash_flow_count = 3, a.operating_cash_flow - s.component_operating_cash_flow, NULL) AS operating_cash_flow,
     CAST(NULL AS FLOAT64) AS free_cash_flow,
     a.quality_status,
-    "DERIVED_Q4_FROM_FY_AND_CONTEMPORANEOUS_Q1_Q2_Q3" AS quarter_value_basis,
+    "DERIVED_Q4_ADDITIVE_FACTS_ONLY_FROM_CONTEMPORANEOUS_Q1_Q2_Q3" AS quarter_value_basis,
     COALESCE(s.component_quarter_count, 0) = 3
       AND COALESCE(s.component_currency_count, 0) = 1
       AND s.component_currency = a.currency AS quarter_structure_complete,
