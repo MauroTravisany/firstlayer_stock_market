@@ -12,6 +12,15 @@ CORE_FINANCIAL_FACTS = {
     "total_assets",
     "shareholders_equity",
 }
+DERIVED_IDENTITY_FIELDS = {
+    "revision_id",
+    "revision_number",
+    "is_restated",
+    "backtest_eligible",
+    "eligibility_reason",
+    "quality_status",
+    "loaded_at",
+}
 
 
 def canonical_json(value):
@@ -54,7 +63,7 @@ def refresh_revision_identity(payload):
     immutable_basis = {
         key: value
         for key, value in payload.items()
-        if key not in {"revision_id", "loaded_at"}
+        if key not in DERIVED_IDENTITY_FIELDS
     }
     payload["revision_id"] = content_hash(immutable_basis)
     return payload
