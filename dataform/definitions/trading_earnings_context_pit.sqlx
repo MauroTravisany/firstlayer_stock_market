@@ -1,0 +1,121 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.defaultSchema,
+  name: "trading_earnings_context_pit",
+  description: "Point-in-time earnings context. Expected events and reported outcomes are consumed only after their observation timestamp.",
+  tags: ["trading", "paper", "daily", "earnings", "pit", "wp03"],
+  bigquery: {
+    partitionBy: "analysis_date",
+    clusterBy: ["ticker", "earnings_event_status"]
+  },
+  assertions: {
+    nonNull: ["analysis_date", "signal_hour", "ticker"],
+    uniqueKey: ["analysis_date", "signal_hour", "ticker"]
+  },
+  dependencies: ["earnings_events_pit", "trading_price_features"]
+}
+
+WITH price_slots AS (
+  SELECT
+    *,
+    TIMESTAMP(signal_timestamp, "UTC") AS signal_timestamp_utc
+  FROM ${ref("trading_price_features")}
+),
+expected_asof AS (
+  SELECT * EXCEPT(rn)
+  FROM (
+    SELECT
+      p.analysis_date,
+      p.signal_hour,
+      p.signal_timestamp_utc,
+      p.ticker,
+      e.earnings_date,
+      e.earnings_time,
+      e.eps_estimate,
+      e.event_status,
+      e.available_at,
+      ROW_NUMBER() OVER (
+        PARTITION BY p.analysis_date, p.signal_hour, p.ticker
+        ORDER BY e.available_at DESC, e.event_id DESC
+      ) AS rn
+    FROM price_slots p
+    LEFT JOIN ${ref("earnings_events_pit")} e
+      ON e.ticker = p.ticker
+     AND e.event_kind = "EXPECTED"
+     AND e.available_at <= p.signal_timestamp_utc
+     AND e.backtest_eligible = TRUE
+  )
+  WHERE rn = 1
+),
+reported_asof AS (
+  SELECT * EXCEPT(rn)
+  FROM (
+    SELECT
+      p.analysis_date,
+      p.signal_hour,
+      p.signal_timestamp_utc,
+      p.ticker,
+      e.earnings_date,
+      e.reported_eps,
+      e.surprise_pct,
+      e.event_status,
+      e.available_at,
+      ROW_NUMBER() OVER (
+        PARTITION BY p.analysis_date, p.signal_hour, p.ticker
+        ORDER BY e.available_at DESC, e.event_id DESC
+      ) AS rn
+    FROM price_slots p
+    LEFT JOIN ${ref("earnings_events_pit")} e
+      ON e.ticker = p.ticker
+     AND e.event_kind = "REPORTED"
+     AND e.available_at <= p.signal_timestamp_utc
+     AND e.backtest_eligible = TRUE
+  )
+  WHERE rn = 1
+)
+SELECT
+  p.analysis_date,
+  p.signal_hour,
+  p.signal_timestamp_utc,
+  p.ticker,
+  x.earnings_date,
+  DATE_DIFF(x.earnings_date, p.analysis_date, DAY) AS days_to_earnings,
+  x.earnings_time,
+  x.eps_estimate,
+  r.reported_eps,
+  r.surprise_pct,
+  CASE
+    WHEN x.earnings_date IS NOT NULL AND DATE_DIFF(x.earnings_date, p.analysis_date, DAY) BETWEEN 0 AND 3 THEN "EARNINGS_IMMINENT"
+    WHEN x.earnings_date IS NOT NULL AND DATE_DIFF(x.earnings_date, p.analysis_date, DAY) BETWEEN 4 AND 10 THEN "PRE_EARNINGS_WINDOW"
+    WHEN r.reported_eps IS NOT NULL AND r.surprise_pct < -5 THEN "RECENT_NEGATIVE_SURPRISE"
+    WHEN r.reported_eps IS NOT NULL AND r.surprise_pct > 5 THEN "RECENT_POSITIVE_SURPRISE"
+    WHEN r.reported_eps IS NOT NULL THEN "RECENT_RESULT"
+    WHEN x.earnings_date IS NULL THEN "NO_EARNINGS_DATA"
+    ELSE "NO_EARNINGS_EVENT"
+  END AS earnings_event_status,
+  CASE
+    WHEN x.earnings_date IS NOT NULL AND DATE_DIFF(x.earnings_date, p.analysis_date, DAY) BETWEEN 0 AND 3 THEN -0.75
+    WHEN x.earnings_date IS NOT NULL AND DATE_DIFF(x.earnings_date, p.analysis_date, DAY) BETWEEN 4 AND 10 THEN -0.35
+    WHEN r.reported_eps IS NOT NULL AND r.surprise_pct < -5 THEN -1.25
+    WHEN r.reported_eps IS NOT NULL AND r.surprise_pct > 5 THEN 0.75
+    WHEN r.reported_eps IS NOT NULL THEN 0.10
+    WHEN x.earnings_date IS NULL THEN -0.10
+    ELSE 0.0
+  END AS earnings_event_score,
+  CASE
+    WHEN x.earnings_date IS NULL AND r.reported_eps IS NULL THEN "Sin observacion PIT verificable de calendario o resultado."
+    WHEN x.earnings_date IS NOT NULL AND DATE_DIFF(x.earnings_date, p.analysis_date, DAY) BETWEEN 0 AND 3 THEN "Resultados dentro de 3 dias segun la ultima expectativa disponible en ese instante."
+    WHEN x.earnings_date IS NOT NULL AND DATE_DIFF(x.earnings_date, p.analysis_date, DAY) BETWEEN 4 AND 10 THEN "Resultados proximos segun calendario conocido en ese instante."
+    WHEN r.reported_eps IS NOT NULL AND r.surprise_pct < -5 THEN "Resultado negativo ya observado; no se usa antes de su available_at."
+    WHEN r.reported_eps IS NOT NULL AND r.surprise_pct > 5 THEN "Resultado positivo ya observado; no se usa antes de su available_at."
+    WHEN r.reported_eps IS NOT NULL THEN "Resultado ya observado point-in-time."
+    ELSE "Sin evento de resultados cercano."
+  END AS earnings_context_note,
+  x.available_at AS expected_available_at,
+  r.available_at AS reported_available_at,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM price_slots p
+LEFT JOIN expected_asof x
+  USING (analysis_date, signal_hour, ticker)
+LEFT JOIN reported_asof r
+  USING (analysis_date, signal_hour, ticker)
