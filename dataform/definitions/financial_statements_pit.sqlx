@@ -2,10 +2,10 @@ config {
   type: "view",
   schema: dataform.projectConfig.vars.auditDataset,
   name: "financial_statements_pit",
-  description: "Append-only financial statement revisions with verifiable market availability. Rows without available_at are never backtest eligible.",
+  description: "Canonical eligible SEC filing revisions. Revision ordinals and restatement flags are derived over the complete immutable source history so backfills never mutate raw rows.",
   tags: ["audit-grade", "pit", "financials", "wp03"],
   assertions: {
-    nonNull: ["revision_id", "ticker", "mapping_version", "revision_number", "is_restated", "period_end_date", "source_published_at", "available_at", "eligibility_reason", "quality_status"],
+    nonNull: ["revision_id", "ticker", "mapping_version", "source_record_id", "source_is_amendment", "revision_number", "is_restated", "period_end_date", "source_published_at", "available_at", "eligibility_reason", "quality_status"],
     uniqueKey: ["revision_id"],
     rowConditions: [
       "backtest_eligible = TRUE",
@@ -17,6 +17,23 @@ config {
   dependencies: ["financial_statements_pit_raw"]
 }
 
+WITH eligible_raw AS (
+  SELECT *
+  FROM ${ref("financial_statements_pit_raw")}
+  WHERE backtest_eligible = TRUE
+    AND available_at IS NOT NULL
+    AND source_published_at IS NOT NULL
+    AND quality_status = "ELIGIBLE_VERIFIED_PIT"
+),
+versioned AS (
+  SELECT
+    raw.*,
+    ROW_NUMBER() OVER (
+      PARTITION BY ticker, fiscal_year, fiscal_quarter
+      ORDER BY available_at, filing_date, source_record_id, revision_id
+    ) AS revision_number
+  FROM eligible_raw raw
+)
 SELECT
   revision_id,
   ticker,
@@ -25,8 +42,9 @@ SELECT
   form_type,
   accession_number,
   source_record_id,
+  source_is_amendment,
   revision_number,
-  is_restated,
+  source_is_amendment OR revision_number > 1 AS is_restated,
   filing_date,
   source_published_at,
   available_at,
@@ -56,8 +74,4 @@ SELECT
   eligibility_reason,
   quality_status,
   loaded_at
-FROM ${ref("financial_statements_pit_raw")}
-WHERE backtest_eligible = TRUE
-  AND available_at IS NOT NULL
-  AND source_published_at IS NOT NULL
-  AND quality_status = "ELIGIBLE_VERIFIED_PIT"
+FROM versioned
