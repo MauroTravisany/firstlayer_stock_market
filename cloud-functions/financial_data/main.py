@@ -29,7 +29,9 @@ def parse_tickers(value):
 
 def parse_snapshot_date(value):
     if not value:
-        return datetime.now(ZoneInfo(os.environ.get("TIME_ZONE", "America/Santiago"))).date()
+        return datetime.now(
+            ZoneInfo(os.environ.get("TIME_ZONE", "America/Santiago"))
+        ).date()
     return datetime.strptime(value, "%Y-%m-%d").date()
 
 
@@ -59,7 +61,24 @@ def process_ticker(ticker, config, snapshot_date):
         from custom_function.pit_ingestion import save_pit_financial_statements_to_json
 
         files = save_pit_financial_statements_to_json(ticker, snapshot_date, config)
-        statements_blob = f"{ticker}/financial_statements_pit/{files['statements_file']}"
+        if files.get("not_applicable"):
+            return {
+                "status": "success",
+                "ticker": ticker,
+                "snapshot_date": str(snapshot_date),
+                "financial_statements_rows": 0,
+                "backtest_eligible_rows": 0,
+                "rows_loaded": 0,
+                "mapping_version": files["mapping_version"],
+                "data_status": files["data_status"],
+                "severity": files["severity"],
+                "source": "NOT_APPLICABLE",
+                "message": files["message"],
+            }
+
+        statements_blob = (
+            f"{ticker}/financial_statements_pit/{files['statements_file']}"
+        )
         upload_to_gcs(bucket_name, files["statements_file"], statements_blob)
         inserted = append_statement_revisions(
             config["financial_statements_pit_raw_table"],
@@ -79,7 +98,10 @@ def process_ticker(ticker, config, snapshot_date):
             "message": files["message"],
         }
 
-    from custom_function.bq_operations import merge_financial_ratios, merge_financial_statements
+    from custom_function.bq_operations import (
+        merge_financial_ratios,
+        merge_financial_statements,
+    )
     from custom_function.data_processing import save_financial_data_to_json
 
     files = save_financial_data_to_json(ticker, snapshot_date)
@@ -154,7 +176,10 @@ def main(request):
     if not tickers:
         return (
             json.dumps(
-                {"status": "error", "message": "No enabled tickers found in portfolio"}
+                {
+                    "status": "error",
+                    "message": "No enabled tickers found in portfolio",
+                }
             ),
             400,
             {"Content-Type": "application/json"},
