@@ -14,8 +14,6 @@ CORE_FINANCIAL_FACTS = {
 }
 DERIVED_IDENTITY_FIELDS = {
     "revision_id",
-    "revision_number",
-    "is_restated",
     "backtest_eligible",
     "eligibility_reason",
     "quality_status",
@@ -24,7 +22,13 @@ DERIVED_IDENTITY_FIELDS = {
 
 
 def canonical_json(value):
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True, default=str)
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        default=str,
+    )
 
 
 def content_hash(value):
@@ -39,7 +43,9 @@ def normalize_timestamp(value):
     else:
         text = str(value).strip()
         if re.fullmatch(r"\d{14}", text):
-            dt = datetime.strptime(text, "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
+            dt = datetime.strptime(text, "%Y%m%d%H%M%S").replace(
+                tzinfo=timezone.utc
+            )
         else:
             text = text.replace("Z", "+00:00")
             dt = datetime.fromisoformat(text)
@@ -103,12 +109,13 @@ def build_statement_revision(
         "form_type": normalized_form,
         "accession_number": accession_number,
         "source_record_id": accession_number,
-        "revision_number": None,
-        "is_restated": normalized_form.endswith("/A"),
+        "source_is_amendment": normalized_form.endswith("/A"),
         "filing_date": str(filing_date) if filing_date is not None else None,
         "source_published_at": available_at,
         "available_at": available_at,
-        "period_end_date": str(period_end_date) if period_end_date is not None else None,
+        "period_end_date": (
+            str(period_end_date) if period_end_date is not None else None
+        ),
         "fiscal_year": normalized_year,
         "fiscal_quarter": normalized_quarter,
         "currency": currency,
@@ -136,7 +143,9 @@ def build_statement_revision(
         quality_status = "ELIGIBLE_VERIFIED_PIT"
     payload["eligibility_reason"] = reason
     payload["quality_status"] = quality_status
-    payload["loaded_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    payload["loaded_at"] = datetime.now(timezone.utc).isoformat().replace(
+        "+00:00", "Z"
+    )
     return refresh_revision_identity(payload)
 
 
