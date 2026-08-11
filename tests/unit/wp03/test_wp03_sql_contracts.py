@@ -65,11 +65,17 @@ class Wp03SqlContractTests(unittest.TestCase):
         self.assertIn('"SHADOW_ONLY" AS promotion_mode', sql)
         self.assertIn("FALSE AS production_change_allowed", sql)
 
-    def test_canonical_financial_view_depends_on_raw_output(self):
-        sql = self.read("financial_statements_pit.sqlx")
-        self.assertIn('dependencies: ["financial_statements_pit_raw"]', sql)
-        self.assertIn('${ref("financial_statements_pit_raw")}', sql)
-        self.assertNotIn(".financial_statements_pit_raw`", sql)
+    def test_canonical_financial_view_derives_mutable_lineage(self):
+        canonical = self.read("financial_statements_pit.sqlx")
+        raw = self.read("financial_statements_pit_raw.sqlx")
+        self.assertIn('dependencies: ["financial_statements_pit_raw"]', canonical)
+        self.assertIn('${ref("financial_statements_pit_raw")}', canonical)
+        self.assertNotIn(".financial_statements_pit_raw`", canonical)
+        self.assertIn("ROW_NUMBER() OVER", canonical)
+        self.assertIn("source_is_amendment OR revision_number > 1", canonical)
+        self.assertNotIn("revision_number INT64", raw)
+        self.assertNotIn("is_restated BOOL", raw)
+        self.assertIn("source_is_amendment BOOL NOT NULL", raw)
 
     def test_append_is_atomic_insert_only_merge(self):
         source = (
@@ -79,6 +85,8 @@ class Wp03SqlContractTests(unittest.TestCase):
         self.assertIn("WHEN NOT MATCHED THEN", source)
         self.assertNotIn("WHEN MATCHED THEN", source)
         self.assertIn("PARTITION BY revision_id", source)
+        self.assertNotIn('"revision_number",', source)
+        self.assertIn('"source_is_amendment",', source)
 
     def test_legacy_results_are_explicitly_non_promotable(self):
         sql = self.read("wp03_legacy_invalidation.sqlx")
