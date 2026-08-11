@@ -232,7 +232,9 @@ SELECT
   CASE
     WHEN valuation_price IS NULL OR valuation_price_available_at IS NULL
       THEN "MISSING_PRIOR_SESSION_PRICE"
+    WHEN reporting_currency IS NULL THEN "PIT_REPORTING_CURRENCY_UNKNOWN"
     WHEN reporting_currency != "USD" THEN "FX_REQUIRED_NOT_AVAILABLE_IN_WP03"
+    WHEN NOT COALESCE(ttm_complete, FALSE) THEN "PIT_DATA_INCOMPLETE"
     WHEN pe_ttm_pit IS NULL
       AND price_to_sales_ttm_pit IS NULL
       AND price_to_book_pit IS NULL THEN "NO_POSITIVE_DENOMINATOR_MULTIPLE"
