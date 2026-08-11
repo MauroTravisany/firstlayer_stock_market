@@ -141,6 +141,39 @@ class SecDurationSelectionTests(unittest.TestCase):
         self.assertIsNone(unit)
         self.assertIsNone(row)
 
+    def test_equal_rank_identical_facts_collapse_safely(self):
+        common = {
+            "accn": "a",
+            "start": "2026-04-01",
+            "end": "2026-06-30",
+            "filed": "2026-08-01",
+            "fy": 2026,
+            "fp": "Q2",
+            "frame": "CY2026Q2",
+            "val": 120.0,
+        }
+        facts = {
+            "facts": {
+                "us-gaap": {
+                    "Revenues": {
+                        "units": {"USD": [dict(common), dict(common)]}
+                    }
+                }
+            }
+        }
+        value, unit, row = sec._choose_fact(
+            facts,
+            ["Revenues"],
+            accession="a",
+            period_end="2026-06-30",
+            unit_preferences=["USD"],
+            duration_target=91,
+            require_duration=True,
+        )
+        self.assertEqual(120.0, value)
+        self.assertEqual("USD", unit)
+        self.assertEqual("2026-04-01", row["start"])
+
     def test_compact_sec_timestamp_normalizes_to_utc(self):
         self.assertEqual(
             "2026-05-02T13:30:00Z",
