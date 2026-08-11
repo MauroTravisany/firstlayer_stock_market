@@ -176,6 +176,14 @@ class PointInTimeFinancialTests(unittest.TestCase):
         second = self._row()
         self.assertEqual(first["revision_id"], second["revision_id"])
 
+    def test_revision_id_ignores_derived_lineage_fields(self):
+        row = self._row()
+        identity = row["revision_id"]
+        row["revision_number"] = 7
+        row["is_restated"] = True
+        pit.refresh_revision_identity(row)
+        self.assertEqual(identity, row["revision_id"])
+
     def test_mapping_version_is_part_of_revision_identity(self):
         first = self._row(mapping_version="mapping-v1")
         second = self._row(mapping_version="mapping-v2")
