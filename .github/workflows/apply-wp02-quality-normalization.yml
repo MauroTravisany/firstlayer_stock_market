@@ -1,0 +1,64 @@
+name: Apply WP-02 quality normalization fix
+
+on:
+  push:
+    branches:
+      - chatgpt/wp-02-data-contracts-experiment-registry
+    paths:
+      - .wp02-fix/ready
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-wp02-quality-normalization
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout WP-02 branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/wp-02-data-contracts-experiment-registry
+          fetch-depth: 0
+
+      - name: Normalize quality evidence and add regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path("packages/common/data_snapshots.py")
+          text = source.read_text(encoding="utf-8")
+          old = '''    status = str(quality_report.get("status") or "").upper()\n    validating = transition_snapshot(\n        record,\n        "VALIDATING",\n        quality_gate_json=canonical_json(quality_report),\n        quality_gate_status=status,\n    )\n'''
+          new = '''    status = str(quality_report.get("status") or "").upper()\n    normalized_report = dict(quality_report)\n    normalized_report["status"] = status\n    validating = transition_snapshot(\n        record,\n        "VALIDATING",\n        quality_gate_json=canonical_json(normalized_report),\n        quality_gate_status=status,\n    )\n'''
+          if text.count(old) != 1:
+              raise SystemExit("quality normalization source anchor is not unique")
+          source.write_text(text.replace(old, new), encoding="utf-8")
+
+          test = Path("tests/unit/wp02/test_snapshots.py")
+          text = test.read_text(encoding="utf-8")
+          old = '''        published = snapshots.publish_snapshot(\n            self.record(),\n            {"status": "PASS", "checks": []},\n            published_at=dt.datetime(2026, 8, 11, tzinfo=dt.timezone.utc),\n        )\n        snapshots.assert_publishable(published)\n        self.assertTrue(published["immutable"])\n'''
+          new = '''        published = snapshots.publish_snapshot(\n            self.record(),\n            {"status": "pass", "checks": []},\n            published_at=dt.datetime(2026, 8, 11, tzinfo=dt.timezone.utc),\n        )\n        snapshots.assert_publishable(published)\n        self.assertTrue(published["immutable"])\n        self.assertEqual(published["quality_gate_status"], "PASS")\n        self.assertIn('"status":"PASS"', published["quality_gate_json"])\n'''
+          if text.count(old) != 1:
+              raise SystemExit("quality normalization test anchor is not unique")
+          test.write_text(text.replace(old, new), encoding="utf-8")
+          PY
+          PYTHONPATH=. python -m unittest tests.unit.wp02.test_snapshots
+          git diff --check
+          rm -rf .wp02-fix
+          git rm .github/workflows/apply-wp02-quality-normalization.yml
+
+      - name: Commit reviewed regression fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix: canonicalize snapshot quality gate status"
+          git push origin HEAD:chatgpt/wp-02-data-contracts-experiment-registry
