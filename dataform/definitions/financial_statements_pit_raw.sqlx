@@ -11,8 +11,12 @@ CREATE TABLE IF NOT EXISTS ${self()} (
   revision_id STRING NOT NULL,
   ticker STRING NOT NULL,
   cik STRING,
+  mapping_version STRING NOT NULL,
   form_type STRING,
   accession_number STRING,
+  source_record_id STRING,
+  revision_number INT64 NOT NULL,
+  is_restated BOOL NOT NULL,
   filing_date DATE,
   source_published_at TIMESTAMP,
   available_at TIMESTAMP,
@@ -40,6 +44,7 @@ CREATE TABLE IF NOT EXISTS ${self()} (
   source_url STRING,
   backtest_eligible BOOL NOT NULL,
   eligibility_reason STRING NOT NULL,
+  quality_status STRING NOT NULL,
   loaded_at TIMESTAMP NOT NULL
 )
 CLUSTER BY ticker, fiscal_year, fiscal_quarter;
