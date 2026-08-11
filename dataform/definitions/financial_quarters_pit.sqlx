@@ -9,7 +9,7 @@ config {
     clusterBy: ["ticker", "fiscal_year", "fiscal_quarter"]
   },
   assertions: {
-    nonNull: ["analysis_date", "signal_hour", "ticker", "fiscal_year", "fiscal_quarter", "revision_id", "available_at", "quarter_value_basis"],
+    nonNull: ["analysis_date", "signal_hour", "ticker", "fiscal_year", "fiscal_quarter", "revision_id", "mapping_version", "available_at", "quarter_value_basis"],
     uniqueKey: ["analysis_date", "signal_hour", "ticker", "fiscal_year", "fiscal_quarter"],
     rowConditions: [
       "available_at <= signal_timestamp",
@@ -80,6 +80,7 @@ annual_component_candidates AS (
     ON c.ticker = a.ticker
    AND c.fiscal_year = a.fiscal_year
    AND c.fiscal_quarter IN (1, 2, 3)
+   AND c.mapping_version = a.mapping_version
    AND c.available_at <= a.available_at
 ),
 annual_components AS (
