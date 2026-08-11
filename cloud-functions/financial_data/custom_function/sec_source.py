@@ -1,11 +1,11 @@
 import os
 import re
-from collections import defaultdict
 from datetime import date
 
 import requests
 
-from .point_in_time import build_statement_revision, refresh_revision_identity
+from .point_in_time import build_statement_revision
+
 
 SEC_DATA_BASE = "https://data.sec.gov"
 SEC_FORMS = {
@@ -86,7 +86,7 @@ def _filing_documents(submissions):
 
 
 def recent_filings_by_accession(submissions):
-    """Normalize current + historical SEC submission arrays keyed by accession."""
+    """Normalize current and historical SEC submission arrays by accession."""
     rows = {}
     for document in _filing_documents(submissions):
         accessions = document.get("accessionNumber") or []
@@ -116,14 +116,21 @@ def _matching_fact_rows(
     facts = companyfacts.get("facts") or {}
     for taxonomy in ("us-gaap", "ifrs-full", "dei"):
         namespace = facts.get(taxonomy) or {}
-        for concept in concepts:
+        for concept_priority, concept in enumerate(concepts):
             units = (namespace.get(concept) or {}).get("units") or {}
-            for unit in unit_preferences:
+            for unit_priority, unit in enumerate(unit_preferences):
                 for row in units.get(unit) or []:
                     if row.get("accn") == accession and (
                         not period_end or row.get("end") == period_end
                     ):
-                        yield row, unit
+                        yield {
+                            "row": row,
+                            "unit": unit,
+                            "taxonomy": taxonomy,
+                            "concept": concept,
+                            "concept_priority": concept_priority,
+                            "unit_priority": unit_priority,
+                        }
 
 
 def _duration_days(row):
@@ -151,6 +158,25 @@ def _filed_rank(value):
     return int(text) if text.isdigit() else 0
 
 
+def _fact_rank(candidate, duration_target):
+    row = candidate["row"]
+    duration = _duration_days(row)
+    duration_penalty = (
+        abs(duration - duration_target)
+        if duration_target is not None and duration is not None
+        else (10_000 if duration_target is not None else 0)
+    )
+    return (
+        duration_penalty,
+        candidate["concept_priority"],
+        candidate["unit_priority"],
+        0 if row.get("frame") else 1,
+        -_filed_rank(row.get("filed")),
+        -int(row.get("fy") or 0),
+        str(row.get("start") or ""),
+    )
+
+
 def _choose_fact(
     companyfacts,
     concepts,
@@ -171,43 +197,29 @@ def _choose_fact(
         )
     )
     if require_duration:
-        matches = [pair for pair in matches if _duration_days(pair[0]) is not None]
+        matches = [
+            candidate
+            for candidate in matches
+            if _duration_days(candidate["row"]) is not None
+        ]
     if not matches:
         return None, None, None
 
-    def rank(pair):
-        row, _unit = pair
-        duration = _duration_days(row)
-        duration_penalty = (
-            abs(duration - duration_target)
-            if duration_target is not None and duration is not None
-            else 10_000
-        )
-        frame_penalty = 0 if row.get("frame") else 1
-        return (
-            duration_penalty,
-            frame_penalty,
-            -int(row.get("fy") or 0),
-            -_filed_rank(row.get("filed")),
-            str(row.get("frame") or ""),
-        )
-
+    ranked = sorted(matches, key=lambda candidate: _fact_rank(candidate, duration_target))
+    chosen = ranked[0]
+    row = chosen["row"]
     if duration_target is not None:
-        chosen, unit = min(matches, key=rank)
-        duration = _duration_days(chosen)
+        duration = _duration_days(row)
         tolerance = 35 if duration_target == 91 else 75
         if duration is None or abs(duration - duration_target) > tolerance:
             return None, None, None
-    else:
-        chosen, unit = max(
-            matches,
-            key=lambda pair: (
-                _filed_rank(pair[0].get("filed")),
-                int(pair[0].get("fy") or 0),
-                str(pair[0].get("frame") or ""),
-            ),
-        )
-    return chosen.get("val"), unit, chosen
+
+    best_rank = _fact_rank(chosen, duration_target)
+    tied = [candidate for candidate in ranked if _fact_rank(candidate, duration_target) == best_rank]
+    distinct_values = {str(candidate["row"].get("val")) for candidate in tied}
+    if len(distinct_values) > 1:
+        return None, None, None
+    return row.get("val"), chosen["unit"], row
 
 
 def _fiscal_metadata(companyfacts, accession, period_end, currency):
@@ -220,26 +232,26 @@ def _fiscal_metadata(companyfacts, accession, period_end, currency):
         "ProfitLoss",
     ]
     candidates = []
-    for concept in concepts:
-        for row, _unit in _matching_fact_rows(
-            companyfacts,
-            [concept],
-            accession=accession,
-            period_end=period_end,
-            unit_preferences=[currency],
-        ):
-            if row.get("fy") is not None and row.get("fp"):
-                candidates.append(row)
+    for candidate in _matching_fact_rows(
+        companyfacts,
+        concepts,
+        accession=accession,
+        period_end=period_end,
+        unit_preferences=[currency],
+    ):
+        row = candidate["row"]
+        if row.get("fy") is not None and row.get("fp"):
+            candidates.append(candidate)
     if not candidates:
         return None, None
-    chosen = max(
-        candidates,
-        key=lambda row: (
-            _filed_rank(row.get("filed")),
-            str(row.get("fp") or ""),
-            str(row.get("start") or ""),
-        ),
+    candidates.sort(
+        key=lambda candidate: (
+            -_filed_rank(candidate["row"].get("filed")),
+            candidate["concept_priority"],
+            str(candidate["row"].get("start") or ""),
+        )
     )
+    chosen = candidates[0]["row"]
     fp = str(chosen.get("fp") or "").upper()
     quarter = {"Q1": 1, "Q2": 2, "Q3": 3, "FY": 4}.get(fp)
     return int(chosen["fy"]), quarter
@@ -282,35 +294,6 @@ def _debt_values(companyfacts, accession, period_end, currency):
     if total is None and (current is not None or noncurrent is not None):
         total = float(current or 0) + float(noncurrent or 0)
     return total, current, noncurrent
-
-
-def _assign_revision_metadata(revisions):
-    grouped = defaultdict(list)
-    for row in revisions:
-        grouped[
-            (row["ticker"], row.get("fiscal_year"), row.get("fiscal_quarter"))
-        ].append(row)
-
-    for group in grouped.values():
-        group.sort(
-            key=lambda row: (
-                row.get("available_at") or "9999-12-31T23:59:59Z",
-                row.get("filing_date") or "9999-12-31",
-                row.get("accession_number") or "",
-            )
-        )
-        for index, row in enumerate(group, start=1):
-            row["revision_number"] = index
-            row["is_restated"] = bool(row.get("is_restated") or index > 1)
-            refresh_revision_identity(row)
-    return sorted(
-        revisions,
-        key=lambda row: (
-            row.get("period_end_date") or "",
-            row.get("available_at") or "9999-12-31T23:59:59Z",
-            row.get("revision_number") or 0,
-        ),
-    )
 
 
 def build_sec_statement_revisions(
@@ -440,4 +423,12 @@ def build_sec_statement_revisions(
                 mapping_version=mapping_version,
             )
         )
-    return _assign_revision_metadata(revisions)
+    return sorted(
+        revisions,
+        key=lambda row: (
+            row.get("period_end_date") or "",
+            row.get("available_at") or "9999-12-31T23:59:59Z",
+            row.get("source_record_id") or "",
+            row.get("revision_id") or "",
+        ),
+    )
