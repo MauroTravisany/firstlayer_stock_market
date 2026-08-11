@@ -33,11 +33,13 @@ class SnapshotTests(unittest.TestCase):
     def test_publish_requires_quality_pass_and_becomes_immutable(self):
         published = snapshots.publish_snapshot(
             self.record(),
-            {"status": "PASS", "checks": []},
+            {"status": "pass", "checks": []},
             published_at=dt.datetime(2026, 8, 11, tzinfo=dt.timezone.utc),
         )
         snapshots.assert_publishable(published)
         self.assertTrue(published["immutable"])
+        self.assertEqual(published["quality_gate_status"], "PASS")
+        self.assertIn('"status":"PASS"', published["quality_gate_json"])
 
     def test_tampered_source_identity_is_rejected(self):
         record = self.record()

@@ -312,10 +312,12 @@ def publish_snapshot(
     if not isinstance(quality_report, Mapping):
         raise SnapshotError("quality_report must be a mapping")
     status = str(quality_report.get("status") or "").upper()
+    normalized_report = dict(quality_report)
+    normalized_report["status"] = status
     validating = transition_snapshot(
         record,
         "VALIDATING",
-        quality_gate_json=canonical_json(quality_report),
+        quality_gate_json=canonical_json(normalized_report),
         quality_gate_status=status,
     )
     if published_at is not None:
