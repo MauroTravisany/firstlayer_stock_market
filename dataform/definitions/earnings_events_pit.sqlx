@@ -1,0 +1,81 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "earnings_events_pit",
+  description: "Point-in-time earnings observations. Expected calendar and reported outcomes are separated; reported values are available no earlier than observed_at.",
+  tags: ["audit-grade", "pit", "earnings", "wp03"],
+  bigquery: {
+    partitionBy: "DATE(observed_at)",
+    clusterBy: ["ticker", "event_kind"]
+  },
+  assertions: {
+    nonNull: ["event_id", "ticker", "event_kind", "observed_at"],
+    uniqueKey: ["event_id"]
+  }
+}
+
+WITH observations AS (
+  SELECT
+    snapshot_date,
+    SAFE_CAST(signal_hour AS TIME) AS signal_hour,
+    ticker,
+    earnings_date,
+    earnings_time,
+    eps_estimate,
+    reported_eps,
+    surprise_pct,
+    event_status,
+    loaded_at AS observed_at,
+    TO_HEX(SHA256(TO_JSON_STRING(STRUCT(
+      ticker,
+      snapshot_date,
+      SAFE_CAST(signal_hour AS TIME),
+      earnings_date,
+      earnings_time,
+      eps_estimate,
+      reported_eps,
+      surprise_pct,
+      event_status,
+      loaded_at
+    )))) AS observation_hash
+  FROM `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.defaultSchema}.macro_earnings_calendar`
+  WHERE loaded_at IS NOT NULL
+),
+expanded AS (
+  SELECT
+    CONCAT("expected_", observation_hash) AS event_id,
+    ticker,
+    "EXPECTED" AS event_kind,
+    earnings_date,
+    earnings_time,
+    eps_estimate,
+    CAST(NULL AS FLOAT64) AS reported_eps,
+    CAST(NULL AS FLOAT64) AS surprise_pct,
+    event_status,
+    observed_at,
+    observed_at AS available_at,
+    TRUE AS backtest_eligible,
+    "OBSERVED_EXPECTATION" AS eligibility_reason
+  FROM observations
+  WHERE earnings_date IS NOT NULL
+
+  UNION ALL
+
+  SELECT
+    CONCAT("reported_", observation_hash) AS event_id,
+    ticker,
+    "REPORTED" AS event_kind,
+    earnings_date,
+    earnings_time,
+    eps_estimate,
+    reported_eps,
+    surprise_pct,
+    event_status,
+    observed_at,
+    observed_at AS available_at,
+    TRUE AS backtest_eligible,
+    "OBSERVED_REPORTED_RESULT" AS eligibility_reason
+  FROM observations
+  WHERE reported_eps IS NOT NULL OR surprise_pct IS NOT NULL
+)
+SELECT * FROM expanded
