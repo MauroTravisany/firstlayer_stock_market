@@ -1,4 +1,4 @@
-contract_version: 1.1.0
+contract_version: 1.2.0
 data_contract_version: audit-contracts-v1
 criticality: P0
 environments:
@@ -6,11 +6,11 @@ environments:
 - shadow
 point_in_time:
   eligibility: NOT_BACKTEST_ELIGIBLE
-  reason: Raw append-only store contains both eligible and rejected revisions; consumers must use financial_statements_pit which filters verified availability and quality.
+  reason: Raw append-only store contains both eligible and rejected source revisions; consumers must use financial_statements_pit, which derives revision ordinals and filters verified availability and quality.
 table:
   name: financial_statements_pit_raw
-  description: Append-only SEC filing revision store with source publication, versioned CIK mapping and ingestion lineage.
-  granularity: One immutable row per content-addressed filing revision.
+  description: Append-only SEC filing source-revision store with publication, versioned CIK mapping and ingestion lineage.
+  granularity: One immutable row per content-addressed SEC source revision.
   logical_primary_key:
   - revision_id
   append_only: true
@@ -25,20 +25,20 @@ temporal:
   available_at: available_at
   ingested_at: loaded_at
   timezone: UTC
-  point_in_time_policy: A revision is eligible only when SEC acceptanceDateTime is present; period_end_date and filing_date never substitute for availability.
+  point_in_time_policy: A source revision is eligible only when SEC acceptanceDateTime is present; period_end_date and filing_date never substitute for availability.
 source:
   system: SEC EDGAR submissions and companyfacts APIs
   version_field: revision_id
   original_timezone: UTC
 deduplication:
-  rule: revision_id is SHA-256 of immutable filing, mapping, revision and fact content; MERGE inserts unseen IDs only and never updates an existing revision.
+  rule: revision_id is SHA-256 of immutable filing, mapping and fact content; atomic MERGE inserts unseen IDs only and never updates an existing raw revision.
 retention:
-  policy: Retain every observed revision indefinitely so restatements never erase prior market-visible state.
+  policy: Retain every observed source revision indefinitely so restatements never erase prior market-visible state.
 columns:
 - name: revision_id
   type: STRING
   mode: REQUIRED
-  description: Content-addressed immutable revision identity.
+  description: Content-addressed immutable source-revision identity.
 - name: ticker
   type: STRING
   mode: REQUIRED
@@ -54,23 +54,19 @@ columns:
 - name: form_type
   type: STRING
   mode: NULLABLE
-  description: SEC form type such as 10-Q or 10-K including amendments.
+  description: SEC form type such as 10-Q or 10-K, including amendments.
 - name: accession_number
   type: STRING
   mode: NULLABLE
-  description: SEC accession number identifying the filing revision.
+  description: SEC accession number identifying the filing source revision.
 - name: source_record_id
   type: STRING
   mode: NULLABLE
   description: Source-native immutable record identifier; SEC accession number for EDGAR.
-- name: revision_number
-  type: INT64
-  mode: REQUIRED
-  description: Deterministic chronological revision number within ticker/fiscal year/fiscal quarter.
-- name: is_restated
+- name: source_is_amendment
   type: BOOL
   mode: REQUIRED
-  description: True for amended forms or later revisions of the same fiscal period.
+  description: True only when the source form itself is an amendment such as 10-Q/A or 10-K/A.
 - name: filing_date
   type: DATE
   mode: NULLABLE
@@ -82,7 +78,7 @@ columns:
 - name: available_at
   type: TIMESTAMP
   mode: NULLABLE
-  description: Earliest verified timestamp at which this revision may be consumed.
+  description: Earliest verified timestamp at which this source revision may be consumed.
 - name: period_end_date
   type: DATE
   mode: NULLABLE
@@ -182,7 +178,7 @@ columns:
 - name: quality_status
   type: STRING
   mode: REQUIRED
-  description: Data-quality classification independent from eligibility boolean.
+  description: Data-quality classification independent from the eligibility boolean.
 - name: loaded_at
   type: TIMESTAMP
   mode: REQUIRED
@@ -192,8 +188,7 @@ assertions:
   - revision_id
   - ticker
   - mapping_version
-  - revision_number
-  - is_restated
+  - source_is_amendment
   - backtest_eligible
   - eligibility_reason
   - quality_status
@@ -204,7 +199,7 @@ assertions:
     backtest_eligible:
     - true
     - false
-    is_restated:
+    source_is_amendment:
     - true
     - false
     quality_status:
@@ -221,5 +216,3 @@ producers:
 - cloud-functions/financial_data/custom_function/pit_bq_operations.py
 consumers:
 - financial_statements_pit
-- trading_financial_context_pit
-- financial_ttm_pit
