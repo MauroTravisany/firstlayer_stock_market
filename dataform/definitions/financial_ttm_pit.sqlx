@@ -1,0 +1,86 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "financial_ttm_pit",
+  description: "Trailing-four-quarter financial metrics rebuilt independently for each signal timestamp from only revisions available at that instant.",
+  tags: ["audit-grade", "pit", "financials", "ttm", "wp03"],
+  bigquery: {
+    partitionBy: "analysis_date",
+    clusterBy: ["ticker"]
+  },
+  assertions: {
+    nonNull: ["analysis_date", "signal_hour", "ticker"],
+    uniqueKey: ["analysis_date", "signal_hour", "ticker"]
+  },
+  dependencies: ["financial_statements_pit", "trading_price_features"]
+}
+
+WITH available_revisions AS (
+  SELECT
+    p.analysis_date,
+    p.signal_hour,
+    p.signal_timestamp,
+    p.ticker,
+    s.*,
+    ROW_NUMBER() OVER (
+      PARTITION BY p.analysis_date, p.signal_hour, p.ticker, s.fiscal_year, s.fiscal_quarter
+      ORDER BY s.available_at DESC, s.filing_date DESC, s.revision_id DESC
+    ) AS revision_rank
+  FROM ${ref("trading_price_features")} p
+  LEFT JOIN ${ref("financial_statements_pit")} s
+    ON s.ticker = p.ticker
+   AND s.available_at <= p.signal_timestamp
+   AND s.backtest_eligible = TRUE
+   AND s.fiscal_quarter IN (1, 2, 3, 4)
+),
+dedup_quarters AS (
+  SELECT * EXCEPT(revision_rank)
+  FROM available_revisions
+  WHERE revision_rank = 1
+),
+ranked_quarters AS (
+  SELECT
+    *,
+    ROW_NUMBER() OVER (
+      PARTITION BY analysis_date, signal_hour, ticker
+      ORDER BY fiscal_year DESC, fiscal_quarter DESC, period_end_date DESC
+    ) AS quarter_recency
+  FROM dedup_quarters
+  WHERE revision_id IS NOT NULL
+),
+last_four AS (
+  SELECT *
+  FROM ranked_quarters
+  WHERE quarter_recency <= 4
+),
+aggregated AS (
+  SELECT
+    analysis_date,
+    signal_hour,
+    ANY_VALUE(signal_timestamp) AS signal_timestamp,
+    ticker,
+    COUNT(*) AS quarter_count,
+    MAX(available_at) AS latest_financial_available_at,
+    ARRAY_AGG(revision_id ORDER BY fiscal_year DESC, fiscal_quarter DESC) AS ttm_revision_ids,
+    SUM(revenue) AS revenue_ttm,
+    SUM(gross_profit) AS gross_profit_ttm,
+    SUM(operating_income) AS operating_income_ttm,
+    SUM(net_income) AS net_income_ttm,
+    SUM(eps_diluted) AS eps_diluted_ttm,
+    ARRAY_AGG(total_assets IGNORE NULLS ORDER BY fiscal_year DESC, fiscal_quarter DESC LIMIT 1)[SAFE_OFFSET(0)] AS total_assets_latest,
+    ARRAY_AGG(total_liabilities IGNORE NULLS ORDER BY fiscal_year DESC, fiscal_quarter DESC LIMIT 1)[SAFE_OFFSET(0)] AS total_liabilities_latest,
+    ARRAY_AGG(total_debt IGNORE NULLS ORDER BY fiscal_year DESC, fiscal_quarter DESC LIMIT 1)[SAFE_OFFSET(0)] AS total_debt_latest,
+    ARRAY_AGG(cash_and_equivalents IGNORE NULLS ORDER BY fiscal_year DESC, fiscal_quarter DESC LIMIT 1)[SAFE_OFFSET(0)] AS cash_and_equivalents_latest,
+    ARRAY_AGG(shares_outstanding IGNORE NULLS ORDER BY fiscal_year DESC, fiscal_quarter DESC LIMIT 1)[SAFE_OFFSET(0)] AS shares_outstanding_latest,
+    ARRAY_AGG(shareholders_equity IGNORE NULLS ORDER BY fiscal_year DESC, fiscal_quarter DESC LIMIT 1)[SAFE_OFFSET(0)] AS shareholders_equity_latest
+  FROM last_four
+  GROUP BY analysis_date, signal_hour, ticker
+)
+SELECT
+  *,
+  quarter_count = 4 AS ttm_complete,
+  SAFE_DIVIDE(net_income_ttm, revenue_ttm) AS net_margin_ttm,
+  SAFE_DIVIDE(gross_profit_ttm, revenue_ttm) AS gross_margin_ttm,
+  SAFE_DIVIDE(operating_income_ttm, revenue_ttm) AS operating_margin_ttm,
+  SAFE_DIVIDE(total_debt_latest, shareholders_equity_latest) AS debt_to_equity_latest
+FROM aggregated
