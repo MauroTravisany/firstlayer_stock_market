@@ -6,7 +6,9 @@ The command is read-only by default. BigQuery mutation requires all of:
 * ``--environment shadow``;
 * ``--acknowledge-shadow-write WP03_SHADOW_WRITE``;
 * an exact clean git checkout supplied through ``--expected-git-sha``;
-* an explicit bounded ticker list and fiscal-year range;
+* the exact checksum returned by a prior plan through
+  ``--expected-plan-checksum``;
+* an explicit bounded ticker list, fiscal-year range and row ceiling;
 * a dataset whose name contains ``shadow`` and whose labels are
   ``environment=shadow`` and ``work_package=wp03``.
 
@@ -37,7 +39,9 @@ DEFAULT_MAPPING_VERSION = "sec-company-tickers-2026-08-11-v1"
 ACKNOWLEDGEMENT = "WP03_SHADOW_WRITE"
 MAX_TICKERS_PER_RUN = 10
 MAX_FISCAL_YEAR_SPAN = 10
+MAX_ROWS_HARD_LIMIT = 10_000
 SHADOW_DATASET_ID = re.compile(r"^[A-Za-z0-9_]*shadow[A-Za-z0-9_]*$", re.IGNORECASE)
+CHECKSUM = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _canonical_json(value: Any) -> str:
@@ -128,6 +132,15 @@ def _validate_year_range(start_year: int, end_year: int) -> None:
         )
 
 
+def _validate_max_rows(value: int) -> int:
+    max_rows = int(value)
+    if max_rows <= 0 or max_rows > MAX_ROWS_HARD_LIMIT:
+        raise ValueError(
+            f"max_rows must be between 1 and {MAX_ROWS_HARD_LIMIT}"
+        )
+    return max_rows
+
+
 def _validated_shadow_dataset_id(value: str) -> str:
     dataset_id = str(value or "").strip()
     if not SHADOW_DATASET_ID.fullmatch(dataset_id):
@@ -147,15 +160,58 @@ def _filter_years(rows: Iterable[dict[str, Any]], start_year: int, end_year: int
     return filtered
 
 
+def _plan_identity(plan: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: plan[key]
+        for key in (
+            "schema_version",
+            "operation",
+            "git_sha",
+            "mapping_version",
+            "mapping_sha256",
+            "start_year",
+            "end_year",
+            "tickers",
+            "ticker_results",
+            "row_count",
+            "eligible_row_count",
+            "eligibility_reasons",
+            "revision_set_sha256",
+            "max_rows",
+            "production_change_allowed",
+        )
+    }
+
+
+def finalize_plan(plan: dict[str, Any]) -> dict[str, Any]:
+    document = dict(plan)
+    document["plan_checksum"] = _sha256(_plan_identity(document))
+    return document
+
+
+def verify_plan_checksum(plan: dict[str, Any], expected_plan_checksum: str) -> str:
+    expected = str(expected_plan_checksum or "").strip().lower()
+    if not CHECKSUM.fullmatch(expected):
+        raise ValueError("expected_plan_checksum must be a lowercase SHA-256 value")
+    actual = str(plan.get("plan_checksum") or "").lower()
+    if actual != expected:
+        raise RuntimeError(
+            f"Backfill plan checksum mismatch: expected {expected}, actual {actual}"
+        )
+    return actual
+
+
 def build_backfill_plan(
     *,
     tickers: list[str],
     start_year: int,
     end_year: int,
     expected_mapping_version: str,
+    max_rows: int,
     mapping_path: Path | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     _validate_year_range(start_year, end_year)
+    max_rows = _validate_max_rows(max_rows)
     modules = _load_runtime_modules()
     mapping_module = modules["financial_mapping"]
     sec_source = modules["sec_source"]
@@ -198,6 +254,10 @@ def build_backfill_plan(
         )
         revisions = _filter_years(revisions, start_year, end_year)
         rows.extend(revisions)
+        if len(rows) > max_rows:
+            raise RuntimeError(
+                f"Backfill plan exceeds max_rows={max_rows}; reduce tickers or year range"
+            )
         ticker_results.append(
             {
                 "ticker": ticker,
@@ -229,10 +289,11 @@ def build_backfill_plan(
         ),
         "eligibility_reasons": dict(sorted(reasons.items())),
         "revision_set_sha256": _sha256(revision_ids),
+        "max_rows": max_rows,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "production_change_allowed": False,
     }
-    return plan, rows
+    return finalize_plan(plan), rows
 
 
 def _load_bigquery_modules():
@@ -337,6 +398,7 @@ def main() -> int:
     parser.add_argument("--tickers", required=True)
     parser.add_argument("--start-year", type=int, required=True)
     parser.add_argument("--end-year", type=int, required=True)
+    parser.add_argument("--max-rows", type=int, default=5_000)
     parser.add_argument("--expected-git-sha", required=True)
     parser.add_argument(
         "--mapping-version", default=DEFAULT_MAPPING_VERSION
@@ -350,6 +412,7 @@ def main() -> int:
     )
     parser.add_argument("--location", default="us-east1")
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--expected-plan-checksum")
     parser.add_argument("--acknowledge-shadow-write")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
@@ -361,6 +424,7 @@ def main() -> int:
     try:
         verify_clean_checkout(args.expected_git_sha)
         _validate_year_range(args.start_year, args.end_year)
+        _validate_max_rows(args.max_rows)
     except (ValueError, RuntimeError, subprocess.CalledProcessError) as exc:
         raise SystemExit(str(exc)) from exc
     if not os.environ.get("SEC_USER_AGENT"):
@@ -370,6 +434,8 @@ def main() -> int:
             raise SystemExit(
                 f"--execute requires --acknowledge-shadow-write {ACKNOWLEDGEMENT}"
             )
+        if not args.expected_plan_checksum:
+            raise SystemExit("--execute requires --expected-plan-checksum from a prior plan")
         if not args.project_id or not args.dataset_id:
             raise SystemExit("--execute requires --project-id and --dataset-id")
         try:
@@ -383,9 +449,14 @@ def main() -> int:
         start_year=args.start_year,
         end_year=args.end_year,
         expected_mapping_version=args.mapping_version,
+        max_rows=args.max_rows,
         mapping_path=args.mapping_path,
     )
     if args.execute:
+        try:
+            verify_plan_checksum(plan, args.expected_plan_checksum)
+        except (ValueError, RuntimeError) as exc:
+            raise SystemExit(str(exc)) from exc
         write_result = execute_shadow_write(
             rows=rows,
             project_id=args.project_id,
