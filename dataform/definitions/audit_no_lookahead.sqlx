@@ -1,0 +1,27 @@
+config {
+  type: "assertion",
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "audit_no_lookahead",
+  description: "Fails if a PIT financial or earnings observation is consumed before its verified availability timestamp.",
+  tags: ["audit-grade", "pit", "assertion", "wp03"],
+  dependencies: ["trading_financial_context_pit", "earnings_events_pit"]
+}
+
+SELECT
+  "FINANCIAL_AVAILABLE_AFTER_SIGNAL" AS violation,
+  ticker,
+  signal_timestamp AS evaluated_at,
+  available_at
+FROM ${ref("trading_financial_context_pit")}
+WHERE available_at IS NOT NULL
+  AND available_at > signal_timestamp
+
+UNION ALL
+
+SELECT
+  "EARNINGS_AVAILABLE_AFTER_OBSERVATION" AS violation,
+  ticker,
+  observed_at AS evaluated_at,
+  available_at
+FROM ${ref("earnings_events_pit")}
+WHERE available_at < observed_at
