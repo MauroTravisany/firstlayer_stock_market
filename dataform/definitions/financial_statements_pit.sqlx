@@ -2,7 +2,7 @@ config {
   type: "view",
   schema: dataform.projectConfig.vars.auditDataset,
   name: "financial_statements_pit",
-  description: "Canonical eligible SEC filing revisions. Revision ordinals and restatement flags are derived over the complete immutable source history so backfills never mutate raw rows.",
+  description: "Canonical eligible SEC filing revisions pinned to one declared ticker/CIK/currency mapping version. Revision ordinals and restatement flags are derived over the complete immutable source history for that mapping.",
   tags: ["audit-grade", "pit", "financials", "wp03"],
   assertions: {
     nonNull: ["revision_id", "ticker", "mapping_version", "source_record_id", "source_is_amendment", "revision_number", "is_restated", "period_end_date", "source_published_at", "available_at", "eligibility_reason", "quality_status"],
@@ -20,7 +20,8 @@ config {
 WITH eligible_raw AS (
   SELECT *
   FROM ${ref("financial_statements_pit_raw")}
-  WHERE backtest_eligible = TRUE
+  WHERE mapping_version = "${dataform.projectConfig.vars.financialMappingVersion}"
+    AND backtest_eligible = TRUE
     AND available_at IS NOT NULL
     AND source_published_at IS NOT NULL
     AND quality_status = "ELIGIBLE_VERIFIED_PIT"
