@@ -3,7 +3,7 @@ config {
   hasOutput: true,
   schema: dataform.projectConfig.vars.auditDataset,
   name: "financial_statements_pit_raw",
-  description: "Creates the append-only SEC filing revision store used by WP-03.",
+  description: "Creates the append-only SEC filing revision store used by WP-03. Only immutable source fields are persisted; revision ordinals are derived downstream.",
   tags: ["audit-grade", "pit", "financials", "wp03"]
 }
 
@@ -15,8 +15,7 @@ CREATE TABLE IF NOT EXISTS ${self()} (
   form_type STRING,
   accession_number STRING,
   source_record_id STRING,
-  revision_number INT64 NOT NULL,
-  is_restated BOOL NOT NULL,
+  source_is_amendment BOOL NOT NULL,
   filing_date DATE,
   source_published_at TIMESTAMP,
   available_at TIMESTAMP,
