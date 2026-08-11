@@ -64,7 +64,7 @@ def recent_filings_by_accession(submissions):
 
 def _matching_fact_rows(companyfacts, concepts, *, accession, period_end, unit_preferences):
     facts = companyfacts.get("facts") or {}
-    for taxonomy in ("us-gaap", "ifrs-full"):
+    for taxonomy in ("us-gaap", "ifrs-full", "dei"):
         namespace = facts.get(taxonomy) or {}
         for concept in concepts:
             units = (namespace.get(concept) or {}).get("units") or {}
@@ -109,6 +109,33 @@ def _fiscal_metadata(companyfacts, accession, period_end):
     return int(chosen["fy"]), quarter
 
 
+def _debt_values(companyfacts, accession, period_end):
+    total, _, _ = _choose_fact(
+        companyfacts,
+        ["LongTermDebtAndFinanceLeaseObligations", "DebtAndFinanceLeaseObligations"],
+        accession=accession,
+        period_end=period_end,
+        unit_preferences=["USD"],
+    )
+    current, _, _ = _choose_fact(
+        companyfacts,
+        ["LongTermDebtAndFinanceLeaseObligationsCurrent", "LongTermDebtCurrent", "DebtCurrent"],
+        accession=accession,
+        period_end=period_end,
+        unit_preferences=["USD"],
+    )
+    noncurrent, _, _ = _choose_fact(
+        companyfacts,
+        ["LongTermDebtAndFinanceLeaseObligationsNoncurrent", "LongTermDebtNoncurrent"],
+        accession=accession,
+        period_end=period_end,
+        unit_preferences=["USD"],
+    )
+    if total is None and (current is not None or noncurrent is not None):
+        total = float(current or 0) + float(noncurrent or 0)
+    return total, current, noncurrent
+
+
 def build_sec_statement_revisions(ticker, cik, submissions, companyfacts):
     filings = recent_filings_by_accession(submissions)
     revisions = []
@@ -121,9 +148,10 @@ def build_sec_statement_revisions(ticker, cik, submissions, companyfacts):
         "eps_diluted": (["EarningsPerShareDiluted"], ["USD/shares", "USD / shares"]),
         "total_assets": (["Assets"], ["USD"]),
         "total_liabilities": (["Liabilities"], ["USD"]),
-        "total_debt": (["LongTermDebtAndFinanceLeaseObligationsCurrent", "LongTermDebtCurrent", "LongTermDebtNoncurrent"], ["USD"]),
         "shareholders_equity": (["StockholdersEquity", "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"], ["USD"]),
         "operating_cash_flow": (["NetCashProvidedByUsedInOperatingActivities"], ["USD"]),
+        "cash_and_equivalents": (["CashAndCashEquivalentsAtCarryingValue", "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"], ["USD"]),
+        "shares_outstanding": (["EntityCommonStockSharesOutstanding", "CommonStockSharesOutstanding"], ["shares"]),
     }
     cik10 = normalize_cik(cik)
     cik_numeric = str(int(cik10))
@@ -142,6 +170,10 @@ def build_sec_statement_revisions(ticker, cik, submissions, companyfacts):
             facts[field] = value
             if field == "revenue" and unit == "USD":
                 currency = "USD"
+        total_debt, debt_current, debt_noncurrent = _debt_values(companyfacts, accession, period_end)
+        facts["total_debt"] = total_debt
+        facts["debt_current"] = debt_current
+        facts["debt_noncurrent"] = debt_noncurrent
         facts["free_cash_flow"] = None
         accession_compact = accession.replace("-", "")
         primary_document = filing.get("primary_document") or ""
