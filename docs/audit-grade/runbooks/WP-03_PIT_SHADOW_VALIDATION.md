@@ -14,6 +14,7 @@ work_package=wp03
 ## Invariantes no negociables
 
 - checkout limpio del SHA exacto aprobado;
+- CI exitoso del mismo SHA;
 - `Deploy Cloud Run service` permanece deshabilitado;
 - Strategy Brain permanece `PAUSED` y `BACKTEST_ONLY`;
 - champion/challenger permanece `SHADOW_ONLY`;
@@ -28,11 +29,13 @@ work_package=wp03
 
 ```bash
 export FINAL_SHA=<SHA_EXACTO_REVISADO>
+export CI_RUN_ID=<CI_RUN_DEL_SHA_EXACTO>
 export PROJECT_ID=<PROYECTO_GCP>
 export LOCATION=us-east1
 export SHADOW_DATASET=acciones_dataset_shadow_wp03
 export SEC_USER_AGENT='firstlayer-stock-market/1.0 contacto@example.com'
 export MAPPING_VERSION=sec-company-tickers-2026-08-11-v1
+export WP03_MAX_ROWS=1000
 export WP03_EVIDENCE_TMP=/tmp/wp03-shadow-evidence
 mkdir -p "$WP03_EVIDENCE_TMP"
 ```
@@ -135,16 +138,21 @@ python tools/wp03_shadow_backfill.py \
   --tickers AAPL,MSFT,NVDA,META,AMZN \
   --start-year 2022 \
   --end-year 2026 \
+  --max-rows "$WP03_MAX_ROWS" \
   --mapping-version "$MAPPING_VERSION" \
   --environment shadow \
   --output "$WP03_EVIDENCE_TMP/wp03_shadow_backfill_plan.json"
+
+export WP03_PLAN_CHECKSUM="$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["plan_checksum"])' "$WP03_EVIDENCE_TMP/wp03_shadow_backfill_plan.json")"
 ```
 
-Revisar mapping version/checksum, tickers, rango, conteos, razones de rechazo, `revision_set_sha256` y `production_change_allowed=false`.
+Revisar mapping version/checksum, tickers, rango, límite, conteos, razones de rechazo, `revision_set_sha256`, `plan_checksum` y `production_change_allowed=false`.
 
-El output se guarda en `/tmp` para que el checkout permanezca limpio. No ejecutar si aparecen tickers inesperados, una versión distinta o cero filas debido a un error de fuente.
+El output se guarda en `/tmp` para mantener limpio el checkout. No ejecutar si aparecen tickers inesperados, una versión distinta, más filas que el límite o cero filas por error de fuente.
 
-## 6. Backfill append-only
+## 6. Backfill append-only vinculado al plan
+
+La ejecución vuelve a consultar SEC y debe reconstruir exactamente el checksum aprobado. Cualquier cambio de inputs o fuente bloquea la escritura.
 
 ```bash
 python tools/wp03_shadow_backfill.py \
@@ -152,6 +160,7 @@ python tools/wp03_shadow_backfill.py \
   --tickers AAPL,MSFT,NVDA,META,AMZN \
   --start-year 2022 \
   --end-year 2026 \
+  --max-rows "$WP03_MAX_ROWS" \
   --mapping-version "$MAPPING_VERSION" \
   --environment shadow \
   --project-id "$PROJECT_ID" \
@@ -159,79 +168,56 @@ python tools/wp03_shadow_backfill.py \
   --table-id financial_statements_pit_raw \
   --location "$LOCATION" \
   --execute \
+  --expected-plan-checksum "$WP03_PLAN_CHECKSUM" \
   --acknowledge-shadow-write WP03_SHADOW_WRITE \
   --output "$WP03_EVIDENCE_TMP/wp03_shadow_backfill_execution.json"
 ```
 
-La herramienta debe rechazar checkout sucio/SHA distinto, dataset sin `shadow`, etiquetas incorrectas, schema distinto, otro table ID, más de 10 tickers o más de 10 años.
+La herramienta debe rechazar checkout sucio/SHA distinto, checksum distinto, dataset sin `shadow`, etiquetas incorrectas, schema distinto, otro table ID, más de 10 tickers, más de 10 años o más de 10.000 filas.
 
-## 7. Integridad y no-look-ahead
+## 7. Evidencia automática read-only
 
-```sql
-SELECT COUNT(*) AS rows,
-       COUNT(DISTINCT revision_id) AS unique_revisions,
-       COUNTIF(backtest_eligible) AS eligible_rows,
-       COUNTIF(NOT backtest_eligible) AS rejected_rows
-FROM `<PROJECT>.<SHADOW_DATASET>.financial_statements_pit_raw`;
+Después de materializar todos los targets WP-03:
+
+```bash
+python tools/wp03_shadow_evidence.py \
+  --expected-git-sha "$FINAL_SHA" \
+  --ci-run-id "$CI_RUN_ID" \
+  --project-id "$PROJECT_ID" \
+  --dataset-id "$SHADOW_DATASET" \
+  --location "$LOCATION" \
+  --environment shadow \
+  --mapping-version "$MAPPING_VERSION" \
+  --output "$WP03_EVIDENCE_TMP/wp03_shadow_evidence.json"
 ```
 
-Debe cumplirse `rows = unique_revisions`.
+La herramienta solo ejecuta consultas `SELECT`/`WITH`, exige checkout exacto y limpio, valida etiquetas y ubicación, compara el schema raw con el contrato y devuelve exit code `0` solo si todos los hard gates pasan.
 
-```sql
-SELECT ticker, fiscal_year, fiscal_quarter,
-       COUNT(*) AS observed_revisions,
-       MIN(available_at) AS first_available_at,
-       MAX(available_at) AS latest_available_at
-FROM `<PROJECT>.<SHADOW_DATASET>.financial_statements_pit`
-GROUP BY ticker, fiscal_year, fiscal_quarter
-ORDER BY ticker, fiscal_year, fiscal_quarter;
-```
+Controles incluidos:
 
-Confirmar que amendments/restatements no eliminan revisiones anteriores.
+- unicidad de `revision_id`;
+- filas de la mapping version objetivo;
+- disponibilidad y quality status canónicos;
+- Q4 y lineage de componentes;
+- TTM consecutivo y de una moneda;
+- EXPECTED/REPORTED earnings;
+- valoración sin múltiplos negativos ni aritmética cross-currency;
+- `audit_no_lookahead = 0`;
+- comparación legacy/PIT no promocionable;
+- invalidación legacy completa.
 
-```sql
-SELECT eligibility_reason, quality_status, COUNT(*) AS rows
-FROM `<PROJECT>.<SHADOW_DATASET>.financial_statements_pit_raw`
-GROUP BY eligibility_reason, quality_status
-ORDER BY rows DESC;
-```
+## 8. Evidencia documental
 
-Ejecutar el assertion/modelo y consultar:
-
-```sql
-SELECT *
-FROM `<PROJECT>.<SHADOW_DATASET>.audit_no_lookahead`;
-```
-
-Criterio obligatorio: `row_count = 0`. No existe allowlist.
-
-## 8. Dual-run legacy/PIT
-
-```sql
-SELECT pit_divergence_type, COUNT(*) AS rows
-FROM `<PROJECT>.<SHADOW_DATASET>.wp03_legacy_vs_pit_shadow`
-GROUP BY pit_divergence_type
-ORDER BY rows DESC;
-```
-
-```sql
-SELECT COUNTIF(promotion_eligible) AS promotion_eligible_rows
-FROM `<PROJECT>.<SHADOW_DATASET>.wp03_legacy_vs_pit_shadow`;
-```
-
-`promotion_eligible_rows` debe ser `0`. La divergencia es diagnóstica, no una promoción.
-
-## 9. Evidencia
-
-Después de finalizar todas las operaciones que exigen checkout limpio, copiar la evidencia desde `/tmp` al repositorio y registrar en `docs/audit-grade/evidence/WP-03.md`:
+Después de terminar las operaciones que exigen checkout limpio, copiar los JSON desde `/tmp` al repositorio y registrar en `docs/audit-grade/evidence/WP-03.md`:
 
 - SHA exacto y CI run;
 - project/location/dataset shadow y etiquetas;
 - compilation result y targets;
 - mapping version/checksum;
-- plan/ejecución bounded;
+- checksum del plan;
 - filas staged/inserted/eligible/rejected;
 - checksum del conjunto de revisiones;
+- checksum de evidencia;
 - controles de integridad;
 - `audit_no_lookahead = 0`;
 - divergencias legacy/PIT;
@@ -240,7 +226,7 @@ Después de finalizar todas las operaciones que exigen checkout limpio, copiar l
 
 Actualizar `docs/audit-grade/08_traceability_matrix.md` sin declarar `PASS` donde falte evidencia.
 
-## 10. Limpieza
+## 9. Limpieza
 
 El store es append-only; no se borran revisiones individuales. Si el resultado es inválido, capturar inventario/checksums, marcar la ejecución `FAIL` y eliminar únicamente el dataset shadow aislado:
 
@@ -252,4 +238,4 @@ Nunca ejecutar este comando contra el dataset operativo.
 
 ## Stop conditions
 
-Detenerse ante SHA distinto, checkout sucio, target fuera de shadow, schema drift, una sola violación no-look-ahead, revision ID duplicado, etiquetas ausentes, intento de deploy o incertidumbre sobre el destino.
+Detenerse ante SHA distinto, checkout sucio, checksum de plan distinto, target fuera de shadow, schema drift, una sola violación no-look-ahead, revision ID duplicado, etiquetas ausentes, intento de deploy o incertidumbre sobre el destino.
