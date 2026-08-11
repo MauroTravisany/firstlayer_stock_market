@@ -83,7 +83,6 @@ class PointInTimeFinancialTests(unittest.TestCase):
             accession_number="original",
             source_published_at="2026-05-02T13:30:00Z",
             facts={"revenue": 100.0},
-            revision_number=1,
         )
         amended = self._row(
             accession_number="amended",
@@ -91,7 +90,6 @@ class PointInTimeFinancialTests(unittest.TestCase):
             filing_date="2026-06-10",
             source_published_at="2026-06-10T15:00:00Z",
             facts={"revenue": 105.0},
-            revision_number=2,
         )
         self.assertNotEqual(original["revision_id"], amended["revision_id"])
         self.assertEqual(
@@ -114,7 +112,6 @@ class PointInTimeFinancialTests(unittest.TestCase):
             fiscal_quarter=2,
             source_published_at="2026-08-01T14:00:00Z",
             facts={"revenue": 140.0},
-            revision_number=1,
         )
         q1_amended_late = self._row(
             accession_number="q1-amended",
@@ -123,7 +120,6 @@ class PointInTimeFinancialTests(unittest.TestCase):
             fiscal_quarter=1,
             source_published_at="2026-09-01T14:00:00Z",
             facts={"revenue": 121.0},
-            revision_number=2,
         )
         selected = pit.select_as_of(
             [q2, q1_amended_late], "2026-09-02T00:00:00Z"
