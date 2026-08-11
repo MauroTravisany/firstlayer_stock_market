@@ -15,21 +15,27 @@ config {
   dependencies: ["financial_statements_pit", "trading_price_features"]
 }
 
-WITH available_revisions AS (
+WITH price_slots AS (
+  SELECT
+    *,
+    TIMESTAMP(signal_timestamp, "UTC") AS signal_timestamp_utc
+  FROM ${ref("trading_price_features")}
+),
+available_revisions AS (
   SELECT
     p.analysis_date,
     p.signal_hour,
-    p.signal_timestamp,
+    p.signal_timestamp_utc AS signal_timestamp,
     p.ticker,
     s.*,
     ROW_NUMBER() OVER (
       PARTITION BY p.analysis_date, p.signal_hour, p.ticker, s.fiscal_year, s.fiscal_quarter
       ORDER BY s.available_at DESC, s.filing_date DESC, s.revision_id DESC
     ) AS revision_rank
-  FROM ${ref("trading_price_features")} p
+  FROM price_slots p
   LEFT JOIN ${ref("financial_statements_pit")} s
     ON s.ticker = p.ticker
-   AND s.available_at <= p.signal_timestamp
+   AND s.available_at <= p.signal_timestamp_utc
    AND s.backtest_eligible = TRUE
    AND s.fiscal_quarter IN (1, 2, 3, 4)
 ),
