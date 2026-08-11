@@ -1,0 +1,138 @@
+contract_version: 1.0.0
+data_contract_version: audit-contracts-v1
+criticality: P0
+environments:
+- research
+- shadow
+point_in_time:
+  eligibility: NOT_BACKTEST_ELIGIBLE
+  reason: report_date can be null and rows are overwritten; period_end_date is not publication availability. WP-03 must replace it.
+table:
+  name: financial_statements
+  description: Legacy financial statements before filing/publication point-in-time migration.
+  granularity: One mutable row per ticker, fiscal year and fiscal quarter.
+  logical_primary_key:
+  - ticker
+  - fiscal_year
+  - fiscal_quarter
+  append_only: false
+  partition_by: null
+  cluster_by: []
+  corporate_actions_policy: NOT_APPLICABLE
+temporal:
+  event_time: loaded_at
+  available_at: loaded_at
+  ingested_at: loaded_at
+  timezone: UTC
+  point_in_time_policy: report_date can be null and rows are overwritten; period_end_date is not publication availability. WP-03 must replace it.
+source:
+  system: Yahoo Finance legacy ingest
+  version_field: loaded_at
+  original_timezone: UTC
+deduplication:
+  rule: Reject duplicate logical key ['ticker', 'fiscal_year', 'fiscal_quarter']; never silently overwrite audit lineage.
+retention:
+  policy: Retain legacy rows but exclude from audit-grade backtests.
+columns:
+- name: ticker
+  type: STRING
+  mode: REQUIRED
+  description: ticker
+- name: fiscal_year
+  type: INT64
+  mode: REQUIRED
+  description: fiscal year
+- name: fiscal_quarter
+  type: INT64
+  mode: REQUIRED
+  description: fiscal quarter
+- name: period_end_date
+  type: DATE
+  mode: REQUIRED
+  description: period end date
+- name: report_date
+  type: DATE
+  mode: NULLABLE
+  description: report date
+- name: currency
+  type: STRING
+  mode: NULLABLE
+  description: currency
+- name: revenue
+  type: FLOAT64
+  mode: NULLABLE
+  description: revenue
+- name: gross_profit
+  type: FLOAT64
+  mode: NULLABLE
+  description: gross profit
+- name: operating_income
+  type: FLOAT64
+  mode: NULLABLE
+  description: operating income
+- name: net_income
+  type: FLOAT64
+  mode: NULLABLE
+  description: net income
+- name: eps_basic
+  type: FLOAT64
+  mode: NULLABLE
+  description: eps basic
+- name: eps_diluted
+  type: FLOAT64
+  mode: NULLABLE
+  description: eps diluted
+- name: total_assets
+  type: FLOAT64
+  mode: NULLABLE
+  description: total assets
+- name: total_liabilities
+  type: FLOAT64
+  mode: NULLABLE
+  description: total liabilities
+- name: total_debt
+  type: FLOAT64
+  mode: NULLABLE
+  description: total debt
+- name: shareholders_equity
+  type: FLOAT64
+  mode: NULLABLE
+  description: shareholders equity
+- name: operating_cash_flow
+  type: FLOAT64
+  mode: NULLABLE
+  description: operating cash flow
+- name: free_cash_flow
+  type: FLOAT64
+  mode: NULLABLE
+  description: free cash flow
+- name: source
+  type: STRING
+  mode: REQUIRED
+  description: source
+- name: loaded_at
+  type: TIMESTAMP
+  mode: REQUIRED
+  description: loaded at
+assertions:
+  not_null:
+  - ticker
+  - fiscal_year
+  - fiscal_quarter
+  - period_end_date
+  - source
+  - loaded_at
+  unique:
+  - - ticker
+    - fiscal_year
+    - fiscal_quarter
+  accepted_values: {}
+implementation:
+  mode: CODE_SCHEMA_REFERENCE
+  source_files:
+  - cloud-functions/financial_data/custom_function/bq_operations.py
+  allow_additional_columns: true
+producers:
+- stockfinancial
+consumers:
+- legacy fundamental models

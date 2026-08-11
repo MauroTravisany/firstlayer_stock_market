@@ -1,0 +1,226 @@
+contract_version: 1.0.0
+data_contract_version: audit-contracts-v1
+criticality: P0
+environments:
+- research
+- shadow
+point_in_time:
+  eligibility: NOT_BACKTEST_ELIGIBLE
+  reason: Legacy table is execution support; audit_experiment_candidates is the publication registry.
+table:
+  name: trading_brain_weight_candidates
+  description: Legacy candidate table extended with compound experiment lineage.
+  granularity: One row per run_id and candidate_id.
+  logical_primary_key:
+  - run_id
+  - candidate_id
+  append_only: false
+  partition_by: null
+  cluster_by: []
+  corporate_actions_policy: NOT_APPLICABLE
+temporal:
+  event_time: created_at
+  available_at: created_at
+  ingested_at: created_at
+  timezone: UTC
+  point_in_time_policy: Legacy table is execution support; audit_experiment_candidates is the publication
+    registry.
+source:
+  system: Strategy Brain legacy operational table
+  version_field: formula_version
+  original_timezone: UTC
+deduplication:
+  rule: Reject duplicate logical key ['run_id', 'candidate_id']; never silently overwrite audit lineage.
+retention:
+  policy: Retain legacy and audit-linked rows indefinitely.
+columns:
+- name: run_id
+  type: STRING
+  mode: REQUIRED
+  description: run id
+- name: candidate_id
+  type: STRING
+  mode: REQUIRED
+  description: candidate id
+- name: candidate_status
+  type: STRING
+  mode: REQUIRED
+  description: candidate status
+- name: formula_version
+  type: STRING
+  mode: REQUIRED
+  description: formula version
+- name: candidate_label
+  type: STRING
+  mode: REQUIRED
+  description: candidate label
+- name: candidate_reason
+  type: STRING
+  mode: REQUIRED
+  description: candidate reason
+- name: training_start
+  type: DATE
+  mode: REQUIRED
+  description: training start
+- name: training_end
+  type: DATE
+  mode: REQUIRED
+  description: training end
+- name: validation_start
+  type: DATE
+  mode: REQUIRED
+  description: validation start
+- name: validation_end
+  type: DATE
+  mode: REQUIRED
+  description: validation end
+- name: fear_weight
+  type: FLOAT64
+  mode: REQUIRED
+  description: fear weight
+- name: monetary_weight
+  type: FLOAT64
+  mode: REQUIRED
+  description: monetary weight
+- name: earnings_weight
+  type: FLOAT64
+  mode: REQUIRED
+  description: earnings weight
+- name: trend_weight
+  type: FLOAT64
+  mode: NULLABLE
+  description: trend weight
+- name: momentum_weight
+  type: FLOAT64
+  mode: NULLABLE
+  description: momentum weight
+- name: volume_weight
+  type: FLOAT64
+  mode: NULLABLE
+  description: volume weight
+- name: volatility_weight
+  type: FLOAT64
+  mode: NULLABLE
+  description: volatility weight
+- name: regime_weight
+  type: FLOAT64
+  mode: NULLABLE
+  description: regime weight
+- name: company_lifecycle_weight
+  type: FLOAT64
+  mode: REQUIRED
+  description: company lifecycle weight
+- name: quality_weight
+  type: FLOAT64
+  mode: REQUIRED
+  description: quality weight
+- name: valuation_state_weight
+  type: FLOAT64
+  mode: REQUIRED
+  description: valuation state weight
+- name: political_risk_weight
+  type: FLOAT64
+  mode: REQUIRED
+  description: political risk weight
+- name: crypto_cycle_weight
+  type: FLOAT64
+  mode: REQUIRED
+  description: crypto cycle weight
+- name: min_trade_score_add
+  type: FLOAT64
+  mode: REQUIRED
+  description: min trade score add
+- name: position_size_multiplier
+  type: FLOAT64
+  mode: REQUIRED
+  description: position size multiplier
+- name: formula_expression
+  type: STRING
+  mode: REQUIRED
+  description: formula expression
+- name: created_at
+  type: TIMESTAMP
+  mode: REQUIRED
+  description: created at
+- name: generation
+  type: INT64
+  mode: NULLABLE
+  description: generation
+- name: parent_candidate_id
+  type: STRING
+  mode: NULLABLE
+  description: parent candidate id
+- name: asset_scope
+  type: STRING
+  mode: NULLABLE
+  description: asset scope
+- name: asset_tickers
+  type: ARRAY<STRING>
+  mode: REPEATED
+  description: asset tickers
+- name: target_strategy_version
+  type: STRING
+  mode: NULLABLE
+  description: target strategy version
+- name: experiment_id
+  type: STRING
+  mode: NULLABLE
+  description: experiment id
+- name: configuration_hash
+  type: STRING
+  mode: NULLABLE
+  description: configuration hash
+- name: hypothesis_index
+  type: INT64
+  mode: NULLABLE
+  description: hypothesis index
+- name: production_change_allowed
+  type: BOOL
+  mode: NULLABLE
+  description: False for WP-02 registry-backed candidates; legacy rows may be null.
+assertions:
+  not_null:
+  - run_id
+  - candidate_id
+  - candidate_status
+  - formula_version
+  - candidate_label
+  - candidate_reason
+  - training_start
+  - training_end
+  - validation_start
+  - validation_end
+  - fear_weight
+  - monetary_weight
+  - earnings_weight
+  - company_lifecycle_weight
+  - quality_weight
+  - valuation_state_weight
+  - political_risk_weight
+  - crypto_cycle_weight
+  - min_trade_score_add
+  - position_size_multiplier
+  - formula_expression
+  - created_at
+  unique:
+  - - run_id
+    - candidate_id
+  accepted_values:
+    production_change_allowed:
+    - false
+implementation:
+  mode: DATAFORM_ALTER
+  dataform_definition: dataform/definitions/audit_trading_brain_registry_columns.sqlx
+  source_files:
+  - cloud-functions/strategy_brain/main.py
+  managed_columns:
+  - experiment_id
+  - configuration_hash
+  - hypothesis_index
+  - production_change_allowed
+  allow_additional_columns: true
+producers:
+- strategybrain
+consumers:
+- legacy Dataform
+- audit registry adapter

@@ -1,0 +1,111 @@
+contract_version: 1.0.0
+data_contract_version: audit-contracts-v1
+criticality: P0
+environments:
+- research
+- shadow
+point_in_time:
+  eligibility: NOT_BACKTEST_ELIGIBLE
+  reason: Calendar and reported fields share a mutable row without event revision identity. WP-03 must replace it.
+table:
+  name: macro_earnings_calendar
+  description: Legacy earnings calendar snapshots before event-version point-in-time migration.
+  granularity: One row per snapshot_slot and ticker.
+  logical_primary_key:
+  - snapshot_slot
+  - ticker
+  append_only: false
+  partition_by: snapshot_date
+  cluster_by:
+  - ticker
+  - event_status
+  corporate_actions_policy: NOT_APPLICABLE
+temporal:
+  event_time: snapshot_slot
+  available_at: loaded_at
+  ingested_at: loaded_at
+  timezone: UTC
+  point_in_time_policy: Calendar and reported fields share a mutable row without event revision identity. WP-03 must replace it.
+source:
+  system: Yahoo/GDELT macro ingest
+  version_field: loaded_at
+  original_timezone: UTC
+deduplication:
+  rule: Reject duplicate logical key ['snapshot_slot', 'ticker']; never silently overwrite audit lineage.
+retention:
+  policy: Retain legacy snapshots but exclude from audit-grade backtests.
+columns:
+- name: snapshot_slot
+  type: TIMESTAMP
+  mode: REQUIRED
+  description: snapshot slot
+- name: snapshot_date
+  type: DATE
+  mode: REQUIRED
+  description: snapshot date
+- name: signal_hour
+  type: STRING
+  mode: REQUIRED
+  description: signal hour
+- name: ticker
+  type: STRING
+  mode: REQUIRED
+  description: ticker
+- name: earnings_date
+  type: DATE
+  mode: NULLABLE
+  description: earnings date
+- name: days_to_earnings
+  type: INT64
+  mode: NULLABLE
+  description: days to earnings
+- name: earnings_time
+  type: STRING
+  mode: NULLABLE
+  description: earnings time
+- name: eps_estimate
+  type: FLOAT64
+  mode: NULLABLE
+  description: eps estimate
+- name: reported_eps
+  type: FLOAT64
+  mode: NULLABLE
+  description: reported eps
+- name: surprise_pct
+  type: FLOAT64
+  mode: NULLABLE
+  description: surprise pct
+- name: event_status
+  type: STRING
+  mode: REQUIRED
+  description: event status
+- name: source
+  type: STRING
+  mode: REQUIRED
+  description: source
+- name: loaded_at
+  type: TIMESTAMP
+  mode: REQUIRED
+  description: loaded at
+assertions:
+  not_null:
+  - snapshot_slot
+  - snapshot_date
+  - signal_hour
+  - ticker
+  - event_status
+  - source
+  - loaded_at
+  unique:
+  - - snapshot_slot
+    - ticker
+  accepted_values: {}
+implementation:
+  mode: CODE_SCHEMA_REFERENCE
+  source_files:
+  - cloud-functions/macro_data/custom_function/bq_operations.py
+  allow_additional_columns: true
+producers:
+- stockmacrodata
+consumers:
+- legacy context features

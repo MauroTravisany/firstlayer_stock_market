@@ -1,4 +1,4 @@
-"""WP-02 canonical experiment identity and configuration primitives."""
+"""Canonical Strategy Brain experiment identity and configuration primitives."""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ import uuid
 from pathlib import Path
 from typing import Any, Mapping
 
-
 _CURRENT = contextvars.ContextVar("strategy_brain_experiment", default=None)
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
@@ -21,10 +20,11 @@ UUID_CANONICAL = re.compile(
 )
 RUN_ID = re.compile(r"^run_[0-9a-f]{64}$")
 CANDIDATE_ID = re.compile(r"^cand_[0-9a-f]{64}$")
+SNAPSHOT_ID = re.compile(r"^snapshot_[0-9a-f]{64}$")
 DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
-ENVIRONMENTS = {"research", "shadow", "paper", "staging"}
+ENVIRONMENTS = {"research", "shadow"}
 ALLOWED_TRANSITIONS = {
-    "CREATED": {"CANDIDATES_READY", "FAILED", "CANCELLED"},
+    "CREATED": {"CANDIDATES_READY", "REJECTED", "FAILED", "CANCELLED"},
     "CANDIDATES_READY": {"RUNNING", "REJECTED", "FAILED", "CANCELLED"},
     "RUNNING": {"COMPLETED", "REJECTED", "FAILED", "CANCELLED"},
     "COMPLETED": set(),
@@ -33,29 +33,13 @@ ALLOWED_TRANSITIONS = {
     "CANCELLED": set(),
 }
 CANDIDATE_CONFIGURATION_FIELDS = (
-    "formula_version",
-    "training_start",
-    "training_end",
-    "validation_start",
-    "validation_end",
-    "fear_weight",
-    "monetary_weight",
-    "earnings_weight",
-    "trend_weight",
-    "momentum_weight",
-    "volume_weight",
-    "volatility_weight",
-    "regime_weight",
-    "company_lifecycle_weight",
-    "quality_weight",
-    "valuation_state_weight",
-    "political_risk_weight",
-    "crypto_cycle_weight",
-    "min_trade_score_add",
-    "position_size_multiplier",
-    "asset_scope",
-    "asset_tickers",
-    "target_strategy_version",
+    "formula_version", "training_start", "training_end", "validation_start",
+    "validation_end", "fear_weight", "monetary_weight", "earnings_weight",
+    "trend_weight", "momentum_weight", "volume_weight", "volatility_weight",
+    "regime_weight", "company_lifecycle_weight", "quality_weight",
+    "valuation_state_weight", "political_risk_weight", "crypto_cycle_weight",
+    "min_trade_score_add", "position_size_multiplier", "asset_scope",
+    "asset_tickers", "target_strategy_version",
 )
 
 
@@ -70,9 +54,9 @@ def canonical_json(value: Any) -> str:
         if isinstance(item, float):
             if not math.isfinite(item):
                 raise RegistryAdapterError("non-finite configuration value")
-            return item
+            return 0.0 if item == 0 else item
         if isinstance(item, dt.datetime):
-            if item.tzinfo is None:
+            if item.tzinfo is None or item.utcoffset() is None:
                 raise RegistryAdapterError("datetime values must be timezone-aware")
             return item.astimezone(dt.timezone.utc).isoformat().replace("+00:00", "Z")
         if isinstance(item, dt.date):
@@ -83,35 +67,32 @@ def canonical_json(value: Any) -> str:
             return {key: normalize(item[key]) for key in sorted(item)}
         if isinstance(item, (list, tuple)):
             return [normalize(child) for child in item]
-        raise RegistryAdapterError(
-            f"unsupported configuration value: {type(item).__name__}"
-        )
-
-    return json.dumps(
-        normalize(value),
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    )
+        raise RegistryAdapterError(f"unsupported configuration value: {type(item).__name__}")
+    return json.dumps(normalize(value), ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
 def sha256_value(value: Any) -> str:
     return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
 
 
-def dependency_lock_hash(path: Path) -> str:
+def dependency_lock_hash(
+    path: Path,
+    logical_path: str = "cloud-functions/strategy_brain/requirements.txt",
+) -> str:
     if not path.is_file():
         raise RegistryAdapterError(f"dependency file missing: {path}")
-    data = path.read_bytes()
-    manifest = [
-        {
-            "path": path.name,
-            "sha256": hashlib.sha256(data).hexdigest(),
-            "size_bytes": len(data),
-        }
-    ]
-    return sha256_value(manifest)
+    if not logical_path or logical_path.startswith("/"):
+        raise RegistryAdapterError("dependency logical path must be repository-relative")
+    payload = path.read_bytes()
+    return sha256_value(
+        [
+            {
+                "path": logical_path,
+                "sha256": hashlib.sha256(payload).hexdigest(),
+                "size_bytes": len(payload),
+            }
+        ]
+    )
 
 
 def load_contract_manifest(path: Path | None = None) -> dict[str, str]:
@@ -121,12 +102,74 @@ def load_contract_manifest(path: Path | None = None) -> dict[str, str]:
     except (OSError, json.JSONDecodeError) as exc:
         raise RegistryAdapterError("contract-set manifest is missing or invalid") from exc
     required = {"data_contract_version", "contract_set_hash", "schema_snapshot_hash"}
-    if not isinstance(document, dict) or not required.issubset(document):
-        raise RegistryAdapterError("contract-set manifest is incomplete")
+    if not isinstance(document, dict) or set(document) != required:
+        raise RegistryAdapterError("contract-set manifest must contain exactly the required fields")
     for field in ("contract_set_hash", "schema_snapshot_hash"):
         if not HEX64.fullmatch(str(document[field])):
             raise RegistryAdapterError(f"contract-set manifest {field} is invalid")
     return {field: str(document[field]) for field in sorted(required)}
+
+
+
+def build_snapshot_id(
+    contract_set_hash: str,
+    schema_snapshot_hash: str,
+    source_cutoff_at: Any,
+    source_manifest_hash: str,
+) -> str:
+    for label, digest in (
+        ("contract_set_hash", contract_set_hash),
+        ("schema_snapshot_hash", schema_snapshot_hash),
+        ("source_manifest_hash", source_manifest_hash),
+    ):
+        if not HEX64.fullmatch(str(digest)):
+            raise RegistryAdapterError(f"{label} must be SHA-256")
+    if isinstance(source_cutoff_at, str):
+        try:
+            source_cutoff_at = dt.datetime.fromisoformat(
+                source_cutoff_at.replace("Z", "+00:00")
+            )
+        except ValueError as exc:
+            raise RegistryAdapterError("source_cutoff_at must be ISO-8601") from exc
+    if not isinstance(source_cutoff_at, dt.datetime):
+        raise RegistryAdapterError("source_cutoff_at must be a datetime")
+    if source_cutoff_at.tzinfo is None or source_cutoff_at.utcoffset() is None:
+        raise RegistryAdapterError("source_cutoff_at must be timezone-aware")
+    return "snapshot_" + sha256_value(
+        {
+            "contract_set_hash": contract_set_hash,
+            "schema_snapshot_hash": schema_snapshot_hash,
+            "source_cutoff_at": source_cutoff_at,
+            "source_manifest_hash": source_manifest_hash,
+        }
+    )
+
+def snapshot_content_checksum(
+    data_snapshot_id: str,
+    contract_set_hash: str,
+    schema_snapshot_hash: str,
+    source_cutoff_at: Any,
+    source_manifest_hash: str,
+) -> str:
+    if not SNAPSHOT_ID.fullmatch(str(data_snapshot_id)):
+        raise RegistryAdapterError("data_snapshot_id must use snapshot_<sha256>")
+    # Reuse the snapshot-ID validator to normalize and validate the timestamp and
+    # all content hashes before deriving the independent content checksum.
+    build_snapshot_id(
+        contract_set_hash,
+        schema_snapshot_hash,
+        source_cutoff_at,
+        source_manifest_hash,
+    )
+    return sha256_value(
+        {
+            "data_snapshot_id": data_snapshot_id,
+            "contract_set_hash": contract_set_hash,
+            "schema_snapshot_hash": schema_snapshot_hash,
+            "source_cutoff_at": source_cutoff_at,
+            "source_manifest_hash": source_manifest_hash,
+        }
+    )
 
 
 def new_experiment_id() -> str:
@@ -144,9 +187,7 @@ def build_run_id(experiment_id: str, attempt_id: str | None = None) -> str:
 def candidate_configuration(record: Mapping[str, Any]) -> dict[str, Any]:
     missing = [field for field in CANDIDATE_CONFIGURATION_FIELDS if field not in record]
     if missing:
-        raise RegistryAdapterError(
-            f"candidate configuration is missing fields: {','.join(missing)}"
-        )
+        raise RegistryAdapterError("candidate configuration is missing fields: " + ",".join(missing))
     return {field: record[field] for field in CANDIDATE_CONFIGURATION_FIELDS}
 
 
@@ -163,9 +204,7 @@ def build_candidate_id(
         raise RegistryAdapterError("run_id must use run_<sha256>")
     if int(generation) < 1:
         raise RegistryAdapterError("candidate generation must be >= 1")
-    if parent_candidate_id is not None and not CANDIDATE_ID.fullmatch(
-        str(parent_candidate_id)
-    ):
+    if parent_candidate_id is not None and not CANDIDATE_ID.fullmatch(str(parent_candidate_id)):
         raise RegistryAdapterError("parent_candidate_id must use cand_<sha256>")
     return "cand_" + sha256_value(
         {
@@ -178,12 +217,66 @@ def build_candidate_id(
     )
 
 
+
+def build_artifact_id(
+    experiment_id: str,
+    run_id: str,
+    artifact_type: str,
+    checksum: str,
+    candidate_id: str | None = None,
+) -> str:
+    if not UUID_CANONICAL.fullmatch(str(experiment_id)):
+        raise RegistryAdapterError("experiment_id must be a canonical UUID")
+    if not RUN_ID.fullmatch(str(run_id)):
+        raise RegistryAdapterError("run_id must use run_<sha256>")
+    if candidate_id is not None and not CANDIDATE_ID.fullmatch(str(candidate_id)):
+        raise RegistryAdapterError("candidate_id must use cand_<sha256>")
+    if not str(artifact_type).strip():
+        raise RegistryAdapterError("artifact_type is required")
+    if not HEX64.fullmatch(str(checksum)):
+        raise RegistryAdapterError("artifact checksum must be SHA-256")
+    return "artifact_" + sha256_value(
+        {
+            "experiment_id": experiment_id,
+            "run_id": run_id,
+            "candidate_id": candidate_id,
+            "artifact_type": artifact_type,
+            "checksum": checksum,
+        }
+    )
+
+
+def build_decision_id(
+    experiment_id: str,
+    run_id: str,
+    decision_type: str,
+    evidence: Mapping[str, Any],
+    candidate_id: str | None = None,
+) -> str:
+    if not UUID_CANONICAL.fullmatch(str(experiment_id)):
+        raise RegistryAdapterError("experiment_id must be a canonical UUID")
+    if not RUN_ID.fullmatch(str(run_id)):
+        raise RegistryAdapterError("run_id must use run_<sha256>")
+    if candidate_id is not None and not CANDIDATE_ID.fullmatch(str(candidate_id)):
+        raise RegistryAdapterError("candidate_id must use cand_<sha256>")
+    if not str(decision_type).strip():
+        raise RegistryAdapterError("decision_type is required")
+    if not isinstance(evidence, Mapping):
+        raise RegistryAdapterError("decision evidence must be a mapping")
+    return "decision_" + sha256_value(
+        {
+            "experiment_id": experiment_id,
+            "run_id": run_id,
+            "candidate_id": candidate_id,
+            "decision_type": decision_type,
+            "evidence": evidence,
+        }
+    )
+
 def _require_payload(payload, field):
     value = payload.get(field)
     if value is None or not str(value).strip():
-        raise RegistryAdapterError(
-            f"{field} is required for every audit-grade Strategy Brain experiment"
-        )
+        raise RegistryAdapterError(f"{field} is required for every audit-grade experiment")
     return str(value).strip()
 
 
@@ -191,10 +284,17 @@ def create_context(payload, config, legacy) -> dict[str, Any]:
     experiment_id = str(payload.get("experiment_id") or new_experiment_id()).lower()
     if not UUID_CANONICAL.fullmatch(experiment_id):
         raise RegistryAdapterError("experiment_id must be a canonical UUID")
-    run_id = str(payload.get("run_id") or build_run_id(experiment_id)).lower()
+    attempt_id = str(payload.get("attempt_id") or uuid.uuid4()).strip()
+    if not attempt_id:
+        raise RegistryAdapterError("attempt_id is required")
+    expected_run_id = build_run_id(experiment_id, attempt_id)
+    run_id = str(payload.get("run_id") or expected_run_id).lower()
     if not RUN_ID.fullmatch(run_id):
         raise RegistryAdapterError("run_id must use run_<sha256>")
+    if run_id != expected_run_id:
+        raise RegistryAdapterError("run_id does not match experiment_id and attempt_id")
     payload["experiment_id"] = experiment_id
+    payload["attempt_id"] = attempt_id
     payload["run_id"] = run_id
 
     git_sha = str(config.get("release_git_sha") or "").strip().lower()
@@ -211,7 +311,10 @@ def create_context(payload, config, legacy) -> dict[str, Any]:
     if config["data_contract_version"] != contract_manifest["data_contract_version"]:
         raise RegistryAdapterError("runtime data-contract version differs from build manifest")
 
-    data_snapshot_id = _require_payload(payload, "data_snapshot_id")
+    data_snapshot_id = _require_payload(payload, "data_snapshot_id").lower()
+    if not SNAPSHOT_ID.fullmatch(data_snapshot_id):
+        raise RegistryAdapterError("data_snapshot_id must use snapshot_<sha256>")
+    payload["data_snapshot_id"] = data_snapshot_id
     hypothesis = _require_payload(payload, "hypothesis")
     asset_scope = str(payload.get("asset_scope") or "MEGACAP_TECH").upper()
     scope = legacy.ASSET_SCOPES.get(asset_scope)
@@ -224,13 +327,11 @@ def create_context(payload, config, legacy) -> dict[str, Any]:
             raise RegistryAdapterError("parent_run_id must use run_<sha256>")
         payload["parent_run_id"] = parent_run_id
 
-    requested_hypothesis_count = int(
-        payload.get("hypothesis_count") or legacy.MAX_CANDIDATES_PER_GENERATION
-    )
-    if requested_hypothesis_count < 1:
+    hypothesis_count = int(payload.get("hypothesis_count") or legacy.MAX_CANDIDATES_PER_GENERATION)
+    if hypothesis_count < 1:
         raise RegistryAdapterError("hypothesis_count must be >= 1")
-
     configuration = {
+        "attempt_id": attempt_id,
         "formula_version": legacy.FORMULA_VERSION,
         "asset_scope": asset_scope,
         "strategy_version": scope["strategy_version"],
@@ -238,8 +339,7 @@ def create_context(payload, config, legacy) -> dict[str, Any]:
         "training_start": payload.get("training_start", "2019-01-01"),
         "training_end": payload.get("training_end", "2024-12-31"),
         "validation_start": payload.get("validation_start", "2025-01-01"),
-        "validation_end": payload.get("validation_end")
-        or str(dt.date.today() - dt.timedelta(days=1)),
+        "validation_end": payload.get("validation_end") or str(dt.date.today() - dt.timedelta(days=1)),
         "parent_run_id": parent_run_id,
         "generation_override": payload.get("generation_override"),
         "force": bool(payload.get("force", False)),
@@ -261,9 +361,7 @@ def create_context(payload, config, legacy) -> dict[str, Any]:
         "schema_snapshot_hash": contract_manifest["schema_snapshot_hash"],
         "data_snapshot_id": data_snapshot_id,
         "data_snapshot_checksum": None,
-        "universe_version": str(
-            payload.get("universe_version") or f"{asset_scope.lower()}-v1"
-        ),
+        "universe_version": str(payload.get("universe_version") or f"{asset_scope.lower()}-v1"),
         "feature_set_version": config["feature_set_version"],
         "strategy_version": scope["strategy_version"],
         "execution_model_version": config["execution_model_version"],
@@ -271,12 +369,8 @@ def create_context(payload, config, legacy) -> dict[str, Any]:
         "configuration": configuration,
         "configuration_json": canonical_json(configuration),
         "configuration_hash": sha256_value(configuration),
-        "dependency_lock_hash": dependency_lock_hash(
-            Path(__file__).with_name("requirements.txt")
-        ),
+        "dependency_lock_hash": dependency_lock_hash(Path(__file__).with_name("requirements.txt")),
         "random_seed": payload.get("random_seed"),
-        "hypothesis_count": requested_hypothesis_count,
+        "hypothesis_count": hypothesis_count,
         "asset_scope": asset_scope,
     }
-
-

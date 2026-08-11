@@ -1,0 +1,105 @@
+contract_version: 1.0.0
+data_contract_version: audit-contracts-v1
+criticality: P0
+environments:
+- research
+- shadow
+- paper
+point_in_time:
+  eligibility: NOT_BACKTEST_ELIGIBLE
+  reason: Missing source_interval, canonical timezone, adjusted series, corporate-action lineage and true available_at; WP-04 must replace it.
+table:
+  name: valores_acciones
+  description: Legacy price observations before canonical interval and corporate-action migration.
+  granularity: One legacy observation per id.
+  logical_primary_key:
+  - id
+  append_only: false
+  partition_by: null
+  cluster_by: []
+  corporate_actions_policy: NOT_MODELED
+temporal:
+  event_time: fecha_creacion
+  available_at: fecha_creacion
+  ingested_at: fecha_creacion
+  timezone: UTC
+  point_in_time_policy: Missing source_interval, canonical timezone, adjusted series, corporate-action lineage and true available_at; WP-04 must replace it.
+source:
+  system: BigQuery legacy price table
+  version_field: fecha_creacion
+  original_timezone: UTC
+deduplication:
+  rule: Reject duplicate logical key ['id']; never silently overwrite audit lineage.
+retention:
+  policy: Retain as legacy operational evidence; never treat as audit-grade backtest input.
+columns:
+- name: id
+  type: STRING
+  mode: REQUIRED
+  description: id
+- name: fecha
+  type: DATE
+  mode: REQUIRED
+  description: fecha
+- name: hora
+  type: STRING
+  mode: NULLABLE
+  description: hora
+- name: ticker
+  type: STRING
+  mode: REQUIRED
+  description: ticker
+- name: open
+  type: FLOAT64
+  mode: NULLABLE
+  description: open
+- name: close
+  type: FLOAT64
+  mode: NULLABLE
+  description: close
+- name: high
+  type: FLOAT64
+  mode: NULLABLE
+  description: high
+- name: low
+  type: FLOAT64
+  mode: NULLABLE
+  description: low
+- name: valor_promedio
+  type: FLOAT64
+  mode: NULLABLE
+  description: valor promedio
+- name: volumen
+  type: FLOAT64
+  mode: NULLABLE
+  description: volumen
+- name: pct_change
+  type: FLOAT64
+  mode: NULLABLE
+  description: pct change
+- name: volatilidad
+  type: FLOAT64
+  mode: NULLABLE
+  description: volatilidad
+- name: fecha_creacion
+  type: TIMESTAMP
+  mode: REQUIRED
+  description: fecha creacion
+assertions:
+  not_null:
+  - id
+  - fecha
+  - ticker
+  - fecha_creacion
+  unique:
+  - - id
+  accepted_values: {}
+implementation:
+  mode: CODE_SCHEMA_REFERENCE
+  source_files:
+  - cloud-functions/daily_stocks/custom_function/bq_operations.py
+  allow_additional_columns: true
+producers:
+- stockdaily
+consumers:
+- legacy Dataform price models

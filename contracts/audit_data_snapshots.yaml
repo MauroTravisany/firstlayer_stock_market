@@ -1,8 +1,15 @@
 contract_version: 1.0.0
 data_contract_version: audit-contracts-v1
+criticality: P0
+environments:
+- research
+- shadow
+point_in_time:
+  eligibility: REGISTRY_ONLY
+  reason: Registry metadata is not market input data.
 table:
   name: audit_data_snapshots
-  description: Publication registry for validated data snapshots; content becomes immutable once PUBLISHED.
+  description: Publication registry for validated immutable data snapshots.
   granularity: One row per data_snapshot_id.
   logical_primary_key:
   - data_snapshot_id
@@ -14,25 +21,23 @@ table:
   corporate_actions_policy: NOT_APPLICABLE
 temporal:
   event_time: created_at
-  available_at: published_at
+  available_at: created_at
   ingested_at: created_at
   timezone: UTC
-  point_in_time_policy: A snapshot is eligible only after snapshot_status=PUBLISHED and published_at is
-    non-null.
+  point_in_time_policy: Registry metadata is not market input data.
 source:
-  system: audit snapshot publisher
+  system: audit registry
   version_field: data_contract_version
   original_timezone: UTC
 deduplication:
-  rule: Reject duplicate data_snapshot_id. Status may transition before publication; published content
-    is never overwritten.
+  rule: Reject duplicate logical key ['data_snapshot_id']; never silently overwrite audit lineage.
 retention:
   policy: Retain indefinitely for audit and replay.
 columns:
 - name: data_snapshot_id
   type: STRING
   mode: REQUIRED
-  description: Globally unique immutable snapshot identifier.
+  description: Globally unique content-addressed snapshot identity.
 - name: environment
   type: STRING
   mode: REQUIRED
@@ -45,19 +50,23 @@ columns:
 - name: data_contract_version
   type: STRING
   mode: REQUIRED
-  description: Contract set version used to validate the snapshot.
+  description: Contract set version.
 - name: contract_set_hash
   type: STRING
   mode: REQUIRED
-  description: SHA-256 of the canonical machine-readable contract set.
+  description: SHA-256 of canonical contract set.
 - name: schema_snapshot_hash
   type: STRING
   mode: REQUIRED
-  description: SHA-256 of the validated schema snapshot used for publication.
+  description: SHA-256 of canonical schemas.
+- name: source_cutoff_at
+  type: TIMESTAMP
+  mode: REQUIRED
+  description: Latest source timestamp represented by the immutable manifest.
 - name: snapshot_status
   type: STRING
   mode: REQUIRED
-  description: Lifecycle status.
+  description: Snapshot lifecycle state.
   domain:
   - CREATED
   - VALIDATING
@@ -67,11 +76,11 @@ columns:
 - name: source_manifest_json
   type: STRING
   mode: REQUIRED
-  description: Canonical JSON of source tables, partitions and source versions.
+  description: Canonical source inventory JSON.
 - name: source_manifest_hash
   type: STRING
   mode: REQUIRED
-  description: SHA-256 of source_manifest_json.
+  description: SHA-256 of source manifest.
 - name: content_checksum
   type: STRING
   mode: REQUIRED
@@ -79,43 +88,68 @@ columns:
 - name: row_count
   type: INT64
   mode: NULLABLE
-  description: Total rows represented by the snapshot when meaningful.
+  description: Total represented rows when meaningful.
 - name: quality_gate_json
   type: STRING
   mode: REQUIRED
-  description: Canonical quality-gate results.
+  description: Canonical quality evidence JSON.
+- name: quality_gate_status
+  type: STRING
+  mode: REQUIRED
+  description: Aggregate quality gate state.
+  domain:
+  - PENDING
+  - PASS
+  - FAIL
+  - PARTIAL
 - name: immutable
   type: BOOL
   mode: REQUIRED
-  description: True only when the snapshot cannot be changed in place.
+  description: True only after publication.
+  domain:
+  - true
 - name: created_at
   type: TIMESTAMP
   mode: REQUIRED
   description: UTC creation timestamp.
+- name: created_by
+  type: STRING
+  mode: REQUIRED
+  description: Service or actor that built the snapshot manifest.
+- name: production_change_allowed
+  type: BOOL
+  mode: REQUIRED
+  description: Must remain false for research snapshots.
+  domain:
+  - false
 - name: published_at
   type: TIMESTAMP
   mode: NULLABLE
-  description: UTC publication timestamp after all gates pass.
+  description: UTC publication timestamp.
 - name: supersedes_snapshot_id
   type: STRING
   mode: NULLABLE
-  description: Prior snapshot superseded by this snapshot.
+  description: Prior snapshot superseded by this row.
 assertions:
   not_null:
   - data_snapshot_id
   - environment
   - data_contract_version
+  - contract_set_hash
+  - schema_snapshot_hash
+  - source_cutoff_at
   - snapshot_status
   - source_manifest_json
   - source_manifest_hash
   - content_checksum
   - quality_gate_json
+  - quality_gate_status
   - immutable
   - created_at
-  - contract_set_hash
-  - schema_snapshot_hash
+  - created_by
+  - production_change_allowed
   unique:
-  - data_snapshot_id
+  - - data_snapshot_id
   accepted_values:
     environment:
     - research
@@ -128,11 +162,19 @@ assertions:
     - PUBLISHED
     - REJECTED
     - SUPERSEDED
+    quality_gate_status:
+    - PENDING
+    - PASS
+    - FAIL
+    - PARTIAL
+    production_change_allowed:
+    - false
+implementation:
+  mode: DATAFORM_CREATE
+  dataform_definition: dataform/definitions/audit_data_snapshots.sqlx
 producers:
-- packages/common/data_snapshots.py
-- tools/build_data_snapshot.py
-- future live snapshot writer
+- research/snapshot_manifest.py
+- future authorized snapshot publisher
 consumers:
 - audit_experiment_runs
 - research/replay.py
-- quant validation

@@ -1,0 +1,195 @@
+contract_version: 1.0.0
+data_contract_version: audit-contracts-v1
+criticality: P0
+environments:
+- research
+- shadow
+point_in_time:
+  eligibility: NOT_BACKTEST_ELIGIBLE
+  reason: Legacy adaptive validation remains non-promotion evidence until WP-06/WP-07.
+table:
+  name: trading_brain_runs
+  description: Legacy run table extended with audit-grade identity fields.
+  granularity: One row per run_id.
+  logical_primary_key:
+  - run_id
+  append_only: false
+  partition_by: null
+  cluster_by: []
+  corporate_actions_policy: NOT_APPLICABLE
+temporal:
+  event_time: created_at
+  available_at: created_at
+  ingested_at: created_at
+  timezone: UTC
+  point_in_time_policy: Legacy adaptive validation remains non-promotion evidence until WP-06/WP-07.
+source:
+  system: Strategy Brain legacy operational table
+  version_field: formula_version
+  original_timezone: UTC
+deduplication:
+  rule: Reject duplicate logical key ['run_id']; never silently overwrite audit lineage.
+retention:
+  policy: Retain legacy and audit-linked rows indefinitely.
+columns:
+- name: run_id
+  type: STRING
+  mode: REQUIRED
+  description: run id
+- name: created_at
+  type: TIMESTAMP
+  mode: REQUIRED
+  description: created at
+- name: status
+  type: STRING
+  mode: REQUIRED
+  description: status
+- name: formula_version
+  type: STRING
+  mode: REQUIRED
+  description: formula version
+- name: training_start
+  type: DATE
+  mode: REQUIRED
+  description: training start
+- name: training_end
+  type: DATE
+  mode: REQUIRED
+  description: training end
+- name: validation_start
+  type: DATE
+  mode: REQUIRED
+  description: validation start
+- name: validation_end
+  type: DATE
+  mode: REQUIRED
+  description: validation end
+- name: objective_definition
+  type: STRING
+  mode: REQUIRED
+  description: objective definition
+- name: data_quality_notes
+  type: STRING
+  mode: NULLABLE
+  description: data quality notes
+- name: production_change_allowed
+  type: BOOL
+  mode: REQUIRED
+  description: production change allowed
+- name: generation
+  type: INT64
+  mode: NULLABLE
+  description: generation
+- name: parent_run_id
+  type: STRING
+  mode: NULLABLE
+  description: parent run id
+- name: generation_policy
+  type: STRING
+  mode: NULLABLE
+  description: generation policy
+- name: asset_scope
+  type: STRING
+  mode: NULLABLE
+  description: asset scope
+- name: target_strategy_version
+  type: STRING
+  mode: NULLABLE
+  description: target strategy version
+- name: experiment_id
+  type: STRING
+  mode: NULLABLE
+  description: experiment id
+- name: parent_experiment_id
+  type: STRING
+  mode: NULLABLE
+  description: parent experiment id
+- name: environment
+  type: STRING
+  mode: NULLABLE
+  description: environment
+- name: data_contract_version
+  type: STRING
+  mode: NULLABLE
+  description: data contract version
+- name: contract_set_hash
+  type: STRING
+  mode: NULLABLE
+  description: contract set hash
+- name: schema_snapshot_hash
+  type: STRING
+  mode: NULLABLE
+  description: Schema snapshot hash linked by the WP-02 registry.
+- name: data_snapshot_id
+  type: STRING
+  mode: NULLABLE
+  description: data snapshot id
+- name: data_snapshot_checksum
+  type: STRING
+  mode: NULLABLE
+  description: data snapshot checksum
+- name: configuration_hash
+  type: STRING
+  mode: NULLABLE
+  description: configuration hash
+- name: dependency_lock_hash
+  type: STRING
+  mode: NULLABLE
+  description: dependency lock hash
+- name: feature_set_version
+  type: STRING
+  mode: NULLABLE
+  description: feature set version
+- name: execution_model_version
+  type: STRING
+  mode: NULLABLE
+  description: execution model version
+- name: cost_model_version
+  type: STRING
+  mode: NULLABLE
+  description: cost model version
+- name: hypothesis_count
+  type: INT64
+  mode: NULLABLE
+  description: hypothesis count
+assertions:
+  not_null:
+  - run_id
+  - created_at
+  - status
+  - formula_version
+  - training_start
+  - training_end
+  - validation_start
+  - validation_end
+  - objective_definition
+  - production_change_allowed
+  unique:
+  - - run_id
+  accepted_values: {}
+implementation:
+  mode: DATAFORM_ALTER
+  dataform_definition: dataform/definitions/audit_trading_brain_registry_columns.sqlx
+  source_files:
+  - cloud-functions/strategy_brain/main.py
+  managed_columns:
+  - experiment_id
+  - parent_experiment_id
+  - environment
+  - data_contract_version
+  - contract_set_hash
+  - schema_snapshot_hash
+  - data_snapshot_id
+  - data_snapshot_checksum
+  - configuration_hash
+  - dependency_lock_hash
+  - feature_set_version
+  - execution_model_version
+  - cost_model_version
+  - hypothesis_count
+  allow_additional_columns: true
+producers:
+- strategybrain
+consumers:
+- legacy Dataform
+- audit registry adapter
