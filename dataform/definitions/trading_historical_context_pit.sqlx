@@ -71,6 +71,7 @@ SELECT
   f.prior_year_revision_number,
   f.prior_year_is_restated,
   f.prior_year_available_at,
+  f.prior_year_quarter_structure_complete,
   ROUND(f.revenue_yoy, 4) AS revenue_yoy,
   ROUND(f.net_margin_asof, 4) AS net_margin_asof,
   ROUND(f.fcf_margin_asof, 4) AS fcf_margin_asof,
@@ -80,6 +81,7 @@ SELECT
     WHEN f.revision_id IS NULL THEN "NO_PIT_FINANCIAL_CONTEXT"
     WHEN NOT COALESCE(f.quarter_structure_complete, FALSE)
       THEN "PIT_FINANCIAL_STRUCTURE_INCOMPLETE"
+    WHEN f.revenue_yoy IS NULL THEN "PIT_YOY_UNAVAILABLE"
     WHEN f.revenue_yoy >= 0.15
       AND COALESCE(f.net_margin_asof, 0) >= 0.08 THEN "GROWTH_QUALITY_PIT"
     WHEN f.revenue_yoy >= 0.15
@@ -132,6 +134,7 @@ SELECT
       WHEN f.revision_id IS NULL THEN "NO_PIT_FINANCIAL_CONTEXT"
       WHEN NOT COALESCE(f.quarter_structure_complete, FALSE)
         THEN "PIT_FINANCIAL_STRUCTURE_INCOMPLETE"
+      WHEN f.revenue_yoy IS NULL THEN "PIT_YOY_UNAVAILABLE"
       WHEN f.revenue_yoy >= 0.15
         AND COALESCE(f.net_margin_asof, 0) >= 0.08 THEN "GROWTH_QUALITY_PIT"
       WHEN f.revenue_yoy >= 0.15
