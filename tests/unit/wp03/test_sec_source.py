@@ -53,13 +53,17 @@ class SecSourceTests(unittest.TestCase):
             "frame": "CY2026Q1",
             "val": 120.0,
         }
+        revenue_concept = (
+            "Revenue"
+            if taxonomy == "ifrs-full"
+            else "RevenueFromContractWithCustomerExcludingAssessedTax"
+        )
+        income_concept = "ProfitLoss" if taxonomy == "ifrs-full" else "NetIncomeLoss"
         return {
             "facts": {
                 taxonomy: {
-                    "RevenueFromContractWithCustomerExcludingAssessedTax": {
-                        "units": {currency: [fact]}
-                    },
-                    "NetIncomeLoss": {
+                    revenue_concept: {"units": {currency: [fact]}},
+                    income_concept: {
                         "units": {currency: [{**fact, "val": 30.0}]}
                     },
                 }
@@ -135,12 +139,13 @@ class SecSourceTests(unittest.TestCase):
             .endswith("/submissions/CIK0000320193-submissions-001.json")
         )
 
-    def test_reporting_currency_selects_non_usd_companyfacts(self):
+    def test_reporting_currency_selects_ifrs_non_usd_companyfacts(self):
         rows = self.build(
             companyfacts=self.companyfacts(currency="EUR", taxonomy="ifrs-full"),
             currency="EUR",
         )
         self.assertEqual(120.0, rows[0]["revenue"])
+        self.assertEqual(30.0, rows[0]["net_income"])
         self.assertEqual("EUR", rows[0]["currency"])
         self.assertTrue(rows[0]["backtest_eligible"])
 
