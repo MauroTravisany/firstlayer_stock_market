@@ -17,6 +17,14 @@ class Wp03SqlContractTests(unittest.TestCase):
         self.assertNotIn("COALESCE(s.report_date, s.period_end_date)", sql)
         self.assertNotIn("s.period_end_date <=", sql)
         self.assertIn("prior.currency = current.currency", sql)
+        self.assertIn(
+            "prior.quarter_structure_complete AS prior_year_quarter_structure_complete",
+            sql,
+        )
+        self.assertGreaterEqual(
+            sql.count("COALESCE(prior_year_quarter_structure_complete, FALSE)"),
+            2,
+        )
 
     def test_canonical_quarters_use_contemporaneous_q4_components(self):
         sql = self.read("financial_quarters_pit.sqlx")
@@ -61,6 +69,8 @@ class Wp03SqlContractTests(unittest.TestCase):
         self.assertIn("t.revenue_ttm > 0", sql)
         self.assertIn("t.shareholders_equity_latest > 0", sql)
         self.assertIn('reporting_currency != "USD"', sql)
+        self.assertIn("PIT_REPORTING_CURRENCY_UNKNOWN", sql)
+        self.assertIn("PIT_DATA_INCOMPLETE", sql)
         self.assertIn("valuation_price_available_at <= signal_timestamp_utc", sql)
         self.assertIn('"SHADOW_ONLY" AS promotion_mode', sql)
         self.assertIn("FALSE AS production_change_allowed", sql)
@@ -93,6 +103,13 @@ class Wp03SqlContractTests(unittest.TestCase):
         self.assertIn("WP03_PIT_INVALIDATED", sql)
         self.assertIn("FALSE AS promotion_eligible", sql)
         self.assertIn("REQUIRES_RECOMPUTE_ON_WP03_PIT_SNAPSHOT", sql)
+        self.assertIn('"trading_brain_runs"', sql)
+
+    def test_dual_run_preserves_null_vs_zero_divergence(self):
+        sql = self.read("wp03_legacy_vs_pit_shadow.sqlx")
+        self.assertIn("FUNDAMENTAL_AVAILABILITY_CHANGED", sql)
+        self.assertNotIn("COALESCE(l.legacy_revenue_yoy, 0)", sql)
+        self.assertNotIn("COALESCE(p.pit_revenue_yoy, 0)", sql)
 
     def test_no_lookahead_assertion_covers_all_pit_consumers(self):
         sql = self.read("audit_no_lookahead.sqlx")
@@ -114,6 +131,7 @@ class Wp03SqlContractTests(unittest.TestCase):
         sql = self.read("trading_historical_context_pit.sqlx")
         self.assertIn('${ref("trading_earnings_context_pit")}', sql)
         self.assertNotIn('SELECT * FROM ${ref("trading_earnings_context")}', sql)
+        self.assertIn("PIT_YOY_UNAVAILABLE", sql)
         self.assertIn("PIT_TECHNICAL_CONTEXT_PENDING_WP04", sql)
         self.assertIn("WP03_FINANCIAL_AND_EARNINGS_PIT_ONLY", sql)
 
