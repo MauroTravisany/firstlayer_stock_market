@@ -1,5 +1,5 @@
 {
-  "contract_set_hash": "4bbade4c662f05ae746796ac7494e79237c45ce5409e84188c954ab215135656",
+  "contract_set_hash": "893f69be0f636363bc6e7e657c9daf1a1869776c8baaa612d94fe1bc96147c76",
   "contracts": [
     {
       "contract_hash": "8619f792d93c0c90eb921360971472ac11f080ae7069c3260437a0b13122ea0d",
@@ -51,15 +51,15 @@
       "table": "financial_statements"
     },
     {
-      "contract_hash": "57093587dd8ce1eb8145248d14d64d6414b6d2a516370cfad1e4649f19d5144a",
-      "contract_version": "1.0.0",
+      "contract_hash": "35cc715700f5405d6977103b18adf3246f71a497eac982728f34ed457d53e336",
+      "contract_version": "1.1.0",
       "criticality": "P0",
       "point_in_time_eligibility": "BACKTEST_ELIGIBLE",
       "table": "financial_statements_pit"
     },
     {
-      "contract_hash": "7a7be26e44decd14f22bc9e4166a97a931384624dc5e1bd64e0682d0ede89c52",
-      "contract_version": "1.1.0",
+      "contract_hash": "c70da3ccbd49472afe04050448f6132d87215fd764d33564939d7a2eb79fbcc3",
+      "contract_version": "1.2.0",
       "criticality": "P0",
       "point_in_time_eligibility": "NOT_BACKTEST_ELIGIBLE",
       "table": "financial_statements_pit_raw"
@@ -108,6 +108,6 @@
     }
   ],
   "data_contract_version": "audit-contracts-v1",
-  "schema_snapshot_hash": "1b7fa21c4a5d8e1f145bec5952553f4e35d5bb57ac55f359c8256783dba236b4",
+  "schema_snapshot_hash": "258c90ac29eb04f374afc15d446986d854657cc6ffc7511b110a7156559b2b11",
   "schema_version": 1
 }
