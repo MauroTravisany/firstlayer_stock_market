@@ -2,7 +2,7 @@ config {
   type: "table",
   schema: dataform.projectConfig.vars.auditDataset,
   name: "financial_ttm_pit",
-  description: "Trailing-four-quarter financial metrics rebuilt independently for each signal timestamp from only revisions available at that instant.",
+  description: "Trailing-four-quarter financial metrics rebuilt independently for each signal timestamp from only revisions available at that instant. Annual filing duration values are converted to Q4 as FY minus Q1-Q3 when all components are available.",
   tags: ["audit-grade", "pit", "financials", "ttm", "wp03"],
   bigquery: {
     partitionBy: "analysis_date",
@@ -38,6 +38,48 @@ dedup_quarters AS (
   FROM available_revisions
   WHERE revision_rank = 1
 ),
+with_fy_components AS (
+  SELECT
+    *,
+    COUNTIF(fiscal_quarter IN (1, 2, 3)) OVER fiscal_year_window AS q123_count,
+    COUNTIF(fiscal_quarter IN (1, 2, 3) AND revenue IS NOT NULL) OVER fiscal_year_window AS q123_revenue_count,
+    COUNTIF(fiscal_quarter IN (1, 2, 3) AND gross_profit IS NOT NULL) OVER fiscal_year_window AS q123_gross_profit_count,
+    COUNTIF(fiscal_quarter IN (1, 2, 3) AND operating_income IS NOT NULL) OVER fiscal_year_window AS q123_operating_income_count,
+    COUNTIF(fiscal_quarter IN (1, 2, 3) AND net_income IS NOT NULL) OVER fiscal_year_window AS q123_net_income_count,
+    COUNTIF(fiscal_quarter IN (1, 2, 3) AND eps_diluted IS NOT NULL) OVER fiscal_year_window AS q123_eps_count,
+    SUM(IF(fiscal_quarter IN (1, 2, 3), revenue, NULL)) OVER fiscal_year_window AS q123_revenue,
+    SUM(IF(fiscal_quarter IN (1, 2, 3), gross_profit, NULL)) OVER fiscal_year_window AS q123_gross_profit,
+    SUM(IF(fiscal_quarter IN (1, 2, 3), operating_income, NULL)) OVER fiscal_year_window AS q123_operating_income,
+    SUM(IF(fiscal_quarter IN (1, 2, 3), net_income, NULL)) OVER fiscal_year_window AS q123_net_income,
+    SUM(IF(fiscal_quarter IN (1, 2, 3), eps_diluted, NULL)) OVER fiscal_year_window AS q123_eps_diluted
+  FROM dedup_quarters
+  WHERE revision_id IS NOT NULL
+  WINDOW fiscal_year_window AS (
+    PARTITION BY analysis_date, signal_hour, ticker, fiscal_year
+  )
+),
+normalized_quarters AS (
+  SELECT
+    * EXCEPT(
+      revenue, gross_profit, operating_income, net_income, eps_diluted,
+      q123_count, q123_revenue_count, q123_gross_profit_count,
+      q123_operating_income_count, q123_net_income_count, q123_eps_count,
+      q123_revenue, q123_gross_profit, q123_operating_income,
+      q123_net_income, q123_eps_diluted
+    ),
+    CASE WHEN fiscal_quarter = 4 THEN IF(q123_revenue_count = 3, revenue - q123_revenue, NULL) ELSE revenue END AS revenue,
+    CASE WHEN fiscal_quarter = 4 THEN IF(q123_gross_profit_count = 3, gross_profit - q123_gross_profit, NULL) ELSE gross_profit END AS gross_profit,
+    CASE WHEN fiscal_quarter = 4 THEN IF(q123_operating_income_count = 3, operating_income - q123_operating_income, NULL) ELSE operating_income END AS operating_income,
+    CASE WHEN fiscal_quarter = 4 THEN IF(q123_net_income_count = 3, net_income - q123_net_income, NULL) ELSE net_income END AS net_income,
+    CASE WHEN fiscal_quarter = 4 THEN IF(q123_eps_count = 3, eps_diluted - q123_eps_diluted, NULL) ELSE eps_diluted END AS eps_diluted,
+    CASE
+      WHEN fiscal_quarter != 4 THEN "REPORTED_QUARTER"
+      WHEN q123_count = 3 THEN "DERIVED_Q4_FROM_FY_MINUS_Q1_Q2_Q3"
+      ELSE "INCOMPLETE_Q4_NORMALIZATION"
+    END AS quarter_value_basis,
+    fiscal_quarter != 4 OR q123_count = 3 AS quarter_structure_complete
+  FROM with_fy_components
+),
 ranked_quarters AS (
   SELECT
     *,
@@ -45,8 +87,7 @@ ranked_quarters AS (
       PARTITION BY analysis_date, signal_hour, ticker
       ORDER BY fiscal_year DESC, fiscal_quarter DESC, period_end_date DESC
     ) AS quarter_recency
-  FROM dedup_quarters
-  WHERE revision_id IS NOT NULL
+  FROM normalized_quarters
 ),
 last_four AS (
   SELECT *
@@ -60,8 +101,10 @@ aggregated AS (
     ANY_VALUE(signal_timestamp) AS signal_timestamp,
     ticker,
     COUNT(*) AS quarter_count,
+    COUNTIF(quarter_structure_complete) AS normalized_quarter_count,
     MAX(available_at) AS latest_financial_available_at,
     ARRAY_AGG(revision_id ORDER BY fiscal_year DESC, fiscal_quarter DESC) AS ttm_revision_ids,
+    ARRAY_AGG(quarter_value_basis ORDER BY fiscal_year DESC, fiscal_quarter DESC) AS ttm_value_basis,
     SUM(revenue) AS revenue_ttm,
     SUM(gross_profit) AS gross_profit_ttm,
     SUM(operating_income) AS operating_income_ttm,
@@ -78,7 +121,7 @@ aggregated AS (
 )
 SELECT
   *,
-  quarter_count = 4 AS ttm_complete,
+  quarter_count = 4 AND normalized_quarter_count = 4 AS ttm_complete,
   SAFE_DIVIDE(net_income_ttm, revenue_ttm) AS net_margin_ttm,
   SAFE_DIVIDE(gross_profit_ttm, revenue_ttm) AS gross_margin_ttm,
   SAFE_DIVIDE(operating_income_ttm, revenue_ttm) AS operating_margin_ttm,
