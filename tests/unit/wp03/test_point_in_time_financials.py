@@ -1,5 +1,4 @@
 import importlib.util
-from datetime import datetime, timezone
 from pathlib import Path
 import unittest
 
@@ -43,6 +42,17 @@ class PointInTimeFinancialTests(unittest.TestCase):
         self.assertFalse(row["backtest_eligible"])
         self.assertEqual("MISSING_VERIFIABLE_AVAILABILITY", row["eligibility_reason"])
         self.assertIsNone(pit.select_as_of([row], "2030-01-01T00:00:00Z"))
+
+    def test_quarterly_filing_without_xbrl_quarter_is_not_eligible(self):
+        row = self._row(fiscal_quarter=None)
+        self.assertFalse(row["backtest_eligible"])
+        self.assertEqual("MISSING_VERIFIABLE_FISCAL_PERIOD", row["eligibility_reason"])
+
+    def test_annual_filing_requires_fy_quarter_marker(self):
+        invalid = self._row(form_type="10-K", fiscal_quarter=None)
+        valid = self._row(form_type="10-K", fiscal_quarter=4)
+        self.assertFalse(invalid["backtest_eligible"])
+        self.assertTrue(valid["backtest_eligible"])
 
     def test_restatement_does_not_rewrite_earlier_snapshot(self):
         original = self._row(accession_number="original", source_published_at="2026-05-02T13:30:00Z", facts={"revenue": 100.0})
