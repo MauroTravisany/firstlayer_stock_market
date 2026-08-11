@@ -1,4 +1,4 @@
-contract_version: 1.0.0
+contract_version: 1.1.0
 data_contract_version: audit-contracts-v1
 criticality: P0
 environments:
@@ -6,10 +6,10 @@ environments:
 - shadow
 point_in_time:
   eligibility: NOT_BACKTEST_ELIGIBLE
-  reason: Raw append-only store contains both eligible and rejected revisions; consumers must use financial_statements_pit which filters verified availability.
+  reason: Raw append-only store contains both eligible and rejected revisions; consumers must use financial_statements_pit which filters verified availability and quality.
 table:
   name: financial_statements_pit_raw
-  description: Append-only SEC filing revision store with source publication and ingestion lineage.
+  description: Append-only SEC filing revision store with source publication, versioned CIK mapping and ingestion lineage.
   granularity: One immutable row per content-addressed filing revision.
   logical_primary_key:
   - revision_id
@@ -31,7 +31,7 @@ source:
   version_field: revision_id
   original_timezone: UTC
 deduplication:
-  rule: revision_id is SHA-256 of immutable filing/source/fact content; existing revisions are never updated and duplicate revision_id rows are ignored.
+  rule: revision_id is SHA-256 of immutable filing, mapping, revision and fact content; MERGE inserts unseen IDs only and never updates an existing revision.
 retention:
   policy: Retain every observed revision indefinitely so restatements never erase prior market-visible state.
 columns:
@@ -47,6 +47,10 @@ columns:
   type: STRING
   mode: NULLABLE
   description: Ten-digit SEC Central Index Key.
+- name: mapping_version
+  type: STRING
+  mode: REQUIRED
+  description: Version of the repository-controlled ticker/CIK/reporting-currency mapping.
 - name: form_type
   type: STRING
   mode: NULLABLE
@@ -55,6 +59,18 @@ columns:
   type: STRING
   mode: NULLABLE
   description: SEC accession number identifying the filing revision.
+- name: source_record_id
+  type: STRING
+  mode: NULLABLE
+  description: Source-native immutable record identifier; SEC accession number for EDGAR.
+- name: revision_number
+  type: INT64
+  mode: REQUIRED
+  description: Deterministic chronological revision number within ticker/fiscal year/fiscal quarter.
+- name: is_restated
+  type: BOOL
+  mode: REQUIRED
+  description: True for amended forms or later revisions of the same fiscal period.
 - name: filing_date
   type: DATE
   mode: NULLABLE
@@ -82,7 +98,7 @@ columns:
 - name: currency
   type: STRING
   mode: NULLABLE
-  description: Reporting currency for monetary facts.
+  description: Reporting currency fixed by the versioned mapping and required for monetary fact selection.
 - name: revenue
   type: FLOAT64
   mode: NULLABLE
@@ -158,11 +174,15 @@ columns:
 - name: backtest_eligible
   type: BOOL
   mode: REQUIRED
-  description: True only when verifiable availability and filing lineage satisfy the WP-03 gate.
+  description: True only when verifiable availability, fiscal lineage and at least one usable core fact satisfy the WP-03 gate.
 - name: eligibility_reason
   type: STRING
   mode: REQUIRED
   description: Machine-readable reason for eligibility or rejection.
+- name: quality_status
+  type: STRING
+  mode: REQUIRED
+  description: Data-quality classification independent from eligibility boolean.
 - name: loaded_at
   type: TIMESTAMP
   mode: REQUIRED
@@ -171,8 +191,12 @@ assertions:
   not_null:
   - revision_id
   - ticker
+  - mapping_version
+  - revision_number
+  - is_restated
   - backtest_eligible
   - eligibility_reason
+  - quality_status
   - loaded_at
   unique:
   - - revision_id
@@ -180,10 +204,19 @@ assertions:
     backtest_eligible:
     - true
     - false
+    is_restated:
+    - true
+    - false
+    quality_status:
+    - ELIGIBLE_VERIFIED_PIT
+    - UNVERIFIED_AVAILABLE_AT
+    - UNVERIFIED_FISCAL_PERIOD
+    - NO_USABLE_FINANCIAL_FACTS
 implementation:
   mode: DATAFORM_CREATE
   dataform_definition: dataform/definitions/financial_statements_pit_raw.sqlx
 producers:
+- cloud-functions/financial_data/config/ticker_cik_map.v1.json
 - cloud-functions/financial_data/custom_function/sec_source.py
 - cloud-functions/financial_data/custom_function/pit_bq_operations.py
 consumers:
