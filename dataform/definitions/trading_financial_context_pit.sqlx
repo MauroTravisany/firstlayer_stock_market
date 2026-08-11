@@ -1,0 +1,85 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "trading_financial_context_pit",
+  description: "Financial context joined point-in-time to each signal timestamp, with quarterly YoY computed on deduplicated fiscal series.",
+  tags: ["audit-grade", "pit", "financials", "backtest", "wp03"],
+  bigquery: {
+    partitionBy: "analysis_date",
+    clusterBy: ["ticker"]
+  },
+  assertions: {
+    nonNull: ["analysis_date", "signal_hour", "ticker"],
+    uniqueKey: ["analysis_date", "signal_hour", "ticker"]
+  },
+  dependencies: ["financial_statements_pit", "trading_price_features"]
+}
+
+WITH revision_series AS (
+  SELECT * EXCEPT(rn)
+  FROM (
+    SELECT
+      s.*,
+      ROW_NUMBER() OVER (
+        PARTITION BY ticker, fiscal_year, fiscal_quarter, available_at
+        ORDER BY filing_date DESC, revision_id DESC
+      ) AS rn
+    FROM ${ref("financial_statements_pit")} s
+  )
+  WHERE rn = 1
+),
+quarterly_with_yoy AS (
+  SELECT
+    current.*,
+    prior.revenue AS revenue_same_q_prev_year,
+    prior.net_income AS net_income_same_q_prev_year,
+    SAFE_DIVIDE(current.revenue - prior.revenue, ABS(prior.revenue)) AS revenue_yoy,
+    SAFE_DIVIDE(current.net_income - prior.net_income, ABS(prior.net_income)) AS net_income_yoy
+  FROM revision_series current
+  LEFT JOIN revision_series prior
+    ON prior.ticker = current.ticker
+   AND prior.fiscal_year = current.fiscal_year - 1
+   AND prior.fiscal_quarter = current.fiscal_quarter
+   AND prior.available_at <= current.available_at
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY current.revision_id
+    ORDER BY prior.available_at DESC, prior.revision_id DESC
+  ) = 1
+),
+asof AS (
+  SELECT
+    p.analysis_date,
+    p.signal_hour,
+    p.signal_timestamp,
+    p.ticker,
+    s.revision_id,
+    s.form_type,
+    s.accession_number,
+    s.period_end_date,
+    s.filing_date,
+    s.source_published_at,
+    s.available_at,
+    s.revenue,
+    s.net_income,
+    s.free_cash_flow,
+    s.total_debt,
+    s.shareholders_equity,
+    s.revenue_yoy,
+    s.net_income_yoy,
+    ROW_NUMBER() OVER (
+      PARTITION BY p.analysis_date, p.signal_hour, p.ticker
+      ORDER BY s.period_end_date DESC, s.available_at DESC, s.revision_id DESC
+    ) AS rn
+  FROM ${ref("trading_price_features")} p
+  LEFT JOIN quarterly_with_yoy s
+    ON s.ticker = p.ticker
+   AND s.available_at <= p.signal_timestamp
+   AND s.backtest_eligible = TRUE
+)
+SELECT
+  * EXCEPT(rn),
+  SAFE_DIVIDE(net_income, revenue) AS net_margin_asof,
+  SAFE_DIVIDE(free_cash_flow, revenue) AS fcf_margin_asof,
+  SAFE_DIVIDE(total_debt, shareholders_equity) AS debt_to_equity_asof
+FROM asof
+WHERE rn = 1
