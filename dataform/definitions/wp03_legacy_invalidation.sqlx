@@ -35,6 +35,7 @@ FROM ${ref("legacy_result_registry")}
 WHERE source_table IN (
   "trading_directional_strategy_backtest",
   "trading_champion_challenger_signals",
+  "trading_brain_runs",
   "trading_brain_ai_audits",
   "trading_brain_weight_candidates",
   "trading_brain_candidate_capital_curve",
