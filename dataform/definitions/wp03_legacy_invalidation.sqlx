@@ -1,0 +1,42 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "wp03_legacy_invalidation",
+  description: "Explicit WP-03 invalidation of result families whose fundamentals or earnings lineage was not point-in-time safe.",
+  tags: ["audit-grade", "governance", "legacy", "pit", "wp03"],
+  assertions: {
+    nonNull: ["result_family", "source_table", "invalidation_reason", "promotion_eligible"],
+    uniqueKey: ["result_family", "source_table"],
+    rowConditions: ["promotion_eligible = FALSE"]
+  },
+  dependencies: ["legacy_result_registry"]
+}
+
+SELECT
+  result_family,
+  source_table,
+  date_start,
+  date_end,
+  baseline_git_sha,
+  results_checksum,
+  "WP03_PIT_INVALIDATED" AS wp03_classification,
+  ARRAY_CONCAT(
+    known_defects,
+    [
+      "legacy fundamentals could use period_end_date before market publication",
+      "legacy financial revisions were mutable by fiscal period",
+      "legacy earnings expected and reported values lacked independent available_at lineage"
+    ]
+  ) AS invalidation_reason,
+  FALSE AS promotion_eligible,
+  "REQUIRES_RECOMPUTE_ON_WP03_PIT_SNAPSHOT" AS remediation,
+  CURRENT_TIMESTAMP() AS recorded_at
+FROM ${ref("legacy_result_registry")}
+WHERE source_table IN (
+  "trading_directional_strategy_backtest",
+  "trading_champion_challenger_signals",
+  "trading_brain_ai_audits",
+  "trading_brain_weight_candidates",
+  "trading_brain_candidate_capital_curve",
+  "trading_brain_candidate_summary"
+)
