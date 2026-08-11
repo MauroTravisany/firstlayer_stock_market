@@ -1,4 +1,4 @@
-contract_version: 1.0.0
+contract_version: 1.1.0
 data_contract_version: audit-contracts-v1
 criticality: P0
 environments:
@@ -6,11 +6,11 @@ environments:
 - shadow
 point_in_time:
   eligibility: BACKTEST_ELIGIBLE
-  reason: Canonical view contains only SEC revisions with verified acceptance timestamp, fiscal metadata and usable facts.
+  reason: Canonical view contains only SEC revisions with verified acceptance timestamp, fiscal metadata and usable facts; revision ordinals are derived over complete immutable history.
 table:
   name: financial_statements_pit
   description: Canonical eligible SEC filing revisions exposed to PIT consumers.
-  granularity: One immutable eligible row per revision_id.
+  granularity: One immutable eligible row per revision_id, with derived revision lineage.
   logical_primary_key:
   - revision_id
   append_only: true
@@ -28,7 +28,7 @@ source:
   version_field: revision_id
   original_timezone: UTC
 deduplication:
-  rule: revision_id is globally unique; later amendments receive new revision IDs and never rewrite prior revisions.
+  rule: revision_id is globally unique; revision_number and is_restated are derived over complete source history and are never persisted into the raw append-only store.
 retention:
   policy: Retain every eligible revision indefinitely for replay.
 columns:
@@ -39,8 +39,9 @@ columns:
 - {name: form_type, type: STRING, mode: REQUIRED, description: SEC filing form.}
 - {name: accession_number, type: STRING, mode: REQUIRED, description: SEC accession number.}
 - {name: source_record_id, type: STRING, mode: REQUIRED, description: SEC source record identifier.}
-- {name: revision_number, type: INT64, mode: REQUIRED, description: Chronological revision within fiscal period.}
-- {name: is_restated, type: BOOL, mode: REQUIRED, description: Amendment or later period revision flag.}
+- {name: source_is_amendment, type: BOOL, mode: REQUIRED, description: Source-form amendment flag.}
+- {name: revision_number, type: INT64, mode: REQUIRED, description: Chronological revision ordinal derived within fiscal period.}
+- {name: is_restated, type: BOOL, mode: REQUIRED, description: True for source amendments or later revisions of the same fiscal period.}
 - {name: filing_date, type: DATE, mode: NULLABLE, description: Filing date, not availability.}
 - {name: source_published_at, type: TIMESTAMP, mode: REQUIRED, description: Verified SEC acceptance timestamp.}
 - {name: available_at, type: TIMESTAMP, mode: REQUIRED, description: First eligible market-use timestamp.}
@@ -78,6 +79,7 @@ assertions:
   - form_type
   - accession_number
   - source_record_id
+  - source_is_amendment
   - revision_number
   - is_restated
   - source_published_at
@@ -95,6 +97,8 @@ assertions:
   unique:
   - - revision_id
   accepted_values:
+    source_is_amendment: [true, false]
+    is_restated: [true, false]
     backtest_eligible: [true]
     quality_status: [ELIGIBLE_VERIFIED_PIT]
 implementation:
