@@ -1,5 +1,6 @@
 import os
 import re
+from datetime import date
 
 import requests
 
@@ -7,6 +8,15 @@ from .point_in_time import build_statement_revision
 
 SEC_DATA_BASE = "https://data.sec.gov"
 SEC_FORMS = {"10-Q", "10-Q/A", "10-K", "10-K/A", "20-F", "20-F/A", "40-F", "40-F/A"}
+DURATION_FACTS = {
+    "revenue",
+    "gross_profit",
+    "operating_income",
+    "net_income",
+    "eps_basic",
+    "eps_diluted",
+    "operating_cash_flow",
+}
 
 
 def _headers():
@@ -74,14 +84,58 @@ def _matching_fact_rows(companyfacts, concepts, *, accession, period_end, unit_p
                         yield row, unit
 
 
-def _choose_fact(companyfacts, concepts, *, accession, period_end, unit_preferences):
+def _duration_days(row):
+    start = row.get("start")
+    end = row.get("end")
+    if not start or not end:
+        return None
+    try:
+        return (date.fromisoformat(end) - date.fromisoformat(start)).days
+    except ValueError:
+        return None
+
+
+def _target_duration(form_type, fiscal_quarter):
+    normalized = str(form_type or "").upper()
+    if normalized.startswith(("10-K", "20-F", "40-F")) or fiscal_quarter == 4:
+        return 365
+    if normalized.startswith("10-Q") and fiscal_quarter in {1, 2, 3}:
+        return 91
+    return None
+
+
+def _choose_fact(companyfacts, concepts, *, accession, period_end, unit_preferences,
+                 duration_target=None, require_duration=False):
     matches = list(_matching_fact_rows(
         companyfacts, concepts, accession=accession, period_end=period_end,
         unit_preferences=unit_preferences,
     ))
+    if require_duration:
+        matches = [pair for pair in matches if _duration_days(pair[0]) is not None]
     if not matches:
         return None, None, None
-    chosen, unit = max(matches, key=lambda pair: (pair[0].get("filed") or "", pair[0].get("fy") or 0, pair[0].get("frame") or ""))
+
+    def rank(pair):
+        row, _unit = pair
+        duration = _duration_days(row)
+        duration_penalty = abs(duration - duration_target) if duration_target is not None and duration is not None else 10_000
+        frame_bonus = 0 if row.get("frame") else 1
+        return (
+            duration_penalty,
+            frame_bonus,
+            -(int(str(row.get("fy") or 0))),
+            str(row.get("filed") or ""),
+        )
+
+    if duration_target is not None:
+        chosen, unit = min(matches, key=rank)
+        # Reject ambiguous cumulative/YTD facts rather than treating them as one quarter.
+        duration = _duration_days(chosen)
+        tolerance = 35 if duration_target == 91 else 75
+        if duration is None or abs(duration - duration_target) > tolerance:
+            return None, None, None
+    else:
+        chosen, unit = max(matches, key=lambda pair: (pair[0].get("filed") or "", pair[0].get("fy") or 0, pair[0].get("frame") or ""))
     return chosen.get("val"), unit, chosen
 
 
@@ -110,27 +164,10 @@ def _fiscal_metadata(companyfacts, accession, period_end):
 
 
 def _debt_values(companyfacts, accession, period_end):
-    total, _, _ = _choose_fact(
-        companyfacts,
-        ["LongTermDebtAndFinanceLeaseObligations", "DebtAndFinanceLeaseObligations"],
-        accession=accession,
-        period_end=period_end,
-        unit_preferences=["USD"],
-    )
-    current, _, _ = _choose_fact(
-        companyfacts,
-        ["LongTermDebtAndFinanceLeaseObligationsCurrent", "LongTermDebtCurrent", "DebtCurrent"],
-        accession=accession,
-        period_end=period_end,
-        unit_preferences=["USD"],
-    )
-    noncurrent, _, _ = _choose_fact(
-        companyfacts,
-        ["LongTermDebtAndFinanceLeaseObligationsNoncurrent", "LongTermDebtNoncurrent"],
-        accession=accession,
-        period_end=period_end,
-        unit_preferences=["USD"],
-    )
+    kwargs = dict(accession=accession, period_end=period_end, unit_preferences=["USD"])
+    total, _, _ = _choose_fact(companyfacts, ["LongTermDebtAndFinanceLeaseObligations", "DebtAndFinanceLeaseObligations"], **kwargs)
+    current, _, _ = _choose_fact(companyfacts, ["LongTermDebtAndFinanceLeaseObligationsCurrent", "LongTermDebtCurrent", "DebtCurrent"], **kwargs)
+    noncurrent, _, _ = _choose_fact(companyfacts, ["LongTermDebtAndFinanceLeaseObligationsNoncurrent", "LongTermDebtNoncurrent"], **kwargs)
     if total is None and (current is not None or noncurrent is not None):
         total = float(current or 0) + float(noncurrent or 0)
     return total, current, noncurrent
@@ -160,12 +197,19 @@ def build_sec_statement_revisions(ticker, cik, submissions, companyfacts):
         if not period_end:
             continue
         fiscal_year, fiscal_quarter = _fiscal_metadata(companyfacts, accession, period_end)
+        duration_target = _target_duration(filing.get("form_type"), fiscal_quarter)
         facts = {}
         currency = None
         for field, (concepts, units) in mappings.items():
+            is_duration = field in DURATION_FACTS
             value, unit, _metadata = _choose_fact(
-                companyfacts, concepts, accession=accession, period_end=period_end,
+                companyfacts,
+                concepts,
+                accession=accession,
+                period_end=period_end,
                 unit_preferences=units,
+                duration_target=duration_target if is_duration else None,
+                require_duration=is_duration,
             )
             facts[field] = value
             if field == "revenue" and unit == "USD":
@@ -190,7 +234,7 @@ def build_sec_statement_revisions(ticker, cik, submissions, companyfacts):
             filing_date=filing.get("filing_date"),
             source_published_at=filing.get("source_published_at"),
             period_end_date=period_end,
-            fiscal_year=fiscal_year if fiscal_year is not None else int(period_end[:4]),
+            fiscal_year=fiscal_year,
             fiscal_quarter=fiscal_quarter,
             currency=currency,
             facts=facts,
