@@ -14,6 +14,8 @@ CORE_FINANCIAL_FACTS = {
 }
 DERIVED_IDENTITY_FIELDS = {
     "revision_id",
+    "revision_number",
+    "is_restated",
     "backtest_eligible",
     "eligibility_reason",
     "quality_status",
