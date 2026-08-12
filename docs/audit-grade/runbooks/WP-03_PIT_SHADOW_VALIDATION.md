@@ -2,16 +2,43 @@
 
 ## Propósito
 
-Materializar y validar WP-03 en un dataset BigQuery **aislado**, sin alterar servicios, schedulers, tablas operativas, Strategy Brain, Paper Champion ni el broker.
+Materializar y validar WP-03 en un dataset BigQuery aislado, sin alterar
+servicios, schedulers, tablas operativas, Strategy Brain, Paper Champion ni el
+broker.
 
-La única escritura autorizada es un dataset cuyo nombre contenga `shadow` y cuyas etiquetas sean exactamente:
+La única escritura BigQuery autorizada es un dataset cuyo nombre contenga
+`shadow` y cuyas etiquetas sean exactamente:
 
 ```text
 environment=shadow
 work_package=wp03
 ```
 
-Las fuentes legacy que WP-03 necesita para construir el dual-run permanecen en el dataset operativo y se consumen en modo read-only. El dataset de lectura y el dataset de salida son límites distintos.
+## Arquitectura de inputs y outputs
+
+WP-03 mantiene tres clases de objeto distintas:
+
+| Clase | Acceso | Dataset/resolución |
+|---|---|---|
+| Outputs WP-03 | WRITE limitado | `vars.auditDataset = $SHADOW_DATASET` |
+| Fuentes legacy operativas | READ_ONLY | `vars.operationalDataset = acciones_dataset` o schema explícito `acciones_dataset` |
+| Registro legacy congelado | REPOSITORY_STATIC | embebido en `wp03_legacy_invalidation.sqlx` desde la evidencia WP-00 |
+
+Las seis dependencias BigQuery live autorizadas son:
+
+```text
+macro_earnings_calendar
+trading_price_features
+asset_profile
+valuation_model_profile
+trading_historical_context
+portfolio_valuation_daily
+```
+
+`legacy_result_registry` no es una dependencia live. Su subconjunto afectado
+está congelado dentro de `wp03_legacy_invalidation.sqlx`, con los mismos
+`result_family`, `source_table` y `results_checksum` del registro WP-00. Esto
+evita depender de una tabla operativa que puede no haber sido materializada.
 
 ## Invariantes no negociables
 
@@ -23,9 +50,11 @@ Las fuentes legacy que WP-03 necesita para construir el dual-run permanecen en e
 - Alpaca permanece Paper;
 - no se ejecuta `terraform apply`;
 - no se actualiza Dataform `production`;
-- no se escribe en `acciones_dataset` ni en otro dataset operativo;
-- las lecturas legacy autorizadas provienen únicamente de `acciones_dataset`;
-- `vars.auditDataset` y `vars.operationalDataset` nunca pueden apuntar al mismo dataset durante la validación shadow;
+- no se mueve `dataform-production`;
+- no se escribe en `acciones_dataset`;
+- las lecturas legacy autorizadas provienen solo de `acciones_dataset`;
+- `vars.auditDataset` y `vars.operationalDataset` son distintos;
+- no se ejecutan dependencias legacy como targets;
 - no se sintetiza `available_at` desde `filing_date` o `period_end_date`;
 - ningún resultado legacy se vuelve promocionable.
 
@@ -34,20 +63,22 @@ Las fuentes legacy que WP-03 necesita para construir el dual-run permanecen en e
 ```bash
 export FINAL_SHA=<SHA_EXACTO_REVISADO>
 export CI_RUN_ID=<CI_RUN_DEL_SHA_EXACTO>
-export PROJECT_ID=<PROYECTO_GCP>
+export PROJECT_ID=stocks-437902
 export LOCATION=us-east1
 export OPERATIONAL_DATASET=acciones_dataset
 export SHADOW_DATASET=acciones_dataset_shadow_wp03
-export SEC_USER_AGENT='firstlayer-stock-market/1.0 contacto@example.com'
+export DATAFORM_REPOSITORY=portfolio-valuation
+export SEC_USER_AGENT='firstlayer-stock-market/1.0 contacto-real@example.com'
 export MAPPING_VERSION=sec-company-tickers-2026-08-11-v1
 export WP03_MAX_ROWS=1000
 export WP03_EVIDENCE_TMP=/tmp/wp03-shadow-evidence
 mkdir -p "$WP03_EVIDENCE_TMP"
 ```
 
-El correo de `SEC_USER_AGENT` debe ser un contacto real autorizado y no debe persistirse en el repositorio.
+El contacto de `SEC_USER_AGENT` debe ser real y autorizado. No persistirlo en
+el repositorio, logs o artefactos.
 
-## 1. Checkout y verificación local
+## 1. Checkout exacto y gates locales
 
 ```bash
 git fetch origin
@@ -56,6 +87,8 @@ test "$(git rev-parse HEAD)" = "$FINAL_SHA"
 test -z "$(git status --porcelain --untracked-files=all)"
 
 python -m pip install --requirement requirements-ci.txt
+python -m pip install --requirement cloud-functions/financial_data/requirements.txt
+
 python -m compileall -q tools scripts tests cloud-functions
 python -m unittest discover -s tests -p 'test_*.py'
 python scripts/ci/verify_repo_invariants.py
@@ -65,8 +98,8 @@ python scripts/ci/validate_data_contracts.py \
   --contracts-dir contracts \
   --manifest contracts/manifest.json \
   --runtime-manifest cloud-functions/strategy_brain/contract_set_manifest.json
-
 git diff --check
+
 (
   cd dataform
   npm ci
@@ -74,37 +107,31 @@ git diff --check
 )
 ```
 
-Todos los comandos deben devolver `0`. No continuar si el SHA o el árbol de trabajo no coinciden.
+Todos los comandos deben devolver `0`.
 
-## 2. Inventario GCP read-only
+## 2. Inventario operacional read-only
+
+Guardar salidas sanitizadas fuera del checkout:
 
 ```bash
 gcloud config get-value project
-bq show --format=prettyjson "$PROJECT_ID:$SHADOW_DATASET" || true
 bq show --format=prettyjson "$PROJECT_ID:$OPERATIONAL_DATASET"
+bq show --format=prettyjson "$PROJECT_ID:$SHADOW_DATASET" || true
 gcloud run services list --project "$PROJECT_ID" --region "$LOCATION"
 gcloud scheduler jobs list --project "$PROJECT_ID" --location "$LOCATION"
 ```
 
-Guardar salidas sanitizadas fuera del checkout. No imprimir secretos.
+Confirmar antes de cualquier escritura:
 
-Las únicas tablas operativas autorizadas como inputs read-only de WP-03 son:
+- `strategy-brain-generate = PAUSED`;
+- `strategy-brain-review = PAUSED`;
+- executor en Paper;
+- workflow Cloud Run deshabilitado;
+- ningún deploy o workflow de producción en curso.
 
-```text
-macro_earnings_calendar
-trading_price_features
-asset_profile
-valuation_model_profile
-trading_historical_context
-portfolio_valuation_daily
-legacy_result_registry
-```
+## 3. Dataset shadow
 
-No materializar ni copiar estas tablas al dataset shadow como workaround.
-
-## 3. Dataset aislado
-
-Solo si no existe:
+Si no existe:
 
 ```bash
 bq --location="$LOCATION" mk --dataset \
@@ -112,15 +139,98 @@ bq --location="$LOCATION" mk --dataset \
   --label=environment:shadow \
   --label=work_package:wp03 \
   "$PROJECT_ID:$SHADOW_DATASET"
-
-bq show --format=prettyjson "$PROJECT_ID:$SHADOW_DATASET"
 ```
 
-Debe observarse `shadow` en el ID y ambas etiquetas exactas.
+Si existe, solo reutilizarlo cuando nombre, location, labels y tablas existentes
+tengan lineage WP-03 verificable. No borrar ni modificar un dataset incierto.
 
-## 4. Compilación Dataform con separación input/output
+## 4. Preflight agregado de todas las dependencias
 
-La compilation result debe preservar dos destinos diferentes:
+Ejecutar antes de crear compilation result o workflow invocation:
+
+```bash
+python tools/wp03_shadow_preflight.py \
+  --expected-git-sha "$FINAL_SHA" \
+  --project-id "$PROJECT_ID" \
+  --operational-dataset "$OPERATIONAL_DATASET" \
+  --shadow-dataset "$SHADOW_DATASET" \
+  --location "$LOCATION" \
+  --environment shadow \
+  --output "$WP03_EVIDENCE_TMP/wp03_shadow_preflight.json"
+```
+
+Exigir:
+
+```text
+status = PASS
+problems = []
+production_change_allowed = false
+```
+
+La herramienta verifica en una sola ejecución:
+
+- existencia de las seis fuentes operativas;
+- todas las columnas realmente consumidas por el grafo WP-03;
+- tipos de objeto BigQuery permitidos;
+- location del dataset operativo;
+- nombre, location y labels del dataset shadow;
+- ausencia de tablas shadow inesperadas;
+- que `wp03_legacy_invalidation` no vuelva a referenciar
+  `legacy_result_registry`;
+- que las diez filas afectadas y sus checksums coincidan con el registro
+  congelado del repositorio.
+
+No continuar corrigiendo tablas una por una. Si el preflight falla, guardar el
+JSON completo y reportar todas las dependencias inválidas juntas.
+
+## 5. Empaquetado Dataform exacto del subárbol
+
+El repositorio Dataform conectado espera `package.json` en su raíz, mientras
+que este repositorio guarda el proyecto bajo `dataform/`. Por ello no se debe
+compilar directamente la raíz del PR ni mover archivos manualmente.
+
+Crear una referencia candidata cuyo árbol sea exactamente el subárbol
+`$FINAL_SHA:dataform`, usando el patrón transaccional ya probado por WP-01:
+
+```bash
+export DATAFORM_TREE_SHA="$(git rev-parse "$FINAL_SHA:dataform")"
+export PREVIOUS_DATAFORM_PRODUCTION_SHA="$(
+  git ls-remote --refs origin refs/heads/dataform-production | cut -f1
+)"
+export DATAFORM_CANDIDATE_BRANCH="dataform-wp03-shadow-${FINAL_SHA:0:12}"
+export DATAFORM_CANDIDATE_REF="refs/heads/$DATAFORM_CANDIDATE_BRANCH"
+
+git fetch --no-tags origin "$PREVIOUS_DATAFORM_PRODUCTION_SHA"
+export DATAFORM_SNAPSHOT_COMMIT="$(
+  printf 'WP-03 shadow Dataform snapshot for %s\n' "$FINAL_SHA" |
+    git commit-tree "$DATAFORM_TREE_SHA" \
+      -p "$PREVIOUS_DATAFORM_PRODUCTION_SHA"
+)"
+```
+
+Crear la candidate ref con compare-and-swap/fail-closed. No mover
+`dataform-production`. Guardar:
+
+```text
+FINAL_SHA
+DATAFORM_TREE_SHA
+DATAFORM_SNAPSHOT_COMMIT
+DATAFORM_CANDIDATE_BRANCH
+PREVIOUS_DATAFORM_PRODUCTION_SHA
+```
+
+Verificar que la raíz candidata contiene:
+
+```text
+package.json
+package-lock.json
+workflow_settings.yaml
+definitions/
+```
+
+## 6. Compilation result con separación input/output
+
+Crear una compilation result nueva desde `DATAFORM_CANDIDATE_BRANCH` con:
 
 ```text
 defaultDatabase = $PROJECT_ID
@@ -131,15 +241,13 @@ vars.environment = shadow
 vars.financialMappingVersion = $MAPPING_VERSION
 ```
 
-Reglas obligatorias:
+Reglas:
 
 - NO sobrescribir `defaultSchema` con `$SHADOW_DATASET`;
-- `vars.auditDataset` = `$SHADOW_DATASET`;
-- `vars.operationalDataset` = `$OPERATIONAL_DATASET`;
-- todos los outputs WP-03 usan explícitamente `vars.auditDataset`;
-- `macro_earnings_calendar` se resuelve mediante `vars.operationalDataset`;
-- los demás inputs legacy tienen schema explícito `acciones_dataset`;
-- no actualizar `dataform-production`, release config `production` ni workflow config `production`.
+- NO reutilizar compilation results de otro SHA;
+- NO actualizar release config `production`;
+- NO mover `dataform-production`;
+- NO usar `transitiveDependenciesIncluded=true`.
 
 Targets autorizados:
 
@@ -158,35 +266,34 @@ wp03_legacy_invalidation
 audit_no_lookahead
 ```
 
-Antes de ejecutar, inspeccionar la compilation result y demostrar:
+Inspeccionar la compilation result y construir una tabla:
 
+```text
+OBJECT | ROLE | DATABASE | DATASET | ACCESS | STATUS
+```
+
+Debe demostrar:
+
+- los doce outputs escriben en `$PROJECT_ID.$SHADOW_DATASET`;
+- las seis fuentes operativas se leen desde
+  `$PROJECT_ID.$OPERATIONAL_DATASET`;
+- `wp03_legacy_invalidation` no tiene dependencia BigQuery externa;
+- ninguna sentencia DDL/DML escribe en `$OPERATIONAL_DATASET`;
 - cero compilation errors;
-- cada **output** autorizado apunta a `$PROJECT_ID.$SHADOW_DATASET`;
-- cada **lectura legacy** autorizada apunta a `$PROJECT_ID.$OPERATIONAL_DATASET`;
-- ninguna sentencia DDL/DML escribe en `$PROJECT_ID.$OPERATIONAL_DATASET`;
-- ninguna acción modifica Cloud Run, Scheduler, IAM o Secret Manager.
+- `resolvedGitCommitSha = DATAFORM_SNAPSHOT_COMMIT`.
 
-Guardar `compilation_result_id`, SHA, targets y tabla de inputs/outputs en `$WP03_EVIDENCE_TMP`.
+## 7. Materializar tabla raw
 
-No usar `transitiveDependenciesIncluded=true`. Las dependencias legacy se leen, no se ejecutan ni materializan durante esta validación.
-
-## 5. Materializar solo la tabla raw
-
-Ejecutar primero únicamente:
+Ejecutar únicamente:
 
 ```text
 financial_statements_pit_raw
 ```
 
-Verificar que fue creada exactamente en:
+sin dependencias transitivas. Comparar su schema exacto con
+`contracts/financial_statements_pit_raw.yaml`.
 
-```text
-$PROJECT_ID.$SHADOW_DATASET.financial_statements_pit_raw
-```
-
-Comparar su schema con `contracts/financial_statements_pit_raw.yaml`. Debe existir cero schema drift.
-
-## 6. Plan SEC sin escritura
+## 8. Plan SEC bounded
 
 ```bash
 python tools/wp03_shadow_backfill.py \
@@ -199,14 +306,17 @@ python tools/wp03_shadow_backfill.py \
   --environment shadow \
   --output "$WP03_EVIDENCE_TMP/wp03_shadow_backfill_plan.json"
 
-export WP03_PLAN_CHECKSUM="$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["plan_checksum"])' "$WP03_EVIDENCE_TMP/wp03_shadow_backfill_plan.json")"
+export WP03_PLAN_CHECKSUM="$(
+  python -c \
+    'import json,sys; print(json.load(open(sys.argv[1]))["plan_checksum"])' \
+    "$WP03_EVIDENCE_TMP/wp03_shadow_backfill_plan.json"
+)"
 ```
 
-Revisar mapping version/checksum, tickers, rango, límite, conteos, razones de rechazo, `revision_set_sha256`, `plan_checksum` y `production_change_allowed=false`.
+Exigir filas no vacías, checksum de mapping, checksum de revisiones,
+`production_change_allowed=false` y scope exacto.
 
-No ejecutar si aparecen tickers inesperados, una versión distinta, más filas que el límite o cero filas por error de fuente.
-
-## 7. Backfill append-only vinculado al plan
+## 9. Backfill append-only ligado al plan
 
 ```bash
 python tools/wp03_shadow_backfill.py \
@@ -227,11 +337,17 @@ python tools/wp03_shadow_backfill.py \
   --output "$WP03_EVIDENCE_TMP/wp03_shadow_backfill_execution.json"
 ```
 
-La herramienta debe rechazar checkout sucio/SHA distinto, checksum distinto, dataset sin `shadow`, etiquetas incorrectas, schema distinto, otro table ID, más de 10 tickers, más de 10 años o más de 10.000 filas.
+Verificar:
 
-## 8. Materializar el resto del grafo
+```text
+COUNT(*) = COUNT(DISTINCT revision_id)
+```
 
-Después del backfill, ejecutar los targets restantes en orden de dependencia y sin dependencias transitivas:
+Una repetición idéntica debe ser idempotente.
+
+## 10. Materialización ordenada
+
+Ejecutar individualmente, sin dependencias transitivas:
 
 1. `financial_statements_pit`
 2. `financial_quarters_pit`
@@ -245,9 +361,10 @@ Después del backfill, ejecutar los targets restantes en orden de dependencia y 
 10. `wp03_legacy_invalidation`
 11. `audit_no_lookahead`
 
-Después de cada grupo, comprobar destino, estado y ausencia de escritura operativa.
+Después de cada target, registrar destination, invocation ID, estado y
+assertions. No ignorar fallos.
 
-## 9. Evidencia automática read-only
+## 11. Evidencia automática
 
 ```bash
 python tools/wp03_shadow_evidence.py \
@@ -261,79 +378,67 @@ python tools/wp03_shadow_evidence.py \
   --output "$WP03_EVIDENCE_TMP/wp03_shadow_evidence.json"
 ```
 
-La herramienta exige checkout exacto y limpio, valida etiquetas, ubicación, tablas y schema raw, y devuelve exit code `0` solo si todos los hard gates pasan.
+Exigir:
 
-Criterios mínimos:
+```text
+exit code = 0
+evaluation.status = PASS
+hard_gate_count = 0
+audit_no_lookahead.violation_count = 0
+```
 
-- `evaluation.status = PASS`;
-- `hard_gate_count = 0`;
-- `audit_no_lookahead.violation_count = 0`;
-- revision IDs únicos;
-- cero availability mismatch;
-- cero TTM complete inválido;
-- cero earnings retroactivo;
-- cero múltiplo negativo o aritmética cross-currency;
-- cero filas promocionables en comparación e invalidación.
+No existen allowlists point-in-time.
 
-No existe allowlist para una violación point-in-time.
-
-## 10. Verificación de no mutación
+## 12. Verificación de no mutación
 
 Repetir el inventario inicial y demostrar:
 
-- workflow de deploy sigue deshabilitado;
-- Strategy Brain sigue pausado;
-- Cloud Run y schedulers no cambiaron;
-- no hubo Terraform apply;
-- no hubo IAM/Secret Manager mutation;
-- no hubo Dataform production update;
-- no hubo broker call;
-- no hubo escritura en `$OPERATIONAL_DATASET`;
-- solo se escribió en `$SHADOW_DATASET`.
+- Cloud Run sin cambios;
+- schedulers sin cambios;
+- Strategy Brain pausado;
+- Dataform production sin cambios;
+- `dataform-production` sin cambios;
+- ningún Terraform apply;
+- ningún IAM/Secret Manager mutation;
+- ningún broker call;
+- cero escrituras en `acciones_dataset`;
+- escrituras únicamente en `$SHADOW_DATASET`.
 
-## 11. Evidencia documental
+## 13. Evidencia a conservar
 
-Después de terminar las operaciones que exigen checkout limpio, copiar los JSON desde `/tmp` al repositorio y registrar en `docs/audit-grade/evidence/WP-03.md`:
+Copiar al PR, sin secretos:
 
-- SHA exacto y CI run;
-- project/location/datasets de lectura y escritura;
-- labels shadow;
-- compilation result y targets;
-- inputs operativos read-only;
-- mapping version/checksum;
-- checksum del plan;
-- filas staged/inserted/eligible/rejected;
-- checksum del conjunto de revisiones;
-- checksum de evidencia;
-- `audit_no_lookahead = 0`;
-- divergencias legacy/PIT;
-- confirmación de no deploy/no scheduler/no broker/no producción;
-- comandos y exit codes.
-
-Actualizar `docs/audit-grade/08_traceability_matrix.md` sin declarar `PASS` donde falte evidencia.
-
-## 12. Limpieza
-
-El store es append-only; no se borran revisiones individuales. Si el resultado es inválido, capturar inventario/checksums, marcar la ejecución `FAIL` y eliminar únicamente el dataset shadow aislado:
-
-```bash
-bq rm -r -f -d "$PROJECT_ID:$SHADOW_DATASET"
+```text
+wp03_shadow_preflight.json
+wp03_shadow_backfill_plan.json
+wp03_shadow_backfill_execution.json
+wp03_shadow_evidence.json
+compilation result sanitizada
+workflow invocation IDs
+inventario before/after
+candidate branch/tree/snapshot metadata
 ```
 
-Nunca ejecutar este comando contra el dataset operativo.
+Actualizar `docs/audit-grade/evidence/WP-03.md` y
+`docs/audit-grade/08_traceability_matrix.md` según evidencia real.
 
 ## Stop conditions
 
 Detenerse ante:
 
-- SHA distinto o checkout sucio;
-- `defaultSchema` resuelto al dataset shadow;
-- `vars.operationalDataset` distinto de `$OPERATIONAL_DATASET`;
-- output WP-03 fuera de `$SHADOW_DATASET`;
-- DDL/DML contra `$OPERATIONAL_DATASET`;
+- SHA o CI distintos;
+- checkout sucio;
+- preflight distinto de PASS;
+- cualquiera de las seis fuentes ausente o sin columnas requeridas;
+- dependencia live hacia `legacy_result_registry`;
+- output fuera de shadow;
+- lectura legacy fuera del dataset operativo;
+- compilation result de otro tree/SHA;
 - schema drift;
-- una sola violación no-look-ahead;
+- checksum de plan distinto;
+- una violación no-look-ahead;
 - revision ID duplicado;
-- etiquetas ausentes;
-- intento de deploy;
-- incertidumbre sobre el destino.
+- intento de deploy o mutación productiva.
+
+No hacer merge, no cerrar #38 y no avanzar a WP-04 hasta revisión
+independiente.

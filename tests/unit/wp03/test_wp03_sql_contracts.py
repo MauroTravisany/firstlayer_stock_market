@@ -3,6 +3,8 @@ import unittest
 
 import yaml
 
+from tools import wp03_shadow_preflight as shadow_preflight
+
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFINITIONS = ROOT / "dataform" / "definitions"
@@ -35,7 +37,6 @@ OPERATIONAL_REF_SOURCES = (
     "valuation_model_profile",
     "trading_historical_context",
     "portfolio_valuation_daily",
-    "legacy_result_registry",
 )
 
 
@@ -80,6 +81,13 @@ class Wp03SqlContractTests(unittest.TestCase):
             earnings,
         )
 
+        invalidation = self.read("wp03_legacy_invalidation.sqlx")
+        self.assertNotIn('${ref("legacy_result_registry")}', invalidation)
+        self.assertNotIn(
+            'dependencies: ["legacy_result_registry"]', invalidation
+        )
+        self.assertIn("FROZEN_REPOSITORY_SNAPSHOT", invalidation)
+
         runbook = WP03_RUNBOOK.read_text(encoding="utf-8")
         self.assertIn(
             "NO sobrescribir `defaultSchema` con `$SHADOW_DATASET`", runbook
@@ -89,6 +97,10 @@ class Wp03SqlContractTests(unittest.TestCase):
         )
         self.assertIn(
             "`vars.operationalDataset` = `$OPERATIONAL_DATASET`", runbook
+        )
+        self.assertIn("wp03_shadow_preflight.py", runbook)
+        self.assertIn(
+            "`legacy_result_registry` no es una dependencia live", runbook
         )
 
     def test_financial_context_uses_canonical_quarters(self):
@@ -178,12 +190,23 @@ class Wp03SqlContractTests(unittest.TestCase):
         self.assertNotIn('"revision_number",', source)
         self.assertIn('"source_is_amendment",', source)
 
-    def test_legacy_results_are_explicitly_non_promotable(self):
-        sql = self.read("wp03_legacy_invalidation.sqlx")
-        self.assertIn("WP03_PIT_INVALIDATED", sql)
-        self.assertIn("FALSE AS promotion_eligible", sql)
-        self.assertIn("REQUIRES_RECOMPUTE_ON_WP03_PIT_SNAPSHOT", sql)
-        self.assertIn('"trading_brain_runs"', sql)
+    def test_legacy_results_are_frozen_and_non_promotable(self):
+        invalidation = self.read("wp03_legacy_invalidation.sqlx")
+        legacy_registry = self.read("legacy_result_registry.sqlx")
+        self.assertIn("WP03_PIT_INVALIDATED", invalidation)
+        self.assertIn("FALSE AS promotion_eligible", invalidation)
+        self.assertIn(
+            "REQUIRES_RECOMPUTE_ON_WP03_PIT_SNAPSHOT", invalidation
+        )
+        self.assertIn("FROZEN_REPOSITORY_SNAPSHOT", invalidation)
+        self.assertNotIn('${ref("legacy_result_registry")}', invalidation)
+        for result_family, source_table, checksum in (
+            shadow_preflight.FROZEN_AFFECTED_RESULTS
+        ):
+            with self.subTest(result_family=result_family):
+                for marker in (result_family, source_table, checksum):
+                    self.assertIn(marker, legacy_registry)
+                    self.assertIn(marker, invalidation)
 
     def test_dual_run_preserves_null_vs_zero_divergence(self):
         sql = self.read("wp03_legacy_vs_pit_shadow.sqlx")
