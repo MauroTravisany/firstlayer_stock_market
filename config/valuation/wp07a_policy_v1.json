@@ -1,0 +1,20 @@
+{
+  "cheap_upside_threshold": 0.15,
+  "expensive_downside_threshold": 0.15,
+  "fair_value_band": 0.1,
+  "max_interval_width_ratio": 1.5,
+  "max_value_trap_for_economic": 0.35,
+  "min_confidence": 0.45,
+  "min_model_count": 2,
+  "min_peer_count": 8,
+  "model_weights": {
+    "fcff": 1.0,
+    "relative": 1.0,
+    "residual_income": 1.0,
+    "reverse_dcf": 0.5
+  },
+  "policy_version": "wp07a-valuation-policy-v1",
+  "probability_threshold": 0.65,
+  "ridge_penalty": 1.0,
+  "value_trap_abstain_threshold": 0.75
+}
