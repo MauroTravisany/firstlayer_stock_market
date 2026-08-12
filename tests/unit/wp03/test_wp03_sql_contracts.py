@@ -1,15 +1,95 @@
 from pathlib import Path
 import unittest
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFINITIONS = ROOT / "dataform" / "definitions"
 FINANCIAL_FUNCTION = ROOT / "cloud-functions" / "financial_data"
+WORKFLOW_SETTINGS = ROOT / "dataform" / "workflow_settings.yaml"
+WP03_RUNBOOK = (
+    ROOT
+    / "docs"
+    / "audit-grade"
+    / "runbooks"
+    / "WP-03_PIT_SHADOW_VALIDATION.md"
+)
+WP03_OUTPUTS = (
+    "financial_statements_pit_raw",
+    "financial_statements_pit",
+    "financial_quarters_pit",
+    "financial_ttm_pit",
+    "earnings_events_pit",
+    "trading_financial_context_pit",
+    "trading_earnings_context_pit",
+    "portfolio_valuation_pit_shadow",
+    "trading_historical_context_pit",
+    "wp03_legacy_vs_pit_shadow",
+    "wp03_legacy_invalidation",
+    "audit_no_lookahead",
+)
+OPERATIONAL_REF_SOURCES = (
+    "trading_price_features",
+    "asset_profile",
+    "valuation_model_profile",
+    "trading_historical_context",
+    "portfolio_valuation_daily",
+    "legacy_result_registry",
+)
 
 
 class Wp03SqlContractTests(unittest.TestCase):
     def read(self, name):
         return (DEFINITIONS / name).read_text(encoding="utf-8")
+
+    def test_shadow_compilation_separates_inputs_from_outputs(self):
+        settings = yaml.safe_load(WORKFLOW_SETTINGS.read_text(encoding="utf-8"))
+        self.assertEqual("acciones_dataset", settings["defaultDataset"])
+        self.assertEqual(
+            "acciones_dataset", settings["vars"]["operationalDataset"]
+        )
+
+        for target in WP03_OUTPUTS:
+            with self.subTest(target=target):
+                sql = self.read(f"{target}.sqlx")
+                self.assertIn(
+                    "schema: dataform.projectConfig.vars.auditDataset", sql
+                )
+
+        for source in OPERATIONAL_REF_SOURCES:
+            with self.subTest(source=source):
+                sql = self.read(f"{source}.sqlx")
+                self.assertIn('schema: "acciones_dataset"', sql)
+
+        earnings = self.read("earnings_events_pit.sqlx")
+        operational_calendar = (
+            "`${dataform.projectConfig.defaultDatabase}."
+            "${dataform.projectConfig.vars.operationalDataset}."
+            "macro_earnings_calendar`"
+        )
+        self.assertIn(operational_calendar, earnings)
+        self.assertNotIn(
+            "${dataform.projectConfig.vars.auditDataset}."
+            "macro_earnings_calendar",
+            earnings,
+        )
+        self.assertNotIn(
+            "${dataform.projectConfig.defaultSchema}."
+            "macro_earnings_calendar",
+            earnings,
+        )
+
+        runbook = WP03_RUNBOOK.read_text(encoding="utf-8")
+        self.assertIn(
+            "NO sobrescribir `defaultSchema` con `$SHADOW_DATASET`", runbook
+        )
+        self.assertIn(
+            "`vars.auditDataset` = `$SHADOW_DATASET`", runbook
+        )
+        self.assertIn(
+            "`vars.operationalDataset` = `$OPERATIONAL_DATASET`", runbook
+        )
 
     def test_financial_context_uses_canonical_quarters(self):
         sql = self.read("trading_financial_context_pit.sqlx")

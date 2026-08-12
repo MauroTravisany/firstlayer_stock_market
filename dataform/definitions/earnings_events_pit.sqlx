@@ -46,7 +46,7 @@ WITH observations AS (
       source,
       loaded_at
     )))) AS observation_hash
-  FROM `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.defaultSchema}.macro_earnings_calendar`
+  FROM `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.vars.operationalDataset}.macro_earnings_calendar`
   WHERE loaded_at IS NOT NULL
 ),
 expanded AS (

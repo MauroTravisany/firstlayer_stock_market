@@ -11,6 +11,8 @@ environment=shadow
 work_package=wp03
 ```
 
+Las fuentes legacy que WP-03 necesita para construir el dual-run permanecen en el dataset operativo y se consumen en modo read-only. El dataset de lectura y el dataset de salida son límites distintos.
+
 ## Invariantes no negociables
 
 - checkout limpio del SHA exacto aprobado;
@@ -22,6 +24,8 @@ work_package=wp03
 - no se ejecuta `terraform apply`;
 - no se actualiza Dataform `production`;
 - no se escribe en `acciones_dataset` ni en otro dataset operativo;
+- las lecturas legacy autorizadas provienen únicamente de `acciones_dataset`;
+- `vars.auditDataset` y `vars.operationalDataset` nunca pueden apuntar al mismo dataset durante la validación shadow;
 - no se sintetiza `available_at` desde `filing_date` o `period_end_date`;
 - ningún resultado legacy se vuelve promocionable.
 
@@ -32,6 +36,7 @@ export FINAL_SHA=<SHA_EXACTO_REVISADO>
 export CI_RUN_ID=<CI_RUN_DEL_SHA_EXACTO>
 export PROJECT_ID=<PROYECTO_GCP>
 export LOCATION=us-east1
+export OPERATIONAL_DATASET=acciones_dataset
 export SHADOW_DATASET=acciones_dataset_shadow_wp03
 export SEC_USER_AGENT='firstlayer-stock-market/1.0 contacto@example.com'
 export MAPPING_VERSION=sec-company-tickers-2026-08-11-v1
@@ -76,12 +81,26 @@ Todos los comandos deben devolver `0`. No continuar si el SHA o el árbol de tra
 ```bash
 gcloud config get-value project
 bq show --format=prettyjson "$PROJECT_ID:$SHADOW_DATASET" || true
-bq show --format=prettyjson "$PROJECT_ID:acciones_dataset"
+bq show --format=prettyjson "$PROJECT_ID:$OPERATIONAL_DATASET"
 gcloud run services list --project "$PROJECT_ID" --region "$LOCATION"
 gcloud scheduler jobs list --project "$PROJECT_ID" --location "$LOCATION"
 ```
 
 Guardar salidas sanitizadas fuera del checkout. No imprimir secretos.
+
+Las únicas tablas operativas autorizadas como inputs read-only de WP-03 son:
+
+```text
+macro_earnings_calendar
+trading_price_features
+asset_profile
+valuation_model_profile
+trading_historical_context
+portfolio_valuation_daily
+legacy_result_registry
+```
+
+No materializar ni copiar estas tablas al dataset shadow como workaround.
 
 ## 3. Dataset aislado
 
@@ -99,9 +118,28 @@ bq show --format=prettyjson "$PROJECT_ID:$SHADOW_DATASET"
 
 Debe observarse `shadow` en el ID y ambas etiquetas exactas.
 
-## 4. Materialización Dataform limitada
+## 4. Compilación Dataform con separación input/output
 
-Compilar desde `FINAL_SHA` con overrides hacia `$SHADOW_DATASET`. No actualizar `dataform-production` ni el release `production`.
+La compilation result debe preservar dos destinos diferentes:
+
+```text
+defaultDatabase = $PROJECT_ID
+defaultSchema = $OPERATIONAL_DATASET
+vars.auditDataset = $SHADOW_DATASET
+vars.operationalDataset = $OPERATIONAL_DATASET
+vars.environment = shadow
+vars.financialMappingVersion = $MAPPING_VERSION
+```
+
+Reglas obligatorias:
+
+- NO sobrescribir `defaultSchema` con `$SHADOW_DATASET`;
+- `vars.auditDataset` = `$SHADOW_DATASET`;
+- `vars.operationalDataset` = `$OPERATIONAL_DATASET`;
+- todos los outputs WP-03 usan explícitamente `vars.auditDataset`;
+- `macro_earnings_calendar` se resuelve mediante `vars.operationalDataset`;
+- los demás inputs legacy tienen schema explícito `acciones_dataset`;
+- no actualizar `dataform-production`, release config `production` ni workflow config `production`.
 
 Targets autorizados:
 
@@ -123,14 +161,32 @@ audit_no_lookahead
 Antes de ejecutar, inspeccionar la compilation result y demostrar:
 
 - cero compilation errors;
-- database = `$PROJECT_ID`;
-- schema = `$SHADOW_DATASET` para cada target WP-03;
-- ningún target apunta al dataset operativo;
-- no se modifica Cloud Run, Scheduler, IAM ni Secret Manager.
+- cada **output** autorizado apunta a `$PROJECT_ID.$SHADOW_DATASET`;
+- cada **lectura legacy** autorizada apunta a `$PROJECT_ID.$OPERATIONAL_DATASET`;
+- ninguna sentencia DDL/DML escribe en `$PROJECT_ID.$OPERATIONAL_DATASET`;
+- ninguna acción modifica Cloud Run, Scheduler, IAM o Secret Manager.
 
-Guardar `compilation_result_id`, SHA y targets en `$WP03_EVIDENCE_TMP`.
+Guardar `compilation_result_id`, SHA, targets y tabla de inputs/outputs en `$WP03_EVIDENCE_TMP`.
 
-## 5. Plan SEC sin escritura
+No usar `transitiveDependenciesIncluded=true`. Las dependencias legacy se leen, no se ejecutan ni materializan durante esta validación.
+
+## 5. Materializar solo la tabla raw
+
+Ejecutar primero únicamente:
+
+```text
+financial_statements_pit_raw
+```
+
+Verificar que fue creada exactamente en:
+
+```text
+$PROJECT_ID.$SHADOW_DATASET.financial_statements_pit_raw
+```
+
+Comparar su schema con `contracts/financial_statements_pit_raw.yaml`. Debe existir cero schema drift.
+
+## 6. Plan SEC sin escritura
 
 ```bash
 python tools/wp03_shadow_backfill.py \
@@ -148,11 +204,9 @@ export WP03_PLAN_CHECKSUM="$(python -c 'import json,sys; print(json.load(open(sy
 
 Revisar mapping version/checksum, tickers, rango, límite, conteos, razones de rechazo, `revision_set_sha256`, `plan_checksum` y `production_change_allowed=false`.
 
-El output se guarda en `/tmp` para mantener limpio el checkout. No ejecutar si aparecen tickers inesperados, una versión distinta, más filas que el límite o cero filas por error de fuente.
+No ejecutar si aparecen tickers inesperados, una versión distinta, más filas que el límite o cero filas por error de fuente.
 
-## 6. Backfill append-only vinculado al plan
-
-La ejecución vuelve a consultar SEC y debe reconstruir exactamente el checksum aprobado. Cualquier cambio de inputs o fuente bloquea la escritura.
+## 7. Backfill append-only vinculado al plan
 
 ```bash
 python tools/wp03_shadow_backfill.py \
@@ -175,9 +229,25 @@ python tools/wp03_shadow_backfill.py \
 
 La herramienta debe rechazar checkout sucio/SHA distinto, checksum distinto, dataset sin `shadow`, etiquetas incorrectas, schema distinto, otro table ID, más de 10 tickers, más de 10 años o más de 10.000 filas.
 
-## 7. Evidencia automática read-only
+## 8. Materializar el resto del grafo
 
-Después de materializar todos los targets WP-03:
+Después del backfill, ejecutar los targets restantes en orden de dependencia y sin dependencias transitivas:
+
+1. `financial_statements_pit`
+2. `financial_quarters_pit`
+3. `financial_ttm_pit`
+4. `earnings_events_pit`
+5. `trading_financial_context_pit`
+6. `trading_earnings_context_pit`
+7. `portfolio_valuation_pit_shadow`
+8. `trading_historical_context_pit`
+9. `wp03_legacy_vs_pit_shadow`
+10. `wp03_legacy_invalidation`
+11. `audit_no_lookahead`
+
+Después de cada grupo, comprobar destino, estado y ausencia de escritura operativa.
+
+## 9. Evidencia automática read-only
 
 ```bash
 python tools/wp03_shadow_evidence.py \
@@ -191,34 +261,50 @@ python tools/wp03_shadow_evidence.py \
   --output "$WP03_EVIDENCE_TMP/wp03_shadow_evidence.json"
 ```
 
-La herramienta solo ejecuta consultas `SELECT`/`WITH`, exige checkout exacto y limpio, valida etiquetas y ubicación, compara el schema raw con el contrato y devuelve exit code `0` solo si todos los hard gates pasan.
+La herramienta exige checkout exacto y limpio, valida etiquetas, ubicación, tablas y schema raw, y devuelve exit code `0` solo si todos los hard gates pasan.
 
-Controles incluidos:
+Criterios mínimos:
 
-- unicidad de `revision_id`;
-- filas de la mapping version objetivo;
-- disponibilidad y quality status canónicos;
-- Q4 y lineage de componentes;
-- TTM consecutivo y de una moneda;
-- EXPECTED/REPORTED earnings;
-- valoración sin múltiplos negativos ni aritmética cross-currency;
-- `audit_no_lookahead = 0`;
-- comparación legacy/PIT no promocionable;
-- invalidación legacy completa.
+- `evaluation.status = PASS`;
+- `hard_gate_count = 0`;
+- `audit_no_lookahead.violation_count = 0`;
+- revision IDs únicos;
+- cero availability mismatch;
+- cero TTM complete inválido;
+- cero earnings retroactivo;
+- cero múltiplo negativo o aritmética cross-currency;
+- cero filas promocionables en comparación e invalidación.
 
-## 8. Evidencia documental
+No existe allowlist para una violación point-in-time.
+
+## 10. Verificación de no mutación
+
+Repetir el inventario inicial y demostrar:
+
+- workflow de deploy sigue deshabilitado;
+- Strategy Brain sigue pausado;
+- Cloud Run y schedulers no cambiaron;
+- no hubo Terraform apply;
+- no hubo IAM/Secret Manager mutation;
+- no hubo Dataform production update;
+- no hubo broker call;
+- no hubo escritura en `$OPERATIONAL_DATASET`;
+- solo se escribió en `$SHADOW_DATASET`.
+
+## 11. Evidencia documental
 
 Después de terminar las operaciones que exigen checkout limpio, copiar los JSON desde `/tmp` al repositorio y registrar en `docs/audit-grade/evidence/WP-03.md`:
 
 - SHA exacto y CI run;
-- project/location/dataset shadow y etiquetas;
+- project/location/datasets de lectura y escritura;
+- labels shadow;
 - compilation result y targets;
+- inputs operativos read-only;
 - mapping version/checksum;
 - checksum del plan;
 - filas staged/inserted/eligible/rejected;
 - checksum del conjunto de revisiones;
 - checksum de evidencia;
-- controles de integridad;
 - `audit_no_lookahead = 0`;
 - divergencias legacy/PIT;
 - confirmación de no deploy/no scheduler/no broker/no producción;
@@ -226,7 +312,7 @@ Después de terminar las operaciones que exigen checkout limpio, copiar los JSON
 
 Actualizar `docs/audit-grade/08_traceability_matrix.md` sin declarar `PASS` donde falte evidencia.
 
-## 9. Limpieza
+## 12. Limpieza
 
 El store es append-only; no se borran revisiones individuales. Si el resultado es inválido, capturar inventario/checksums, marcar la ejecución `FAIL` y eliminar únicamente el dataset shadow aislado:
 
@@ -238,4 +324,16 @@ Nunca ejecutar este comando contra el dataset operativo.
 
 ## Stop conditions
 
-Detenerse ante SHA distinto, checkout sucio, checksum de plan distinto, target fuera de shadow, schema drift, una sola violación no-look-ahead, revision ID duplicado, etiquetas ausentes, intento de deploy o incertidumbre sobre el destino.
+Detenerse ante:
+
+- SHA distinto o checkout sucio;
+- `defaultSchema` resuelto al dataset shadow;
+- `vars.operationalDataset` distinto de `$OPERATIONAL_DATASET`;
+- output WP-03 fuera de `$SHADOW_DATASET`;
+- DDL/DML contra `$OPERATIONAL_DATASET`;
+- schema drift;
+- una sola violación no-look-ahead;
+- revision ID duplicado;
+- etiquetas ausentes;
+- intento de deploy;
+- incertidumbre sobre el destino.
