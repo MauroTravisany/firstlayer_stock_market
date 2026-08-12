@@ -28,7 +28,15 @@ jobs:
         run: |
           set -euo pipefail
           test -d .wp03_schema_payload
-          cat .wp03_schema_payload/chunk_* | base64 --decode > /tmp/wp03-schema-preflight.tar.gz
+          cat \
+            .wp03_schema_payload/chunk_01 \
+            .wp03_schema_payload/chunk_02 \
+            .wp03_schema_payload/chunk_03a \
+            .wp03_schema_payload/chunk_03b_0 \
+            .wp03_schema_payload/chunk_03b_1 \
+            .wp03_schema_payload/chunk_03b_2 \
+            .wp03_schema_payload/chunk_04 \
+            | base64 --decode > /tmp/wp03-schema-preflight.tar.gz
           echo '8e5d67fd51b6b64e6062efbb6aae6194cf0d50a6b546634021e26eb3a95fd19e  /tmp/wp03-schema-preflight.tar.gz' | sha256sum --check
           tar -xzf /tmp/wp03-schema-preflight.tar.gz -C .
           rm -rf .wp03_schema_payload .github/workflows/apply-wp03-schema-preflight.yml
