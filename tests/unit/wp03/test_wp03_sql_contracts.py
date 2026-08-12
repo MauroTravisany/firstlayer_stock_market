@@ -92,11 +92,9 @@ class Wp03SqlContractTests(unittest.TestCase):
         self.assertIn(
             "NO sobrescribir `defaultSchema` con `$SHADOW_DATASET`", runbook
         )
+        self.assertIn("vars.auditDataset = $SHADOW_DATASET", runbook)
         self.assertIn(
-            "`vars.auditDataset` = `$SHADOW_DATASET`", runbook
-        )
-        self.assertIn(
-            "`vars.operationalDataset` = `$OPERATIONAL_DATASET`", runbook
+            "vars.operationalDataset = $OPERATIONAL_DATASET", runbook
         )
         self.assertIn("wp03_shadow_preflight.py", runbook)
         self.assertIn(

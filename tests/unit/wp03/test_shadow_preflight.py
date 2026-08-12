@@ -117,8 +117,8 @@ class Wp03ShadowPreflightTests(unittest.TestCase):
         ):
             preflight.validate_scope(
                 "stocks-437902",
-                "acciones_dataset",
-                "acciones_dataset",
+                "acciones_dataset_shadow_wp03",
+                "acciones_dataset_shadow_wp03",
                 "us-east1",
             )
         with self.assertRaisesRegex(
