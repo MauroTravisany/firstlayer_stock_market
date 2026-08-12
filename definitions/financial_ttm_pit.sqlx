@@ -1,0 +1,102 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "financial_ttm_pit",
+  description: "Trailing-four-consecutive-quarter financial metrics rebuilt for each signal timestamp from canonical PIT quarters only.",
+  tags: ["audit-grade", "pit", "financials", "ttm", "wp03"],
+  bigquery: {
+    partitionBy: "analysis_date",
+    clusterBy: ["ticker"]
+  },
+  assertions: {
+    nonNull: ["analysis_date", "signal_hour", "signal_timestamp", "ticker"],
+    uniqueKey: ["analysis_date", "signal_hour", "ticker"],
+    rowConditions: [
+      "latest_financial_available_at IS NULL OR latest_financial_available_at <= signal_timestamp"
+    ]
+  },
+  dependencies: ["financial_quarters_pit"]
+}
+
+WITH ranked_quarters AS (
+  SELECT
+    q.*,
+    fiscal_year * 4 + fiscal_quarter AS fiscal_quarter_ordinal,
+    ROW_NUMBER() OVER (
+      PARTITION BY analysis_date, signal_hour, ticker
+      ORDER BY fiscal_year DESC, fiscal_quarter DESC, period_end_date DESC
+    ) AS quarter_recency
+  FROM ${ref("financial_quarters_pit")} q
+),
+last_four AS (
+  SELECT *
+  FROM ranked_quarters
+  WHERE quarter_recency <= 4
+),
+aggregated AS (
+  SELECT
+    analysis_date,
+    signal_hour,
+    ANY_VALUE(signal_timestamp) AS signal_timestamp,
+    ticker,
+    COUNT(*) AS quarter_count,
+    COUNT(DISTINCT fiscal_quarter_ordinal) AS distinct_quarter_count,
+    MAX(fiscal_quarter_ordinal) - MIN(fiscal_quarter_ordinal) AS quarter_ordinal_span,
+    COUNT(DISTINCT currency) AS currency_count,
+    ARRAY_AGG(currency ORDER BY fiscal_quarter_ordinal DESC LIMIT 1)[SAFE_OFFSET(0)] AS currency,
+    COUNTIF(quarter_structure_complete) AS normalized_quarter_count,
+    COUNTIF(revenue IS NOT NULL) AS revenue_quarter_count,
+    COUNTIF(net_income IS NOT NULL) AS net_income_quarter_count,
+    COUNTIF(gross_profit IS NOT NULL) AS gross_profit_quarter_count,
+    COUNTIF(operating_income IS NOT NULL) AS operating_income_quarter_count,
+    COUNTIF(eps_diluted IS NOT NULL) AS eps_diluted_quarter_count,
+    MAX(available_at) AS latest_financial_available_at,
+    ARRAY_AGG(revision_id ORDER BY fiscal_year DESC, fiscal_quarter DESC) AS ttm_revision_ids,
+    ARRAY_AGG(revision_number ORDER BY fiscal_year DESC, fiscal_quarter DESC) AS ttm_revision_numbers,
+    ARRAY_AGG(is_restated ORDER BY fiscal_year DESC, fiscal_quarter DESC) AS ttm_restatement_flags,
+    ARRAY_AGG(mapping_version ORDER BY fiscal_year DESC, fiscal_quarter DESC) AS ttm_mapping_versions,
+    ARRAY_AGG(quarter_value_basis ORDER BY fiscal_year DESC, fiscal_quarter DESC) AS ttm_value_basis,
+    TO_JSON_STRING(
+      ARRAY_AGG(
+        STRUCT(
+          fiscal_year,
+          fiscal_quarter,
+          revision_id,
+          derivation_component_revision_ids
+        )
+        ORDER BY fiscal_year DESC, fiscal_quarter DESC
+      )
+    ) AS ttm_derivation_lineage_json,
+    IF(COUNTIF(revenue IS NOT NULL) = 4, SUM(revenue), NULL) AS revenue_ttm,
+    IF(COUNTIF(gross_profit IS NOT NULL) = 4, SUM(gross_profit), NULL) AS gross_profit_ttm,
+    IF(COUNTIF(operating_income IS NOT NULL) = 4, SUM(operating_income), NULL) AS operating_income_ttm,
+    IF(COUNTIF(net_income IS NOT NULL) = 4, SUM(net_income), NULL) AS net_income_ttm,
+    IF(COUNTIF(eps_diluted IS NOT NULL) = 4, SUM(eps_diluted), NULL) AS eps_diluted_ttm,
+    ARRAY_AGG(total_assets IGNORE NULLS ORDER BY fiscal_year DESC, fiscal_quarter DESC LIMIT 1)[SAFE_OFFSET(0)] AS total_assets_latest,
+    ARRAY_AGG(total_liabilities IGNORE NULLS ORDER BY fiscal_year DESC, fiscal_quarter DESC LIMIT 1)[SAFE_OFFSET(0)] AS total_liabilities_latest,
+    ARRAY_AGG(total_debt IGNORE NULLS ORDER BY fiscal_year DESC, fiscal_quarter DESC LIMIT 1)[SAFE_OFFSET(0)] AS total_debt_latest,
+    ARRAY_AGG(cash_and_equivalents IGNORE NULLS ORDER BY fiscal_year DESC, fiscal_quarter DESC LIMIT 1)[SAFE_OFFSET(0)] AS cash_and_equivalents_latest,
+    ARRAY_AGG(shares_outstanding IGNORE NULLS ORDER BY fiscal_year DESC, fiscal_quarter DESC LIMIT 1)[SAFE_OFFSET(0)] AS shares_outstanding_latest,
+    ARRAY_AGG(shareholders_equity IGNORE NULLS ORDER BY fiscal_year DESC, fiscal_quarter DESC LIMIT 1)[SAFE_OFFSET(0)] AS shareholders_equity_latest
+  FROM last_four
+  GROUP BY analysis_date, signal_hour, ticker
+),
+completed AS (
+  SELECT
+    *,
+    quarter_count = 4
+      AND distinct_quarter_count = 4
+      AND quarter_ordinal_span = 3
+      AND currency_count = 1
+      AND normalized_quarter_count = 4
+      AND revenue_quarter_count = 4
+      AND net_income_quarter_count = 4 AS ttm_complete
+  FROM aggregated
+)
+SELECT
+  *,
+  IF(ttm_complete, SAFE_DIVIDE(net_income_ttm, NULLIF(revenue_ttm, 0)), NULL) AS net_margin_ttm,
+  IF(ttm_complete, SAFE_DIVIDE(gross_profit_ttm, NULLIF(revenue_ttm, 0)), NULL) AS gross_margin_ttm,
+  IF(ttm_complete, SAFE_DIVIDE(operating_income_ttm, NULLIF(revenue_ttm, 0)), NULL) AS operating_margin_ttm,
+  SAFE_DIVIDE(total_debt_latest, NULLIF(shareholders_equity_latest, 0)) AS debt_to_equity_latest
+FROM completed

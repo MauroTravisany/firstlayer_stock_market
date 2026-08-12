@@ -1,0 +1,113 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "wp03_legacy_vs_pit_shadow",
+  description: "Shadow-only comparison between legacy fundamental/earnings context and WP-03 PIT-safe context. Divergence is diagnostic evidence, never promotion evidence.",
+  tags: ["audit-grade", "pit", "shadow", "dual-run", "wp03"],
+  bigquery: {
+    partitionBy: "analysis_date",
+    clusterBy: ["ticker", "pit_divergence_type"]
+  },
+  assertions: {
+    nonNull: ["analysis_date", "signal_hour", "ticker", "pit_divergence_type"],
+    uniqueKey: ["analysis_date", "signal_hour", "ticker"]
+  },
+  dependencies: ["trading_historical_context", "trading_historical_context_pit", "portfolio_valuation_daily", "portfolio_valuation_pit_shadow"]
+}
+
+WITH legacy AS (
+  SELECT
+    analysis_date,
+    signal_hour,
+    ticker,
+    period_end_date AS legacy_period_end_date,
+    report_date AS legacy_report_date,
+    revenue_yoy AS legacy_revenue_yoy,
+    company_lifecycle_context AS legacy_lifecycle_context,
+    earnings_event_status AS legacy_earnings_event_status
+  FROM ${ref("trading_historical_context")}
+),
+pit AS (
+  SELECT
+    analysis_date,
+    signal_hour,
+    ticker,
+    financial_revision_id AS pit_financial_revision_id,
+    financial_available_at AS pit_financial_available_at,
+    revenue_yoy AS pit_revenue_yoy,
+    company_lifecycle_context AS pit_lifecycle_context,
+    earnings_event_status AS pit_earnings_event_status,
+    promotion_mode,
+    production_change_allowed
+  FROM ${ref("trading_historical_context_pit")}
+),
+legacy_valuation AS (
+  SELECT
+    analysis_date,
+    ticker,
+    classification AS legacy_classification,
+    valuation_score AS legacy_valuation_score
+  FROM ${ref("portfolio_valuation_daily")}
+),
+pit_valuation AS (
+  SELECT
+    analysis_date,
+    signal_hour,
+    ticker,
+    classification_pit,
+    valuation_score_pit,
+    ttm_complete,
+    latest_financial_available_at
+  FROM ${ref("portfolio_valuation_pit_shadow")}
+)
+SELECT
+  p.analysis_date,
+  p.signal_hour,
+  p.ticker,
+  l.legacy_period_end_date,
+  l.legacy_report_date,
+  p.pit_financial_revision_id,
+  p.pit_financial_available_at,
+  l.legacy_revenue_yoy,
+  p.pit_revenue_yoy,
+  l.legacy_lifecycle_context,
+  p.pit_lifecycle_context,
+  l.legacy_earnings_event_status,
+  p.pit_earnings_event_status,
+  lv.legacy_classification,
+  lv.legacy_valuation_score,
+  pv.classification_pit,
+  pv.valuation_score_pit,
+  pv.ttm_complete,
+  pv.latest_financial_available_at,
+  CASE
+    WHEN l.ticker IS NULL THEN "PIT_ONLY"
+    WHEN p.pit_financial_revision_id IS NULL
+      AND l.legacy_period_end_date IS NOT NULL
+      THEN "LEGACY_USED_UNVERIFIABLE_FINANCIAL"
+    WHEN COALESCE(l.legacy_earnings_event_status, "NA")
+      != COALESCE(p.pit_earnings_event_status, "NA")
+      THEN "EARNINGS_CONTEXT_CHANGED"
+    WHEN COALESCE(lv.legacy_classification, "NA")
+      != COALESCE(pv.classification_pit, "NA")
+      THEN "VALUATION_CLASSIFICATION_CHANGED"
+    WHEN (l.legacy_revenue_yoy IS NULL AND p.pit_revenue_yoy IS NOT NULL)
+      OR (l.legacy_revenue_yoy IS NOT NULL AND p.pit_revenue_yoy IS NULL)
+      THEN "FUNDAMENTAL_AVAILABILITY_CHANGED"
+    WHEN l.legacy_revenue_yoy IS NOT NULL
+      AND p.pit_revenue_yoy IS NOT NULL
+      AND ABS(l.legacy_revenue_yoy - p.pit_revenue_yoy) > 0.000001
+      THEN "FUNDAMENTAL_GROWTH_CHANGED"
+    ELSE "NO_MATERIAL_DIFFERENCE"
+  END AS pit_divergence_type,
+  "DIAGNOSTIC_ONLY" AS comparison_use,
+  FALSE AS promotion_eligible,
+  CURRENT_TIMESTAMP() AS compared_at
+FROM pit p
+LEFT JOIN legacy l
+  USING (analysis_date, signal_hour, ticker)
+LEFT JOIN legacy_valuation lv
+  ON lv.analysis_date = p.analysis_date
+ AND lv.ticker = p.ticker
+LEFT JOIN pit_valuation pv
+  USING (analysis_date, signal_hour, ticker)

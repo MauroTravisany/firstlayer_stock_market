@@ -1,0 +1,94 @@
+config {
+  type: "assertion",
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "audit_no_lookahead",
+  description: "Fails if any financial, earnings, Q4-derivation or valuation-price observation consumed by WP-03 is newer than the UTC signal timestamp or parent annual filing that consumed it.",
+  tags: ["audit-grade", "pit", "assertion", "wp03"],
+  dependencies: ["financial_quarters_pit", "trading_financial_context_pit", "trading_earnings_context_pit", "portfolio_valuation_pit_shadow"]
+}
+
+SELECT
+  "FINANCIAL_AVAILABLE_AFTER_SIGNAL" AS violation,
+  ticker,
+  signal_timestamp AS evaluated_at,
+  available_at
+FROM ${ref("trading_financial_context_pit")}
+WHERE available_at IS NOT NULL
+  AND available_at > signal_timestamp
+
+UNION ALL
+
+SELECT
+  "PRIOR_YEAR_FINANCIAL_AVAILABLE_AFTER_SIGNAL" AS violation,
+  ticker,
+  signal_timestamp AS evaluated_at,
+  prior_year_available_at AS available_at
+FROM ${ref("trading_financial_context_pit")}
+WHERE prior_year_available_at IS NOT NULL
+  AND prior_year_available_at > signal_timestamp
+
+UNION ALL
+
+SELECT
+  "Q4_COMPONENT_AVAILABLE_AFTER_ANNUAL_FILING" AS violation,
+  ticker,
+  available_at AS evaluated_at,
+  derivation_component_max_available_at AS available_at
+FROM ${ref("financial_quarters_pit")}
+WHERE derivation_component_max_available_at IS NOT NULL
+  AND derivation_component_max_available_at > available_at
+
+UNION ALL
+
+SELECT
+  "Q4_COMPONENT_AVAILABLE_AFTER_SIGNAL" AS violation,
+  ticker,
+  signal_timestamp AS evaluated_at,
+  derivation_component_max_available_at AS available_at
+FROM ${ref("financial_quarters_pit")}
+WHERE derivation_component_max_available_at IS NOT NULL
+  AND derivation_component_max_available_at > signal_timestamp
+
+UNION ALL
+
+SELECT
+  "EXPECTED_EARNINGS_AVAILABLE_AFTER_SIGNAL" AS violation,
+  ticker,
+  signal_timestamp_utc AS evaluated_at,
+  expected_available_at AS available_at
+FROM ${ref("trading_earnings_context_pit")}
+WHERE expected_available_at IS NOT NULL
+  AND expected_available_at > signal_timestamp_utc
+
+UNION ALL
+
+SELECT
+  "REPORTED_EARNINGS_AVAILABLE_AFTER_SIGNAL" AS violation,
+  ticker,
+  signal_timestamp_utc AS evaluated_at,
+  reported_available_at AS available_at
+FROM ${ref("trading_earnings_context_pit")}
+WHERE reported_available_at IS NOT NULL
+  AND reported_available_at > signal_timestamp_utc
+
+UNION ALL
+
+SELECT
+  "VALUATION_FINANCIAL_AVAILABLE_AFTER_SIGNAL" AS violation,
+  ticker,
+  signal_timestamp_utc AS evaluated_at,
+  latest_financial_available_at AS available_at
+FROM ${ref("portfolio_valuation_pit_shadow")}
+WHERE latest_financial_available_at IS NOT NULL
+  AND latest_financial_available_at > signal_timestamp_utc
+
+UNION ALL
+
+SELECT
+  "VALUATION_PRICE_AVAILABLE_AFTER_SIGNAL" AS violation,
+  ticker,
+  signal_timestamp_utc AS evaluated_at,
+  valuation_price_available_at AS available_at
+FROM ${ref("portfolio_valuation_pit_shadow")}
+WHERE valuation_price_available_at IS NOT NULL
+  AND valuation_price_available_at > signal_timestamp_utc
