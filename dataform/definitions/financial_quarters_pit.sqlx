@@ -33,7 +33,7 @@ available_revisions AS (
     p.signal_hour,
     p.signal_timestamp,
     p.ticker,
-    s.*,
+    s.* EXCEPT (ticker),
     ROW_NUMBER() OVER (
       PARTITION BY p.analysis_date, p.signal_hour, p.ticker, s.fiscal_year, s.fiscal_quarter
       ORDER BY s.available_at DESC, s.revision_number DESC, s.revision_id DESC
