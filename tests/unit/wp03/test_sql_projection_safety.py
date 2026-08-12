@@ -5,6 +5,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFINITIONS = ROOT / "dataform" / "definitions"
+SEMANTIC_TOOL = ROOT / "tools" / "wp03_compiled_sql_semantic_preflight.py"
 DRY_RUN_RUNBOOK = (
     ROOT
     / "docs"
@@ -67,14 +68,20 @@ class Wp03SqlProjectionSafetyTests(unittest.TestCase):
                     ),
                 )
 
-    def test_aggregated_bigquery_dry_run_covers_every_wp03_action(self):
+    def test_schema_graph_preflight_covers_every_wp03_action(self):
         runbook = DRY_RUN_RUNBOOK.read_text(encoding="utf-8")
+        tool = SEMANTIC_TOOL.read_text(encoding="utf-8")
         self.assertIn("dryRun=true", runbook)
         self.assertIn("useLegacySql=false", runbook)
-        self.assertIn("ALL_COMPILED_ACTIONS_DRY_RUN_PASS", runbook)
+        self.assertIn("WP03_SCHEMA_VALIDATION_WRITE", runbook)
+        self.assertIn("ALL_COMPILED_ACTIONS_SCHEMA_GRAPH_PASS", runbook)
+        self.assertIn("ZERO_ROW_SCHEMA_VIEW", runbook)
+        self.assertIn("ALL_COMPILED_ACTIONS_SCHEMA_GRAPH_PASS", tool)
+        self.assertIn("validation_dataset_only", tool)
         for target in WP03_OUTPUTS:
             with self.subTest(target=target):
                 self.assertIn(f"`{target}`", runbook)
+                self.assertIn(f'"{target}"', tool)
 
 
 if __name__ == "__main__":
