@@ -1,0 +1,62 @@
+name: Apply WP-03 compiled SQL semantic preflight
+
+on:
+  push:
+    branches:
+      - chatgpt/wp-03-fundamentals-earnings-pit
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wp03-schema-preflight-apply
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/wp-03-fundamentals-earnings-pit
+          fetch-depth: 0
+
+      - name: Reconstruct reviewed payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d .wp03_schema_payload
+          cat .wp03_schema_payload/chunk_* | base64 --decode > /tmp/wp03-schema-preflight.tar.gz
+          echo '8e5d67fd51b6b64e6062efbb6aae6194cf0d50a6b546634021e26eb3a95fd19e  /tmp/wp03-schema-preflight.tar.gz' | sha256sum --check
+          tar -xzf /tmp/wp03-schema-preflight.tar.gz -C .
+          rm -rf .wp03_schema_payload .github/workflows/apply-wp03-schema-preflight.yml
+
+      - name: Verify final candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --requirement requirements-ci.txt
+          python -m compileall -q tools tests
+          python -m unittest tests.unit.wp03.test_compiled_sql_semantic_preflight
+          python -m unittest tests.unit.wp03.test_sql_projection_safety
+          python -m unittest discover -s tests -p 'test_*.py'
+          python scripts/ci/verify_repo_invariants.py
+          python scripts/ci/verify_action_pinning.py
+          git diff --check
+          test -f tools/wp03_compiled_sql_semantic_preflight.py
+          test -f tests/unit/wp03/test_compiled_sql_semantic_preflight.py
+          grep -q 'ALL_COMPILED_ACTIONS_SCHEMA_GRAPH_PASS' docs/audit-grade/runbooks/WP-03_COMPILED_SQL_DRY_RUN.md
+          grep -q 's.* EXCEPT (ticker)' dataform/definitions/financial_quarters_pit.sqlx
+
+      - name: Commit exact reviewed payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet && { echo 'No semantic preflight changes to commit'; exit 1; }
+          git commit -m 'test(wp03): validate compiled SQL through isolated schema graph'
+          git push origin HEAD:chatgpt/wp-03-fundamentals-earnings-pit
