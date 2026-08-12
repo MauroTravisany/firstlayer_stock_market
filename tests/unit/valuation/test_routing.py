@@ -12,8 +12,8 @@ def lineage(version):
         model_version=version,
         source_cutoff_at=dt.datetime(2026, 8, 12, tzinfo=dt.timezone.utc),
         currency="USD",
-        peer_universe_hash="8" * 64,
         configuration_hash="7" * 64,
+        peer_universe_hash="8" * 64,
     )
 
 
@@ -79,10 +79,7 @@ class RoutingTests(unittest.TestCase):
         self.assertIn("pe-v1", result.forbidden_models)
 
     def test_etf_route_uses_nav_not_pe(self):
-        valid = validate_model_route(
-            EntityType.ETF,
-            (model("nav-v1", "etf_nav"),),
-        )
+        valid = validate_model_route(EntityType.ETF, (model("nav-v1", "etf_nav"),))
         self.assertEqual("PASS", valid.status)
         invalid = validate_model_route(
             EntityType.ETF,

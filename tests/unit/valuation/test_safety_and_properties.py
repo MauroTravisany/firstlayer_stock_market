@@ -1,12 +1,13 @@
 import datetime as dt
-import random
 from pathlib import Path
+import random
 import unittest
 
 from packages.valuation.ensemble import combine_valuation_models
 from packages.valuation.intrinsic import DcfScenario, discounted_cash_flow_value
 from packages.valuation.models import (
     ModelDistribution,
+    PriceObservation,
     QualityAssessment,
     QualityState,
     RiskState,
@@ -14,20 +15,31 @@ from packages.valuation.models import (
 )
 from packages.valuation.policy import ValuationPolicy
 
-
 ROOT = Path(__file__).resolve().parents[3]
 PACKAGE = ROOT / "packages" / "valuation"
+SNAPSHOT = "snapshot_" + "e" * 64
 
 
-def lineage(version):
+def price():
+    return PriceObservation(
+        price=100.0,
+        observed_at=dt.datetime(2026, 8, 11, 20, tzinfo=dt.timezone.utc),
+        available_at=dt.datetime(2026, 8, 11, 20, 1, tzinfo=dt.timezone.utc),
+        currency="USD",
+        data_snapshot_id=SNAPSHOT,
+        source_hash="d" * 64,
+    )
+
+
+def lineage(version, peer=False):
     return ValuationLineage(
-        data_snapshot_id="snapshot_" + "e" * 64,
+        data_snapshot_id=SNAPSHOT,
         feature_set_version="valuation-features-v1",
         model_version=version,
         source_cutoff_at=dt.datetime(2026, 8, 12, tzinfo=dt.timezone.utc),
         currency="USD",
-        peer_universe_hash="f" * 64,
         configuration_hash="1" * 64,
+        peer_universe_hash="f" * 64 if peer else None,
     )
 
 
@@ -38,6 +50,8 @@ def assessment(score, trap, state, risk):
         value_trap_probability=trap,
         risk_state=risk,
         feature_coverage=1.0,
+        risk_feature_coverage=1.0,
+        lineage=lineage("quality-v1"),
     )
 
 
@@ -81,7 +95,7 @@ class ValuationSafetyAndPropertyTests(unittest.TestCase):
                 110,
                 120,
                 0.9,
-                lineage("relative-v1"),
+                lineage("relative-v1", peer=True),
                 score=0.0,
             ),
             ModelDistribution(
@@ -98,17 +112,19 @@ class ValuationSafetyAndPropertyTests(unittest.TestCase):
             ),
         )
         policy = ValuationPolicy(
-            policy_version="wp07a-policy-v1",
+            policy_version="wp07a-policy-v2",
             min_confidence=0.0,
+            require_calibrated_models=False,
+            require_calibrated_value_trap=False,
         )
         high = combine_valuation_models(
-            current_price=100,
+            price=price(),
             estimates=models,
             quality=assessment(0.95, 0.05, QualityState.ALTA, RiskState.BAJO),
             policy=policy,
         )
         low = combine_valuation_models(
-            current_price=100,
+            price=price(),
             estimates=models,
             quality=assessment(0.10, 0.30, QualityState.BAJA, RiskState.MEDIO),
             policy=policy,
@@ -131,19 +147,20 @@ class ValuationSafetyAndPropertyTests(unittest.TestCase):
         )
         self.assertNotEqual(high.quality_score, low.quality_score)
 
-    def test_random_ensembles_always_return_monotonic_positive_quantiles(self):
+    def test_random_ensembles_return_monotonic_positive_quantiles(self):
         rng = random.Random(20260812)
         policy = ValuationPolicy(
-            policy_version="wp07a-policy-v1",
+            policy_version="wp07a-policy-v2",
             min_confidence=0.0,
             max_interval_width_ratio=10.0,
+            require_calibrated_models=False,
+            require_calibrated_value_trap=False,
         )
-        quality = assessment(
-            0.7, 0.1, QualityState.ALTA, RiskState.BAJO
-        )
+        quality = assessment(0.7, 0.1, QualityState.ALTA, RiskState.BAJO)
         for case in range(100):
             estimates = []
-            for model_index in range(3):
+            families = ("relative_pe", "fcff", "residual_income")
+            for model_index, family in enumerate(families):
                 median = rng.uniform(20, 300)
                 lower_spread = rng.uniform(0, median * 0.5)
                 upper_spread = rng.uniform(0, median * 0.5)
@@ -157,21 +174,30 @@ class ValuationSafetyAndPropertyTests(unittest.TestCase):
                 estimates.append(
                     ModelDistribution(
                         model_name=f"model-{case}-{model_index}",
-                        model_family=(
-                            "relative_pe" if model_index == 0 else "fcff"
-                        ),
+                        model_family=family,
                         p10=values[0],
                         p25=values[1],
                         p50=values[2],
                         p75=values[3],
                         p90=values[4],
                         confidence=rng.uniform(0.4, 1.0),
-                        lineage=lineage(f"model-{case}-{model_index}"),
+                        lineage=lineage(
+                            f"model-{case}-{model_index}",
+                            peer=family.startswith("relative"),
+                        ),
                         score=rng.uniform(-3, 3),
                     )
                 )
+            observed = PriceObservation(
+                price=rng.uniform(10, 250),
+                observed_at=price().observed_at,
+                available_at=price().available_at,
+                currency="USD",
+                data_snapshot_id=SNAPSHOT,
+                source_hash=price().source_hash,
+            )
             result = combine_valuation_models(
-                current_price=rng.uniform(10, 250),
+                price=observed,
                 estimates=tuple(estimates),
                 quality=quality,
                 policy=policy,
@@ -189,40 +215,13 @@ class ValuationSafetyAndPropertyTests(unittest.TestCase):
 
     def test_dcf_value_increases_with_growth_and_decreases_with_discount_rate(self):
         low_growth = discounted_cash_flow_value(
-            DcfScenario(
-                "low-growth",
-                100,
-                (0.02, 0.02, 0.02),
-                0.10,
-                0.02,
-                100,
-                10,
-                1.0,
-            )
+            DcfScenario("low-growth", 100, (0.02,) * 3, 0.10, 0.02, 100, 10, 1.0)
         )
         high_growth = discounted_cash_flow_value(
-            DcfScenario(
-                "high-growth",
-                100,
-                (0.10, 0.10, 0.10),
-                0.10,
-                0.02,
-                100,
-                10,
-                1.0,
-            )
+            DcfScenario("high-growth", 100, (0.10,) * 3, 0.10, 0.02, 100, 10, 1.0)
         )
         high_discount = discounted_cash_flow_value(
-            DcfScenario(
-                "high-discount",
-                100,
-                (0.10, 0.10, 0.10),
-                0.14,
-                0.02,
-                100,
-                10,
-                1.0,
-            )
+            DcfScenario("high-discount", 100, (0.10,) * 3, 0.14, 0.02, 100, 10, 1.0)
         )
         self.assertGreater(high_growth, low_growth)
         self.assertLess(high_discount, high_growth)

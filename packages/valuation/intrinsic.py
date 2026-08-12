@@ -6,8 +6,20 @@ import math
 from dataclasses import dataclass
 from typing import Sequence
 
-from .models import Applicability, ModelDistribution, ValuationError, ValuationLineage
+from packages.common.hashing import sha256_json
+
+from .models import (
+    Applicability,
+    CalibrationStatus,
+    ModelDistribution,
+    PriceObservation,
+    ValuationError,
+    ValuationLineage,
+)
 from .policy import ValuationPolicy
+
+DCF_MODEL_VERSION = "fcff-scenario-v2"
+RESIDUAL_INCOME_MODEL_VERSION = "residual-income-scenario-v2"
 
 
 @dataclass(frozen=True)
@@ -32,7 +44,9 @@ class DcfScenario:
             not math.isfinite(float(growth)) or growth <= -1
             for growth in self.growth_rates
         ):
-            raise ValuationError("DCF growth rates must be finite and greater than -1")
+            raise ValuationError(
+                "DCF growth rates must be finite and greater than -1"
+            )
         _validate_discount_terminal(self.discount_rate, self.terminal_growth_rate)
         if not math.isfinite(float(self.net_debt)):
             raise ValuationError("net_debt must be finite")
@@ -75,7 +89,9 @@ class ResidualIncomeScenario:
                 "terminal residual growth must be below cost_of_equity"
             )
         if self.terminal_residual_growth <= -1:
-            raise ValuationError("terminal residual growth must be greater than -1")
+            raise ValuationError(
+                "terminal residual growth must be greater than -1"
+            )
         _validate_probability(self.probability)
 
 
@@ -94,7 +110,22 @@ def _validate_probability(value: float) -> None:
         raise ValuationError("scenario probability must be in (0, 1]")
 
 
-def _validate_discount_terminal(discount_rate: float, terminal_growth_rate: float) -> None:
+def _validate_scenario_set(scenarios: Sequence[object]) -> None:
+    if len(scenarios) < 3:
+        raise ValuationError("scenario distribution requires at least three scenarios")
+    names = [str(getattr(scenario, "name")).strip().lower() for scenario in scenarios]
+    if len(set(names)) != len(names):
+        raise ValuationError("scenario names must be unique")
+    probability_sum = sum(
+        float(getattr(scenario, "probability")) for scenario in scenarios
+    )
+    if not math.isclose(probability_sum, 1.0, rel_tol=0.0, abs_tol=1e-9):
+        raise ValuationError("scenario probabilities must sum to 1")
+
+
+def _validate_discount_terminal(
+    discount_rate: float, terminal_growth_rate: float
+) -> None:
     if not math.isfinite(float(discount_rate)) or not 0 < discount_rate < 1:
         raise ValuationError("discount_rate must be between 0 and 1")
     if not math.isfinite(float(terminal_growth_rate)):
@@ -103,6 +134,37 @@ def _validate_discount_terminal(discount_rate: float, terminal_growth_rate: floa
         raise ValuationError("terminal_growth_rate must be greater than -1")
     if terminal_growth_rate >= discount_rate:
         raise ValuationError("terminal_growth_rate must be below discount_rate")
+
+
+def build_dcf_configuration_hash(
+    scenarios: Sequence[DcfScenario], policy: ValuationPolicy
+) -> str:
+    _validate_scenario_set(scenarios)
+    return sha256_json(
+        {
+            "model_version": DCF_MODEL_VERSION,
+            "valuation_method": "FCFF_TWO_STAGE_GORDON_TERMINAL",
+            "scenario_quantiles": [0.10, 0.25, 0.50, 0.75, 0.90],
+            "scenarios": tuple(sorted(scenarios, key=lambda item: item.name.lower())),
+            "model_weight": policy.weight_for("fcff"),
+        }
+    )
+
+
+def build_residual_income_configuration_hash(
+    scenarios: Sequence[ResidualIncomeScenario], policy: ValuationPolicy
+) -> str:
+    _validate_scenario_set(scenarios)
+    return sha256_json(
+        {
+            "model_version": RESIDUAL_INCOME_MODEL_VERSION,
+            "valuation_method": "CLEAN_SURPLUS_RESIDUAL_INCOME",
+            "loss_dividend_policy": "ZERO_DIVIDEND_ON_NEGATIVE_EARNINGS",
+            "scenario_quantiles": [0.10, 0.25, 0.50, 0.75, 0.90],
+            "scenarios": tuple(sorted(scenarios, key=lambda item: item.name.lower())),
+            "model_weight": policy.weight_for("residual_income"),
+        }
+    )
 
 
 def discounted_cash_flow_value(scenario: DcfScenario) -> float:
@@ -137,7 +199,9 @@ def residual_income_value(scenario: ResidualIncomeScenario) -> float:
         earnings = float(roe) * opening_book
         residual_income = earnings - scenario.cost_of_equity * opening_book
         value += residual_income / ((1.0 + scenario.cost_of_equity) ** year)
-        dividends = scenario.payout_ratio * earnings
+        # A payout ratio is a distribution policy, not an assumed capital
+        # injection. Losses therefore produce zero dividends.
+        dividends = scenario.payout_ratio * max(earnings, 0.0)
         opening_book = opening_book + earnings - dividends
         if opening_book <= 0 or not math.isfinite(opening_book):
             raise ValuationError("residual-income book value became non-positive")
@@ -156,8 +220,7 @@ def residual_income_value(scenario: ResidualIncomeScenario) -> float:
 
 
 def _weighted_quantile(
-    observations: Sequence[tuple[float, float]],
-    probability: float,
+    observations: Sequence[tuple[float, float]], probability: float
 ) -> float:
     if not observations:
         raise ValuationError("at least one scenario is required")
@@ -178,6 +241,22 @@ def _weighted_quantile(
     return ordered[-1][0]
 
 
+def _validate_model_lineage(
+    lineage: ValuationLineage,
+    expected_model_version: str,
+    expected_configuration_hash: str,
+    price: PriceObservation | None,
+) -> None:
+    if lineage.model_version != expected_model_version:
+        raise ValuationError("intrinsic lineage model_version is incompatible")
+    if lineage.configuration_hash != expected_configuration_hash:
+        raise ValuationError("intrinsic lineage configuration_hash is incompatible")
+    if lineage.peer_universe_hash is not None:
+        raise ValuationError("intrinsic models cannot carry peer_universe_hash")
+    if price is not None:
+        lineage.assert_price_compatible(price)
+
+
 def _distribution_from_values(
     *,
     model_name: str,
@@ -185,9 +264,8 @@ def _distribution_from_values(
     values: Sequence[tuple[float, float]],
     confidence: float,
     lineage: ValuationLineage,
-    policy: ValuationPolicy,
     current_price: float | None,
-    reason_codes: tuple[str, ...] = (),
+    reason_codes: tuple[str, ...],
 ) -> ModelDistribution:
     if not 0 <= confidence <= 1:
         raise ValuationError("confidence must be between 0 and 1")
@@ -209,12 +287,13 @@ def _distribution_from_values(
         p50=quantiles[2],
         p75=quantiles[3],
         p90=quantiles[4],
-        confidence=confidence,
+        confidence=min(0.65, confidence),
         lineage=lineage,
         applicability=Applicability.APPLICABLE,
-        weight=policy.weight_for(model_family),
         score=score,
-        reason_codes=reason_codes,
+        calibration_status=CalibrationStatus.UNVERIFIED,
+        calibration_hash=None,
+        reason_codes=tuple(sorted(set(reason_codes))),
         production_change_allowed=False,
     )
 
@@ -224,24 +303,29 @@ def dcf_scenario_distribution(
     lineage: ValuationLineage,
     policy: ValuationPolicy,
     *,
-    current_price: float | None = None,
-    model_name: str = "fcff_scenario_ensemble_v1",
+    price: PriceObservation | None = None,
+    model_name: str = "fcff_scenario_ensemble_v2",
 ) -> ModelDistribution:
-    if len(scenarios) < 3:
-        raise ValuationError("DCF distribution requires at least three scenarios")
-    values = [(discounted_cash_flow_value(scenario), scenario.probability) for scenario in scenarios]
-    probability_sum = sum(scenario.probability for scenario in scenarios)
+    _validate_scenario_set(scenarios)
+    configuration_hash = build_dcf_configuration_hash(scenarios, policy)
+    _validate_model_lineage(lineage, DCF_MODEL_VERSION, configuration_hash, price)
+    values = [
+        (discounted_cash_flow_value(scenario), scenario.probability)
+        for scenario in scenarios
+    ]
     scenario_factor = min(1.0, len(scenarios) / 5.0)
-    balance_factor = min(1.0, probability_sum)
-    confidence = 0.50 + 0.35 * scenario_factor + 0.15 * balance_factor
+    structural_confidence = 0.35 + 0.30 * scenario_factor
     return _distribution_from_values(
         model_name=model_name,
         model_family="fcff",
         values=values,
-        confidence=min(1.0, confidence),
+        confidence=structural_confidence,
         lineage=lineage,
-        policy=policy,
-        current_price=current_price,
+        current_price=price.price if price is not None else None,
+        reason_codes=(
+            "SCENARIO_DISTRIBUTION_REQUIRES_OOS_CALIBRATION",
+            "SCENARIO_PROBABILITIES_SUM_TO_ONE",
+        ),
     )
 
 
@@ -250,23 +334,31 @@ def residual_income_distribution(
     lineage: ValuationLineage,
     policy: ValuationPolicy,
     *,
-    current_price: float | None = None,
-    model_name: str = "residual_income_scenario_ensemble_v1",
+    price: PriceObservation | None = None,
+    model_name: str = "residual_income_scenario_ensemble_v2",
 ) -> ModelDistribution:
-    if len(scenarios) < 3:
-        raise ValuationError(
-            "residual-income distribution requires at least three scenarios"
-        )
-    values = [(residual_income_value(scenario), scenario.probability) for scenario in scenarios]
-    confidence = min(1.0, 0.55 + 0.10 * len(scenarios))
+    _validate_scenario_set(scenarios)
+    configuration_hash = build_residual_income_configuration_hash(scenarios, policy)
+    _validate_model_lineage(
+        lineage, RESIDUAL_INCOME_MODEL_VERSION, configuration_hash, price
+    )
+    values = [
+        (residual_income_value(scenario), scenario.probability)
+        for scenario in scenarios
+    ]
+    structural_confidence = min(0.65, 0.35 + 0.075 * len(scenarios))
     return _distribution_from_values(
         model_name=model_name,
         model_family="residual_income",
         values=values,
-        confidence=confidence,
+        confidence=structural_confidence,
         lineage=lineage,
-        policy=policy,
-        current_price=current_price,
+        current_price=price.price if price is not None else None,
+        reason_codes=(
+            "SCENARIO_DISTRIBUTION_REQUIRES_OOS_CALIBRATION",
+            "NEGATIVE_EARNINGS_DO_NOT_CREATE_NEGATIVE_DIVIDENDS",
+            "SCENARIO_PROBABILITIES_SUM_TO_ONE",
+        ),
     )
 
 

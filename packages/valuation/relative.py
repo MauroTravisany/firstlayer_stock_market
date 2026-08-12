@@ -1,4 +1,4 @@
-"""Peer-conditioned relative valuation with robust scaling and ridge residuals."""
+"""Peer-conditioned relative valuation with out-of-sample residual uncertainty."""
 
 from __future__ import annotations
 
@@ -8,13 +8,19 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Mapping, Sequence
 
+from packages.common.hashing import sha256_json
+
 from .models import (
     Applicability,
+    CalibrationStatus,
     ModelDistribution,
+    PriceObservation,
     ValuationError,
     ValuationLineage,
 )
 from .policy import ValuationPolicy
+
+RELATIVE_MODEL_VERSION = "relative-ridge-loo-v2"
 
 
 class RelativeMetric(str, Enum):
@@ -50,7 +56,7 @@ class PeerObservation:
 class RelativeSubject:
     ticker: str
     metric: RelativeMetric
-    current_price: float
+    price: PriceObservation
     features: Mapping[str, float]
     anchor_per_share: float | None = None
     enterprise_anchor: float | None = None
@@ -60,11 +66,15 @@ class RelativeSubject:
     def __post_init__(self) -> None:
         if not str(self.ticker).strip():
             raise ValuationError("subject ticker is required")
-        if not math.isfinite(float(self.current_price)) or self.current_price <= 0:
-            raise ValuationError("current_price must be positive")
+        if not isinstance(self.metric, RelativeMetric):
+            raise ValuationError("metric is invalid")
+        if not isinstance(self.price, PriceObservation):
+            raise ValuationError("price must be a PriceObservation")
         if not self.features:
             raise ValuationError("subject features cannot be empty")
         for name, value in self.features.items():
+            if not str(name).strip():
+                raise ValuationError("subject feature name cannot be empty")
             if not math.isfinite(float(value)):
                 raise ValuationError(f"feature {name} must be finite")
         if self.metric is RelativeMetric.EV_EBITDA:
@@ -104,7 +114,10 @@ class RelativeValuationEstimate:
     feature_names: tuple[str, ...]
     residual_scale: float
     r_squared: float
+    peer_universe_hash: str
+    configuration_hash: str
     extrapolated_features: tuple[str, ...] = ()
+    validation_method: str = "LEAVE_ONE_OUT"
 
 
 def _median(values: Sequence[float]) -> float:
@@ -141,7 +154,9 @@ def _robust_center_scale(values: Sequence[float]) -> tuple[float, float]:
     return center, float(scale)
 
 
-def _solve_linear_system(matrix: list[list[float]], vector: list[float]) -> list[float]:
+def _solve_linear_system(
+    matrix: list[list[float]], vector: list[float]
+) -> list[float]:
     size = len(vector)
     if len(matrix) != size or any(len(row) != size for row in matrix):
         raise ValuationError("linear system dimensions are inconsistent")
@@ -150,7 +165,10 @@ def _solve_linear_system(matrix: list[list[float]], vector: list[float]) -> list
         for row in range(size)
     ]
     for column in range(size):
-        pivot = max(range(column, size), key=lambda row: abs(augmented[row][column]))
+        pivot = max(
+            range(column, size),
+            key=lambda row: abs(augmented[row][column]),
+        )
         if abs(augmented[pivot][column]) <= 1e-12:
             raise ValuationError("relative valuation regression is singular")
         if pivot != column:
@@ -196,24 +214,110 @@ def _dot(left: Sequence[float], right: Sequence[float]) -> float:
     return sum(a * b for a, b in zip(left, right))
 
 
+def build_peer_universe_hash(peers: Sequence[PeerObservation]) -> str:
+    """Hash the exact peer observations after deterministic ordering."""
+
+    normalized_tickers = [peer.ticker.strip().upper() for peer in peers]
+    if len(set(normalized_tickers)) != len(normalized_tickers):
+        raise ValuationError("peer tickers must be unique")
+    return sha256_json(
+        [
+            {
+                "ticker": peer.ticker.strip().upper(),
+                "observed_multiple": float(peer.observed_multiple),
+                "features": {
+                    name: float(peer.features[name]) for name in sorted(peer.features)
+                },
+            }
+            for peer in sorted(peers, key=lambda row: row.ticker.strip().upper())
+        ]
+    )
+
+
+def build_relative_configuration_hash(
+    metric: RelativeMetric,
+    feature_names: Sequence[str],
+    policy: ValuationPolicy,
+) -> str:
+    names = tuple(sorted(str(name).strip() for name in feature_names))
+    if not names or any(not name for name in names):
+        raise ValuationError("relative feature names are invalid")
+    if len(set(names)) != len(names):
+        raise ValuationError("relative feature names must be unique")
+    return sha256_json(
+        {
+            "model_version": RELATIVE_MODEL_VERSION,
+            "metric": metric.value,
+            "feature_names": names,
+            "target_transform": "LOG_MULTIPLE",
+            "scaler": "MEDIAN_MAD_WITH_PSTDEV_FALLBACK",
+            "regression": "RIDGE_UNPENALIZED_INTERCEPT",
+            "uncertainty": "LEAVE_ONE_OUT_EMPIRICAL_RESIDUALS",
+            "ridge_penalty": policy.ridge_penalty,
+            "min_peer_count": policy.min_peer_count,
+            "min_peer_observations_per_parameter": (
+                policy.min_peer_observations_per_parameter
+            ),
+            "relative_feature_z_limit": policy.relative_feature_z_limit,
+        }
+    )
+
+
+def _fit_model(
+    peers: Sequence[PeerObservation],
+    feature_names: tuple[str, ...],
+    penalty: float,
+):
+    centers: dict[str, float] = {}
+    scales: dict[str, float] = {}
+    for feature in feature_names:
+        centers[feature], scales[feature] = _robust_center_scale(
+            [float(peer.features[feature]) for peer in peers]
+        )
+
+    def encode(features: Mapping[str, float]) -> list[float]:
+        return [1.0] + [
+            (float(features[name]) - centers[name]) / scales[name]
+            for name in feature_names
+        ]
+
+    design = [encode(peer.features) for peer in peers]
+    target = [math.log(float(peer.observed_multiple)) for peer in peers]
+    coefficients = _ridge_coefficients(design, target, penalty)
+    fitted = [_dot(row, coefficients) for row in design]
+    residual_center = _median(
+        [actual - prediction for actual, prediction in zip(target, fitted)]
+    )
+    return centers, scales, coefficients, residual_center, target
+
+
+def _encode(
+    features: Mapping[str, float],
+    feature_names: tuple[str, ...],
+    centers: Mapping[str, float],
+    scales: Mapping[str, float],
+) -> list[float]:
+    return [1.0] + [
+        (float(features[name]) - centers[name]) / scales[name]
+        for name in feature_names
+    ]
+
+
 def _observed_multiple(subject: RelativeSubject) -> float:
     if subject.metric is RelativeMetric.EV_EBITDA:
         enterprise_value = (
-            subject.current_price * float(subject.shares_outstanding)
+            subject.price.price * float(subject.shares_outstanding)
             + float(subject.net_debt)
         )
         multiple = enterprise_value / float(subject.enterprise_anchor)
     else:
-        multiple = subject.current_price / float(subject.anchor_per_share)
+        multiple = subject.price.price / float(subject.anchor_per_share)
     if not math.isfinite(multiple) or multiple <= 0:
         raise ValuationError("subject observed multiple must be positive")
     return multiple
 
 
-def _implied_price(
-    subject: RelativeSubject,
-    predicted_multiple: float,
-) -> float:
+def _implied_price(subject: RelativeSubject, predicted_multiple: float) -> float:
     if not math.isfinite(predicted_multiple) or predicted_multiple <= 0:
         raise ValuationError("predicted multiple must be positive")
     if subject.metric is RelativeMetric.EV_EBITDA:
@@ -235,21 +339,39 @@ def estimate_relative_value(
     lineage: ValuationLineage,
     policy: ValuationPolicy,
 ) -> RelativeValuationEstimate:
-    """Estimate a fair-value distribution from peer multiples and fundamentals.
+    """Estimate fair value from peers using leave-one-out residual uncertainty."""
 
-    ``log(multiple)`` is fitted on robustly standardized fundamentals using ridge
-    regression. The empirical residual distribution supplies uncertainty. A
-    high-quality subject may deserve a higher expected multiple through its
-    *features*, but quality is never added directly to the final price label.
-    """
-
-    if len(peers) < policy.min_peer_count:
-        raise ValuationError(
-            f"relative valuation requires at least {policy.min_peer_count} peers"
-        )
+    lineage.assert_price_compatible(subject.price)
     feature_names = tuple(sorted(subject.features))
     if not feature_names:
         raise ValuationError("at least one relative valuation feature is required")
+    expected_configuration_hash = build_relative_configuration_hash(
+        subject.metric, feature_names, policy
+    )
+    if lineage.model_version != RELATIVE_MODEL_VERSION:
+        raise ValuationError("relative lineage model_version is incompatible")
+    if lineage.configuration_hash != expected_configuration_hash:
+        raise ValuationError("relative lineage configuration_hash is incompatible")
+
+    minimum_peers = policy.minimum_peer_observations(len(feature_names))
+    if len(peers) < minimum_peers:
+        raise ValuationError(
+            f"relative valuation requires at least {minimum_peers} peers "
+            f"for {len(feature_names)} features"
+        )
+    peer_tickers = [peer.ticker.strip().upper() for peer in peers]
+    if len(set(peer_tickers)) != len(peer_tickers):
+        raise ValuationError("peer tickers must be unique")
+    if subject.ticker.strip().upper() in set(peer_tickers):
+        raise ValuationError("subject ticker cannot be included in its peer regression")
+    peer_hash = build_peer_universe_hash(peers)
+    if lineage.peer_universe_hash is None:
+        raise ValuationError("relative valuation lineage requires peer_universe_hash")
+    if lineage.peer_universe_hash != peer_hash:
+        raise ValuationError(
+            "peer_universe_hash does not match supplied peer observations"
+        )
+
     for peer in peers:
         missing = sorted(set(feature_names) - set(peer.features))
         extra = sorted(set(peer.features) - set(feature_names))
@@ -258,41 +380,39 @@ def estimate_relative_value(
                 f"peer {peer.ticker} feature mismatch; missing={missing}, extra={extra}"
             )
 
-    centers: dict[str, float] = {}
-    scales: dict[str, float] = {}
-    for feature in feature_names:
-        centers[feature], scales[feature] = _robust_center_scale(
-            [float(peer.features[feature]) for peer in peers]
-        )
-
-    def encoded(features: Mapping[str, float]) -> list[float]:
-        return [1.0] + [
-            (float(features[name]) - centers[name]) / scales[name]
-            for name in feature_names
-        ]
-
-    design = [encoded(peer.features) for peer in peers]
-    target = [math.log(float(peer.observed_multiple)) for peer in peers]
-    coefficients = _ridge_coefficients(design, target, policy.ridge_penalty)
-    fitted = [_dot(row, coefficients) for row in design]
-    residuals = [actual - prediction for actual, prediction in zip(target, fitted)]
-    residual_center, residual_scale = _robust_center_scale(residuals)
-    centered_residuals = [
-        residual - residual_center for residual in residuals
-    ]
-    subject_vector = encoded(subject.features)
-    predicted_log_multiple = (
-        _dot(subject_vector, coefficients) + residual_center
+    centers, scales, coefficients, _bias, target = _fit_model(
+        peers, feature_names, policy.ridge_penalty
     )
+    loo_predictions: list[float] = []
+    loo_residuals: list[float] = []
+    for index, peer in enumerate(peers):
+        training = tuple(peers[:index]) + tuple(peers[index + 1 :])
+        loo_centers, loo_scales, loo_coefficients, loo_bias, _ = _fit_model(
+            training, feature_names, policy.ridge_penalty
+        )
+        prediction = (
+            _dot(
+                _encode(peer.features, feature_names, loo_centers, loo_scales),
+                loo_coefficients,
+            )
+            + loo_bias
+        )
+        actual = math.log(float(peer.observed_multiple))
+        loo_predictions.append(prediction)
+        loo_residuals.append(actual - prediction)
+
+    residual_center, residual_scale = _robust_center_scale(loo_residuals)
+    centered_residuals = [residual - residual_center for residual in loo_residuals]
+    subject_vector = _encode(subject.features, feature_names, centers, scales)
+    predicted_log_multiple = _dot(subject_vector, coefficients) + residual_center
     predicted_multiple = math.exp(predicted_log_multiple)
     observed_multiple = _observed_multiple(subject)
     log_residual = math.log(observed_multiple) - predicted_log_multiple
     robust_residual_z = -log_residual / residual_scale
 
-    quantile_probabilities = (0.10, 0.25, 0.50, 0.75, 0.90)
     residual_quantiles = [
         _quantile(centered_residuals, probability)
-        for probability in quantile_probabilities
+        for probability in (0.10, 0.25, 0.50, 0.75, 0.90)
     ]
     fair_values = [
         _implied_price(subject, math.exp(predicted_log_multiple + residual))
@@ -302,51 +422,59 @@ def estimate_relative_value(
     target_mean = sum(target) / len(target)
     total_sum_squares = sum((value - target_mean) ** 2 for value in target)
     residual_sum_squares = sum(
-        (actual - prediction) ** 2 for actual, prediction in zip(target, fitted)
+        (actual - prediction) ** 2
+        for actual, prediction in zip(target, loo_predictions)
     )
     r_squared = (
         1.0 - residual_sum_squares / total_sum_squares
         if total_sum_squares > 1e-12
         else 0.0
     )
-    rmse = math.sqrt(residual_sum_squares / len(residuals))
-    sample_factor = min(1.0, len(peers) / (2.0 * policy.min_peer_count))
+    rmse = math.sqrt(residual_sum_squares / len(loo_residuals))
+    sample_factor = min(1.0, len(peers) / (2.0 * minimum_peers))
     dispersion_factor = 1.0 / (1.0 + rmse)
     fit_factor = max(0.0, min(1.0, (r_squared + 1.0) / 2.0))
-    confidence = max(
-        0.0,
-        min(1.0, sample_factor * dispersion_factor * (0.5 + 0.5 * fit_factor)),
+    confidence = min(
+        0.75,
+        max(
+            0.0,
+            sample_factor * dispersion_factor * (0.40 + 0.60 * fit_factor),
+        ),
     )
 
     extrapolated = tuple(
         name
         for name, encoded_value in zip(feature_names, subject_vector[1:])
-        if abs(encoded_value) > 4.0
+        if abs(encoded_value) > policy.relative_feature_z_limit
     )
-    reasons = []
+    reasons = [
+        "LEAVE_ONE_OUT_RESIDUAL_UNCERTAINTY",
+        "MODEL_REQUIRES_OOS_CALIBRATION",
+    ]
     if extrapolated:
         confidence *= 0.65
         reasons.append("SUBJECT_FEATURE_EXTRAPOLATION")
     if r_squared < 0:
-        reasons.append("WEAK_RELATIVE_FIT")
+        reasons.append("WEAK_OUT_OF_SAMPLE_RELATIVE_FIT")
     if residual_scale > 0.75:
         reasons.append("WIDE_PEER_MULTIPLE_DISPERSION")
 
     family = f"relative_{subject.metric.value.lower()}"
     distribution = ModelDistribution(
-        model_name=f"{family}_ridge_v1",
+        model_name=f"{family}_ridge_loo_v2",
         model_family=family,
         p10=fair_values[0],
         p25=fair_values[1],
         p50=fair_values[2],
         p75=fair_values[3],
         p90=fair_values[4],
-        confidence=confidence,
+        confidence=round(confidence, 12),
         lineage=lineage,
         applicability=Applicability.APPLICABLE,
-        weight=policy.weight_for("relative"),
         score=robust_residual_z,
-        reason_codes=tuple(reasons),
+        calibration_status=CalibrationStatus.UNVERIFIED,
+        calibration_hash=None,
+        reason_codes=tuple(sorted(reasons)),
         production_change_allowed=False,
     )
     return RelativeValuationEstimate(
@@ -359,5 +487,8 @@ def estimate_relative_value(
         feature_names=feature_names,
         residual_scale=residual_scale,
         r_squared=r_squared,
+        peer_universe_hash=peer_hash,
+        configuration_hash=expected_configuration_hash,
         extrapolated_features=extrapolated,
+        validation_method="LEAVE_ONE_OUT",
     )
