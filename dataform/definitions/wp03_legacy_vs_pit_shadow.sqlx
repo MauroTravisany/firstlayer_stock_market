@@ -105,9 +105,13 @@ SELECT
   CURRENT_TIMESTAMP() AS compared_at
 FROM pit p
 LEFT JOIN legacy l
-  USING (analysis_date, signal_hour, ticker)
+  ON l.analysis_date = p.analysis_date
+ AND l.signal_hour = p.signal_hour
+ AND l.ticker = p.ticker
 LEFT JOIN legacy_valuation lv
   ON lv.analysis_date = p.analysis_date
  AND lv.ticker = p.ticker
 LEFT JOIN pit_valuation pv
-  USING (analysis_date, signal_hour, ticker)
+  ON pv.analysis_date = p.analysis_date
+ AND pv.signal_hour = p.signal_hour
+ AND pv.ticker = p.ticker
