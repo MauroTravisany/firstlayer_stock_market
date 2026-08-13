@@ -15,10 +15,10 @@ config {
   }
 }
 
--- These rows are copied verbatim from the frozen WP-00 legacy registry.
--- They are intentionally repository-static: live shadow validation must not
--- depend on acciones_dataset.legacy_result_registry being materialized.
 WITH frozen_affected_results AS (
+  -- These rows are copied verbatim from the frozen WP-00 legacy registry.
+  -- They are intentionally repository-static: live shadow validation must not
+  -- depend on acciones_dataset.legacy_result_registry being materialized.
   SELECT
     "CURRENT_SHADOW_SIGNALS" AS result_family,
     "trading_champion_challenger_signals" AS source_table,
