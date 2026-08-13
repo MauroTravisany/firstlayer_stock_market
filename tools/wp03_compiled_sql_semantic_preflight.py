@@ -1,7 +1,7 @@
 """Comment-aware facade for the WP-03 compiled SQL schema graph.
 
 The reviewed schema-graph implementation is preserved in
-:mod:`tools.wp03_compiled_sql_semantic_preflight_core`.  This facade patches its
+:mod:`tools.wp03_compiled_sql_semantic_preflight_core`. This facade patches its
 lexical policy checks so valid GoogleSQL comments are ignored for statement
 classification and safety scanning, while the original SQL remains unchanged
 for hashing and BigQuery dry-run/schema validation.
@@ -18,6 +18,26 @@ from tools import wp03_sql_policy as _sql_policy
 SQL_POLICY_VERSION = _sql_policy.SQL_POLICY_VERSION
 SCHEMA_GRAPH_PASS_STATUS = "ALL_COMPILED_ACTIONS_SCHEMA_GRAPH_PASS"
 VALIDATION_DATASET_ONLY_FIELD = "validation_dataset_only"
+
+# Keep the public inventory explicit. Besides making the operational contract
+# auditable without following an import, this preserves the repository's static
+# coverage gate. The equality assertion prevents facade/core drift.
+REQUIRED_OUTPUTS = (
+    "financial_statements_pit_raw",
+    "financial_statements_pit",
+    "financial_quarters_pit",
+    "financial_ttm_pit",
+    "earnings_events_pit",
+    "trading_financial_context_pit",
+    "trading_earnings_context_pit",
+    "portfolio_valuation_pit_shadow",
+    "trading_historical_context_pit",
+    "wp03_legacy_vs_pit_shadow",
+    "wp03_legacy_invalidation",
+    "audit_no_lookahead",
+)
+if REQUIRED_OUTPUTS != _core.REQUIRED_OUTPUTS:
+    raise RuntimeError("WP-03 facade/core required-output inventory drift")
 
 
 def _assert_select_only(action: Any) -> None:
@@ -64,7 +84,6 @@ _core._assert_raw_operation_scope = _assert_raw_operation_scope
 
 
 ACKNOWLEDGEMENT = _core.ACKNOWLEDGEMENT
-REQUIRED_OUTPUTS = _core.REQUIRED_OUTPUTS
 RAW_OUTPUT = _core.RAW_OUTPUT
 ALLOWED_OPERATIONAL_INPUTS = _core.ALLOWED_OPERATIONAL_INPUTS
 SemanticPreflightError = _core.SemanticPreflightError
