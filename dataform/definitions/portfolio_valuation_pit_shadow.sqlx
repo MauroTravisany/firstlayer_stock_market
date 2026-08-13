@@ -136,7 +136,9 @@ base AS (
     COALESCE(vm.operating_margin_weight, fallback.operating_margin_weight) AS operating_margin_weight
   FROM price_basis p
   LEFT JOIN ${ref("financial_ttm_pit")} t
-    USING (analysis_date, signal_hour, ticker)
+    ON t.analysis_date = p.analysis_date
+   AND t.signal_hour = p.signal_hour
+   AND t.ticker = p.ticker
   LEFT JOIN ${ref("asset_profile")} ap
     ON ap.ticker = p.ticker
   LEFT JOIN ${ref("valuation_model_profile")} vm

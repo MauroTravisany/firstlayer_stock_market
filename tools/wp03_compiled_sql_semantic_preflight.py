@@ -17,10 +17,12 @@ from copy import deepcopy
 from typing import Any, Mapping, Sequence
 
 from tools import wp03_compiled_sql_semantic_preflight_core as _core
+from tools import wp03_join_policy as _join_policy
 from tools import wp03_sql_policy as _sql_policy
 
 
 SQL_POLICY_VERSION = _sql_policy.SQL_POLICY_VERSION
+JOIN_KEY_POLICY_VERSION = _join_policy.JOIN_KEY_POLICY_VERSION
 SCHEMA_ACTION_POLICY_VERSION = "wp03-native-action-types-v1"
 SCHEMA_GRAPH_PASS_STATUS = "ALL_COMPILED_ACTIONS_SCHEMA_GRAPH_PASS"
 VALIDATION_DATASET_ONLY_FIELD = "validation_dataset_only"
@@ -68,6 +70,12 @@ def _assert_select_only(action: Any) -> None:
         mutating_pattern=_core.MUTATING_SQL,
         error_cls=_core.SemanticPreflightError,
     )
+    if action.action_type in {"relation", "assertion"}:
+        _join_policy.assert_explicit_join_predicates(
+            action.sql[0],
+            error_cls=_core.SemanticPreflightError,
+            label=action.target.key,
+        )
 
 
 def _assert_no_operational_write(
@@ -162,6 +170,7 @@ def _decorate_native_action_plan(
     document.update(
         {
             "schema_action_policy_version": SCHEMA_ACTION_POLICY_VERSION,
+            "join_key_policy_version": JOIN_KEY_POLICY_VERSION,
             "required_action_count": len(required),
             "required_action_types": {
                 name: required[name].action_type for name in REQUIRED_OUTPUTS
