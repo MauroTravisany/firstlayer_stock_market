@@ -128,9 +128,13 @@ joined AS (
     ) AS reported_age_days
   FROM price_slots p
   LEFT JOIN expected_asof x
-    USING (analysis_date, signal_hour, ticker)
+    ON x.analysis_date = p.analysis_date
+   AND x.signal_hour = p.signal_hour
+   AND x.ticker = p.ticker
   LEFT JOIN reported_asof r
-    USING (analysis_date, signal_hour, ticker)
+    ON r.analysis_date = p.analysis_date
+   AND r.signal_hour = p.signal_hour
+   AND r.ticker = p.ticker
 )
 SELECT
   analysis_date,
