@@ -106,11 +106,12 @@ class Wp03SqlContractTests(unittest.TestCase):
         self.assertIn('${ref("financial_quarters_pit")}', sql)
         self.assertNotIn("COALESCE(s.report_date, s.period_end_date)", sql)
         self.assertNotIn("s.period_end_date <=", sql)
-        self.assertIn("prior.currency = current.currency", sql)
+        self.assertIn("prior_q.currency = cur_q.currency", sql)
         self.assertIn(
-            "prior.quarter_structure_complete AS prior_year_quarter_structure_complete",
+            "prior_q.quarter_structure_complete AS prior_year_quarter_structure_complete",
             sql,
         )
+        self.assertNotIn("FROM latest_quarter current", sql)
         self.assertGreaterEqual(
             sql.count("COALESCE(prior_year_quarter_structure_complete, FALSE)"),
             2,
