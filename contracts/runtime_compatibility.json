@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "release_id": "wp01-expand-v1",
+  "phase": "expand",
+  "destructive_changes": [],
+  "expanded_schema": {
+    "acciones_dataset.portfolio_daily_signal": [
+      "analysis_date",
+      "ticker",
+      "signal",
+      "signal_reason",
+      "sell_signal",
+      "sell_reason"
+    ],
+    "acciones_dataset.trading_directional_signals": [
+      "analysis_date",
+      "ticker",
+      "paper_trade_id",
+      "direction",
+      "execution_action",
+      "stop_loss",
+      "take_profit_1",
+      "take_profit_2"
+    ]
+  },
+  "consumer_contracts": {
+    "legacy": {
+      "acciones_dataset.portfolio_daily_signal": [
+        "analysis_date",
+        "ticker"
+      ],
+      "acciones_dataset.trading_directional_signals": [
+        "analysis_date",
+        "ticker",
+        "paper_trade_id",
+        "direction"
+      ]
+    },
+    "current": {
+      "acciones_dataset.portfolio_daily_signal": [
+        "analysis_date",
+        "ticker",
+        "signal",
+        "signal_reason",
+        "sell_signal",
+        "sell_reason"
+      ],
+      "acciones_dataset.trading_directional_signals": [
+        "analysis_date",
+        "ticker",
+        "paper_trade_id",
+        "direction",
+        "execution_action",
+        "stop_loss",
+        "take_profit_1",
+        "take_profit_2"
+      ]
+    }
+  }
+}

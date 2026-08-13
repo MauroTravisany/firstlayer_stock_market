@@ -1,0 +1,83 @@
+config {
+  type: "table",
+  schema: "acciones_dataset",
+  name: "legacy_result_registry",
+  description: "Registro estatico generado desde el baseline WP-00. No consulta fuentes vivas ni incorpora filas futuras.",
+  tags: ["audit", "baseline", "legacy", "governance"],
+  assertions: {
+    nonNull: ["result_family", "source_table", "baseline_git_sha", "legacy_classification", "results_checksum"],
+    uniqueKey: ["result_family", "source_table"],
+    rowConditions: [
+      "legacy_classification = 'LEGACY_PRE_AUDIT_GRADE'",
+      "promotion_eligible = FALSE"
+    ]
+  }
+}
+
+WITH frozen_results AS (
+  SELECT
+    "CHAMPION_CHALLENGER_POLICY" AS result_family,
+    "trading_champion_challenger_policy" AS source_table,
+    CAST(NULL AS DATE) AS date_start,
+    CAST(NULL AS DATE) AS date_end,
+    6 AS row_count,
+    ["policy snapshot predates independent promotion gates"] AS known_defects,
+    "01304b485d75334f265d0b41f28db72c1f65de3004ab12a1e822873e57bf2523" AS results_checksum
+  UNION ALL
+  SELECT "CURRENT_SHADOW_SIGNALS", "trading_champion_challenger_signals", DATE("2019-01-01"), DATE("2026-08-08"), 50480,
+    ["signals inherit legacy data and execution-model limitations"],
+    "b2e1b74c49e1a266feb79d6a4945b2e45053a099202454af723350772797b87c"
+  UNION ALL
+  SELECT "DIRECTIONAL_V1" AS result_family, "trading_directional_strategy_backtest", DATE("2019-01-09"), DATE("2026-07-31"), 220,
+    ["financial available_at is not audit-grade", "raw/adjusted prices and corporate actions are not canonical", "gap-aware fills and locked final test are not implemented"],
+    "a859f5de90a0009fcd95ed45aba758f3b806cb870ec3dc234035b3fb92dcc9b3"
+  UNION ALL
+  SELECT "DIRECTIONAL_V2", "trading_directional_strategy_backtest", DATE("2019-01-31"), DATE("2026-07-31"), 124,
+    ["financial available_at is not audit-grade", "raw/adjusted prices and corporate actions are not canonical", "gap-aware fills and locked final test are not implemented"],
+    "e6432399a9dabeddfeb381d7168caf082d5cabdbc1995f93f38e078bacdc7763"
+  UNION ALL
+  SELECT "DIRECTIONAL_V3", "trading_directional_strategy_backtest", DATE("2019-01-31"), DATE("2026-07-29"), 76,
+    ["financial available_at is not audit-grade", "raw/adjusted prices and corporate actions are not canonical", "gap-aware fills and locked final test are not implemented"],
+    "4b29478ee8b0d694becce51b464aa7c821cb48b724daa9c79676b8ae31c01aff"
+  UNION ALL
+  SELECT "DIRECTIONAL_V4" AS result_family, "trading_directional_strategy_backtest", DATE("2019-01-31"), DATE("2026-07-31"), 56,
+    ["financial available_at is not audit-grade", "raw/adjusted prices and corporate actions are not canonical", "gap-aware fills and locked final test are not implemented"],
+    "6fc151773989e02c1b45c0b534d6487a0aa676225a6eda4ceed869f968073b8e"
+  UNION ALL
+  SELECT "STRATEGY_BRAIN_AUDITS", "trading_brain_ai_audits", DATE("2026-08-04"), DATE("2026-08-07"), 10,
+    ["candidate/run isolation and final-test separation await WP-06/WP-07", "legacy adaptive validation is not promotion evidence"],
+    "0fa017b782cf89aac324fcdb158d8888edfd6713994bd9fb4f7e2c4bdca3504b"
+  UNION ALL
+  SELECT "STRATEGY_BRAIN_CANDIDATES", "trading_brain_weight_candidates", DATE("2026-08-04"), DATE("2026-08-08"), 136,
+    ["candidate/run isolation and final-test separation await WP-06/WP-07", "legacy adaptive validation is not promotion evidence"],
+    "c2e35224d7b095758996071f6566165ff1e51c58b44f6af7fabfada7865125ca"
+  UNION ALL
+  SELECT "STRATEGY_BRAIN_CAPITAL_CURVE", "trading_brain_candidate_capital_curve", DATE("2019-01-31"), DATE("2026-07-31"), 2085,
+    ["candidate/run isolation and final-test separation await WP-06/WP-07", "legacy adaptive validation is not promotion evidence"],
+    "df3926b0b31d5336f6b9421cd9fb9231505cc008a964a64d37ce44d1fe6881d4"
+  UNION ALL
+  SELECT "STRATEGY_BRAIN_RUNS", "trading_brain_runs", DATE("2026-08-04"), DATE("2026-08-08"), 7,
+    ["candidate/run isolation and final-test separation await WP-06/WP-07", "legacy adaptive validation is not promotion evidence"],
+    "7a9c93a277b470212632c022034b0a0a512a98881fc154b6ca6c78ef7aff4864"
+  UNION ALL
+  SELECT "STRATEGY_BRAIN_SUMMARY", "trading_brain_candidate_summary", DATE("2026-08-08"), DATE("2026-08-08"), 46,
+    ["candidate/run isolation and final-test separation await WP-06/WP-07", "legacy adaptive validation is not promotion evidence"],
+    "9d670e907d0246c794b69a2cf6c765701ded3c232c043e4dc281397e3bc9297d"
+)
+
+SELECT
+  result_family,
+  source_table,
+  date_start,
+  date_end,
+  row_count,
+  "f7c27dbf6b4293e4ba2755a642d2f616d98b3844" AS baseline_git_sha,
+  "READ_ONLY_LIVE_TABLE_STATE; sorted SHA256 of every selected row; not an immutable point-in-time snapshot" AS data_snapshot_approximation,
+  known_defects,
+  "LEGACY_PRE_AUDIT_GRADE" AS legacy_classification,
+  FALSE AS promotion_eligible,
+  "NOT_ELIGIBLE_FOR_PROMOTION" AS promotion_block_reason,
+  results_checksum,
+  TIMESTAMP("2026-08-08T15:17:29.785999Z") AS bigquery_snapshot_as_of_utc,
+  TIMESTAMP("2026-08-08T15:18:30.508163Z") AS registry_captured_at_utc
+FROM frozen_results
