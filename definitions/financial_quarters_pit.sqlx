@@ -1,0 +1,208 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "financial_quarters_pit",
+  description: "Canonical fiscal-quarter series at each signal timestamp. Q4 additive monetary facts are derived from the annual filing and Q1-Q3 revisions already available when that filing became public; non-additive EPS is not derived.",
+  tags: ["audit-grade", "pit", "financials", "quarterly", "wp03"],
+  bigquery: {
+    partitionBy: "analysis_date",
+    clusterBy: ["ticker", "fiscal_year", "fiscal_quarter"]
+  },
+  assertions: {
+    nonNull: ["analysis_date", "signal_hour", "ticker", "fiscal_year", "fiscal_quarter", "revision_id", "mapping_version", "available_at", "quarter_value_basis"],
+    uniqueKey: ["analysis_date", "signal_hour", "ticker", "fiscal_year", "fiscal_quarter"],
+    rowConditions: [
+      "available_at <= signal_timestamp",
+      "derivation_component_max_available_at IS NULL OR derivation_component_max_available_at <= available_at"
+    ]
+  },
+  dependencies: ["financial_statements_pit", "trading_price_features"]
+}
+
+WITH price_slots AS (
+  SELECT
+    analysis_date,
+    signal_hour,
+    TIMESTAMP(signal_timestamp, "UTC") AS signal_timestamp,
+    ticker
+  FROM ${ref("trading_price_features")}
+),
+available_revisions AS (
+  SELECT
+    p.analysis_date,
+    p.signal_hour,
+    p.signal_timestamp,
+    p.ticker,
+    s.* EXCEPT (ticker),
+    ROW_NUMBER() OVER (
+      PARTITION BY p.analysis_date, p.signal_hour, p.ticker, s.fiscal_year, s.fiscal_quarter
+      ORDER BY s.available_at DESC, s.revision_number DESC, s.revision_id DESC
+    ) AS revision_rank
+  FROM price_slots p
+  JOIN ${ref("financial_statements_pit")} s
+    ON s.ticker = p.ticker
+   AND s.available_at <= p.signal_timestamp
+   AND s.fiscal_quarter IN (1, 2, 3, 4)
+),
+latest_per_period AS (
+  SELECT * EXCEPT(revision_rank)
+  FROM available_revisions
+  WHERE revision_rank = 1
+),
+annual_rows AS (
+  SELECT *
+  FROM latest_per_period
+  WHERE fiscal_quarter = 4
+),
+annual_component_candidates AS (
+  SELECT
+    a.analysis_date,
+    a.signal_hour,
+    a.ticker,
+    a.revision_id AS annual_revision_id,
+    c.revision_id AS component_revision_id,
+    c.fiscal_quarter AS component_fiscal_quarter,
+    c.available_at AS component_available_at,
+    c.currency AS component_currency,
+    c.revenue,
+    c.gross_profit,
+    c.operating_income,
+    c.net_income,
+    c.operating_cash_flow,
+    ROW_NUMBER() OVER (
+      PARTITION BY a.analysis_date, a.signal_hour, a.ticker, a.revision_id, c.fiscal_quarter
+      ORDER BY c.available_at DESC, c.revision_number DESC, c.revision_id DESC
+    ) AS component_rank
+  FROM annual_rows a
+  JOIN ${ref("financial_statements_pit")} c
+    ON c.ticker = a.ticker
+   AND c.fiscal_year = a.fiscal_year
+   AND c.fiscal_quarter IN (1, 2, 3)
+   AND c.mapping_version = a.mapping_version
+   AND c.available_at <= a.available_at
+),
+annual_components AS (
+  SELECT * EXCEPT(component_rank)
+  FROM annual_component_candidates
+  WHERE component_rank = 1
+),
+annual_component_summary AS (
+  SELECT
+    analysis_date,
+    signal_hour,
+    ticker,
+    annual_revision_id,
+    COUNT(DISTINCT component_fiscal_quarter) AS component_quarter_count,
+    COUNT(DISTINCT component_currency) AS component_currency_count,
+    ANY_VALUE(component_currency) AS component_currency,
+    COUNTIF(revenue IS NOT NULL) AS component_revenue_count,
+    COUNTIF(gross_profit IS NOT NULL) AS component_gross_profit_count,
+    COUNTIF(operating_income IS NOT NULL) AS component_operating_income_count,
+    COUNTIF(net_income IS NOT NULL) AS component_net_income_count,
+    COUNTIF(operating_cash_flow IS NOT NULL) AS component_operating_cash_flow_count,
+    SUM(revenue) AS component_revenue,
+    SUM(gross_profit) AS component_gross_profit,
+    SUM(operating_income) AS component_operating_income,
+    SUM(net_income) AS component_net_income,
+    SUM(operating_cash_flow) AS component_operating_cash_flow,
+    ARRAY_AGG(component_revision_id ORDER BY component_fiscal_quarter) AS component_revision_ids,
+    MAX(component_available_at) AS component_max_available_at
+  FROM annual_components
+  GROUP BY analysis_date, signal_hour, ticker, annual_revision_id
+),
+reported_quarters AS (
+  SELECT
+    analysis_date,
+    signal_hour,
+    signal_timestamp,
+    ticker,
+    revision_id,
+    mapping_version,
+    form_type,
+    accession_number,
+    revision_number,
+    is_restated,
+    period_end_date,
+    filing_date,
+    source_published_at,
+    available_at,
+    currency,
+    fiscal_year,
+    fiscal_quarter,
+    revenue,
+    gross_profit,
+    operating_income,
+    net_income,
+    eps_basic,
+    eps_diluted,
+    total_assets,
+    total_liabilities,
+    total_debt,
+    debt_current,
+    debt_noncurrent,
+    cash_and_equivalents,
+    shares_outstanding,
+    shareholders_equity,
+    operating_cash_flow,
+    free_cash_flow,
+    quality_status,
+    "REPORTED_QUARTER" AS quarter_value_basis,
+    TRUE AS quarter_structure_complete,
+    CAST([] AS ARRAY<STRING>) AS derivation_component_revision_ids,
+    CAST(NULL AS TIMESTAMP) AS derivation_component_max_available_at
+  FROM latest_per_period
+  WHERE fiscal_quarter IN (1, 2, 3)
+),
+derived_q4 AS (
+  SELECT
+    a.analysis_date,
+    a.signal_hour,
+    a.signal_timestamp,
+    a.ticker,
+    a.revision_id,
+    a.mapping_version,
+    a.form_type,
+    a.accession_number,
+    a.revision_number,
+    a.is_restated,
+    a.period_end_date,
+    a.filing_date,
+    a.source_published_at,
+    a.available_at,
+    a.currency,
+    a.fiscal_year,
+    a.fiscal_quarter,
+    IF(s.component_revenue_count = 3, a.revenue - s.component_revenue, NULL) AS revenue,
+    IF(s.component_gross_profit_count = 3, a.gross_profit - s.component_gross_profit, NULL) AS gross_profit,
+    IF(s.component_operating_income_count = 3, a.operating_income - s.component_operating_income, NULL) AS operating_income,
+    IF(s.component_net_income_count = 3, a.net_income - s.component_net_income, NULL) AS net_income,
+    CAST(NULL AS FLOAT64) AS eps_basic,
+    CAST(NULL AS FLOAT64) AS eps_diluted,
+    a.total_assets,
+    a.total_liabilities,
+    a.total_debt,
+    a.debt_current,
+    a.debt_noncurrent,
+    a.cash_and_equivalents,
+    a.shares_outstanding,
+    a.shareholders_equity,
+    IF(s.component_operating_cash_flow_count = 3, a.operating_cash_flow - s.component_operating_cash_flow, NULL) AS operating_cash_flow,
+    CAST(NULL AS FLOAT64) AS free_cash_flow,
+    a.quality_status,
+    "DERIVED_Q4_ADDITIVE_FACTS_ONLY_FROM_CONTEMPORANEOUS_Q1_Q2_Q3" AS quarter_value_basis,
+    COALESCE(s.component_quarter_count, 0) = 3
+      AND COALESCE(s.component_currency_count, 0) = 1
+      AND s.component_currency = a.currency AS quarter_structure_complete,
+    COALESCE(s.component_revision_ids, CAST([] AS ARRAY<STRING>)) AS derivation_component_revision_ids,
+    s.component_max_available_at AS derivation_component_max_available_at
+  FROM annual_rows a
+  LEFT JOIN annual_component_summary s
+    ON s.analysis_date = a.analysis_date
+   AND s.signal_hour = a.signal_hour
+   AND s.ticker = a.ticker
+   AND s.annual_revision_id = a.revision_id
+)
+
+SELECT * FROM reported_quarters
+UNION ALL
+SELECT * FROM derived_q4
