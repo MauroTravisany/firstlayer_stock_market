@@ -34,28 +34,28 @@ WITH latest_quarter AS (
 ),
 latest_with_prior AS (
   SELECT
-    current.*,
-    prior.revision_id AS prior_year_revision_id,
-    prior.revision_number AS prior_year_revision_number,
-    prior.is_restated AS prior_year_is_restated,
-    prior.available_at AS prior_year_available_at,
-    prior.currency AS prior_year_currency,
-    prior.quarter_value_basis AS prior_year_quarter_value_basis,
-    prior.quarter_structure_complete AS prior_year_quarter_structure_complete,
-    prior.revenue AS revenue_same_q_prev_year,
-    prior.net_income AS net_income_same_q_prev_year,
+    cur_q.*,
+    prior_q.revision_id AS prior_year_revision_id,
+    prior_q.revision_number AS prior_year_revision_number,
+    prior_q.is_restated AS prior_year_is_restated,
+    prior_q.available_at AS prior_year_available_at,
+    prior_q.currency AS prior_year_currency,
+    prior_q.quarter_value_basis AS prior_year_quarter_value_basis,
+    prior_q.quarter_structure_complete AS prior_year_quarter_structure_complete,
+    prior_q.revenue AS revenue_same_q_prev_year,
+    prior_q.net_income AS net_income_same_q_prev_year,
     ROW_NUMBER() OVER (
-      PARTITION BY current.analysis_date, current.signal_hour, current.ticker
-      ORDER BY prior.available_at DESC, prior.revision_number DESC, prior.revision_id DESC
+      PARTITION BY cur_q.analysis_date, cur_q.signal_hour, cur_q.ticker
+      ORDER BY prior_q.available_at DESC, prior_q.revision_number DESC, prior_q.revision_id DESC
     ) AS prior_rank
-  FROM latest_quarter current
-  LEFT JOIN ${ref("financial_quarters_pit")} prior
-    ON prior.analysis_date = current.analysis_date
-   AND prior.signal_hour = current.signal_hour
-   AND prior.ticker = current.ticker
-   AND prior.fiscal_year = current.fiscal_year - 1
-   AND prior.fiscal_quarter = current.fiscal_quarter
-   AND prior.currency = current.currency
+  FROM latest_quarter cur_q
+  LEFT JOIN ${ref("financial_quarters_pit")} prior_q
+    ON prior_q.analysis_date = cur_q.analysis_date
+   AND prior_q.signal_hour = cur_q.signal_hour
+   AND prior_q.ticker = cur_q.ticker
+   AND prior_q.fiscal_year = cur_q.fiscal_year - 1
+   AND prior_q.fiscal_quarter = cur_q.fiscal_quarter
+   AND prior_q.currency = cur_q.currency
 )
 SELECT
   analysis_date,
