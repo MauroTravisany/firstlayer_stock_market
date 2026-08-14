@@ -14,7 +14,6 @@ table:
   partition_by: DATE(bar_start)
   cluster_by: [ticker, provider, source_interval]
   corporate_actions_policy: RAW_UNADJUSTED_OHLC_WITH_PROVIDER_ADJUSTED_CLOSE_PRESERVED
- temporal_placeholder: null
 temporal:
   event_time: bar_end
   available_at: available_at
@@ -26,7 +25,7 @@ source:
   version_field: raw_revision_id
   original_timezone: source_timezone
 deduplication:
-  rule: raw_record_id identifies the provider/ticker/interval/bar; raw_revision_id additionally hashes content and availability. Existing revisions are never updated.
+  rule: raw_record_id identifies the provider ticker interval and bar; raw_revision_id additionally hashes content and availability. Existing revisions are never updated.
 retention:
   policy: Retain every observed revision indefinitely for replay and source reconciliation.
 columns:
