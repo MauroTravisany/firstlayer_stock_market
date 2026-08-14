@@ -1,0 +1,89 @@
+contract_version: 1.0.0
+data_contract_version: audit-contracts-v1
+criticality: P0
+environments: [research, shadow]
+point_in_time:
+  eligibility: BACKTEST_ELIGIBLE
+  reason: Canonical rows expose exactly one reviewed granularity, raw execution OHLC, adjusted return close and explicit source/action/reconciliation lineage after all availability gates.
+table:
+  name: market_price_canonical
+  description: Canonical daily equity ETF and FX bars plus complete UTC crypto four-hour bars.
+  granularity: One canonical row per ticker bar_start and canonical_interval.
+  logical_primary_key: [price_id]
+  append_only: false
+  partition_by: session_date
+  cluster_by: [ticker, canonical_interval, quality_status]
+  corporate_actions_policy: RAW_OHLC_FOR_EXECUTION_ADJUSTED_CLOSE_FOR_RETURNS_VERIFIED_ACTIONS_ONLY
+ temporal_placeholder: null
+temporal:
+  event_time: bar_end
+  available_at: available_at
+  ingested_at: ingested_at
+  timezone: UTC
+  point_in_time_policy: A canonical row is eligible only when every selected price revision and included corporate action was available no later than available_at.
+source:
+  system: market_price_raw corporate_actions_pit market_session_calendar and price_source_reconciliation
+  version_field: price_id
+  original_timezone: UTC
+deduplication:
+  rule: price_id hashes selected source revisions action IDs reconciliation and selection rule; ticker bar_start and canonical_interval are unique.
+retention:
+  policy: Preserve canonical snapshots and their source_revision_ids and action_ids for replay.
+columns:
+- {name: price_id, type: STRING, mode: REQUIRED, description: Content-addressed canonical price identity.}
+- {name: ticker, type: STRING, mode: REQUIRED, description: Canonical ticker.}
+- {name: asset_type, type: STRING, mode: REQUIRED, description: STOCK ETF CRYPTO or FX.}
+- {name: exchange, type: STRING, mode: REQUIRED, description: Canonical exchange.}
+- {name: session_date, type: DATE, mode: REQUIRED, description: Session or UTC bucket date.}
+- {name: bar_start, type: TIMESTAMP, mode: REQUIRED, description: UTC canonical bar start.}
+- {name: bar_end, type: TIMESTAMP, mode: REQUIRED, description: UTC canonical bar end.}
+- {name: canonical_interval, type: STRING, mode: REQUIRED, description: 1d or 4h.}
+- {name: raw_open, type: FLOAT64, mode: REQUIRED, description: Raw execution open.}
+- {name: raw_high, type: FLOAT64, mode: REQUIRED, description: Raw execution high.}
+- {name: raw_low, type: FLOAT64, mode: REQUIRED, description: Raw execution low.}
+- {name: raw_close, type: FLOAT64, mode: REQUIRED, description: Raw execution close.}
+- {name: adjusted_close, type: FLOAT64, mode: REQUIRED, description: Adjusted close used for returns.}
+- {name: raw_volume, type: FLOAT64, mode: NULLABLE, description: Selected raw volume without daily intraday double counting.}
+- {name: split_factor, type: FLOAT64, mode: REQUIRED, description: Eligible split factor or one.}
+- {name: dividend_amount, type: FLOAT64, mode: REQUIRED, description: Eligible cash dividend or zero.}
+- {name: currency, type: STRING, mode: REQUIRED, description: Quote currency.}
+- {name: provider, type: STRING, mode: REQUIRED, description: Primary selected provider.}
+- {name: source_interval, type: STRING, mode: REQUIRED, description: Selected source interval.}
+- {name: coverage_ratio, type: FLOAT64, mode: REQUIRED, description: Intraday coverage ratio.}
+- {name: reconciliation_id, type: STRING, mode: NULLABLE, description: Provider reconciliation identity.}
+- {name: reconciliation_status, type: STRING, mode: REQUIRED, description: Reconciliation state.}
+- {name: quality_status, type: STRING, mode: REQUIRED, description: Canonical quality status.}
+- {name: selected_by_rule, type: STRING, mode: REQUIRED, description: Deterministic selection reason.}
+- {name: data_snapshot_id, type: STRING, mode: REQUIRED, description: Content-addressed canonical snapshot lineage.}
+- {name: available_at, type: TIMESTAMP, mode: REQUIRED, description: Latest required input availability.}
+- {name: ingested_at, type: TIMESTAMP, mode: REQUIRED, description: Latest required input ingestion time.}
+- {name: source_revision_ids, type: ARRAY<STRING>, mode: REPEATED, description: Selected immutable raw revision IDs.}
+- {name: action_ids, type: ARRAY<STRING>, mode: REPEATED, description: Included eligible corporate action IDs.}
+- {name: production_change_allowed, type: BOOL, mode: REQUIRED, description: Always false in WP-04.}
+assertions:
+  not_null: [price_id, ticker, asset_type, exchange, session_date, bar_start, bar_end, canonical_interval, raw_open, raw_high, raw_low, raw_close, adjusted_close, split_factor, dividend_amount, currency, provider, source_interval, coverage_ratio, reconciliation_status, quality_status, selected_by_rule, data_snapshot_id, available_at, ingested_at, production_change_allowed]
+  unique:
+  - [price_id]
+  - [ticker, bar_start, canonical_interval]
+  accepted_values:
+    asset_type: [STOCK, ETF, CRYPTO, FX]
+    canonical_interval: [1d, 4h]
+    source_interval: [15m, 1h, 1d]
+    reconciliation_status: [MATCH, WITHIN_TOLERANCE, MATERIAL_MISMATCH, SOURCE_MISSING, STALE_SOURCE, NOT_REQUIRED_CRYPTO]
+    quality_status: [CANONICAL_RECONCILED, CANONICAL_COVERAGE_ACCEPTED, CANONICAL_DAILY_FALLBACK, CANONICAL_SINGLE_SOURCE, MATERIAL_MISMATCH, STALE_SOURCE, SOURCE_MISSING]
+    selected_by_rule: [INTRADAY_COMPLETE, DAILY_FALLBACK_NO_INTRADAY, DAILY_FALLBACK_INCOMPLETE_INTRADAY, CRYPTO_4H_COMPLETE]
+    production_change_allowed: [false]
+implementation:
+  mode: CODE_SCHEMA_REFERENCE
+  source_files:
+  - dataform/definitions/market_price_canonical.sqlx
+  allow_additional_columns: false
+producers:
+- market_price_raw
+- corporate_actions_pit
+- market_session_calendar
+- price_source_reconciliation
+consumers:
+- trading_price_features_canonical_shadow
+- fx_rates_pit
+- audit_canonical_prices
