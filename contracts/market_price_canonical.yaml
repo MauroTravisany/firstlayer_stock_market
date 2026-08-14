@@ -4,7 +4,7 @@ criticality: P0
 environments: [research, shadow]
 point_in_time:
   eligibility: BACKTEST_ELIGIBLE
-  reason: Canonical rows expose exactly one reviewed granularity, raw execution OHLC, adjusted return close and explicit source/action/reconciliation lineage after all availability gates.
+  reason: Canonical rows expose exactly one reviewed granularity, raw execution OHLC, adjusted return close and explicit source action and reconciliation lineage after all availability gates.
 table:
   name: market_price_canonical
   description: Canonical daily equity ETF and FX bars plus complete UTC crypto four-hour bars.
@@ -14,7 +14,6 @@ table:
   partition_by: session_date
   cluster_by: [ticker, canonical_interval, quality_status]
   corporate_actions_policy: RAW_OHLC_FOR_EXECUTION_ADJUSTED_CLOSE_FOR_RETURNS_VERIFIED_ACTIONS_ONLY
- temporal_placeholder: null
 temporal:
   event_time: bar_end
   available_at: available_at
