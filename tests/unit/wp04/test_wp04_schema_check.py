@@ -190,7 +190,10 @@ class Wp04SchemaCheckTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("--actions-json", result.stdout)
         self.assertIn("--expected-plan-checksum", result.stdout)
-        self.assertIn("WP04_SCHEMA_VALIDATION_WRITE", PATH.read_text(encoding="utf-8"))
+        self.assertEqual(
+            "WP04_SCHEMA_VALIDATION_WRITE",
+            module.ACKNOWLEDGEMENT,
+        )
 
 
 if __name__ == "__main__":
