@@ -88,15 +88,19 @@ jobs:
 
   dependency-review:
     name: Dependency review
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - name: Review dependency changes
+        if: github.event_name == 'pull_request'
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: critical
+
+      - name: Record dependency review as not applicable
+        if: github.event_name != 'pull_request'
+        run: echo '{"status":"NOT_APPLICABLE_OUTSIDE_PULL_REQUEST"}'
 
   dependency-security:
     name: Critical npm audit gate
@@ -163,17 +167,16 @@ jobs:
           import sys
 
           results = {name: value["result"] for name, value in json.loads(os.environ["NEEDS_JSON"]).items()}
-          required = {"workflow-contracts", "python-and-invariants", "dependency-security"}
+          required = {"workflow-contracts", "python-and-invariants", "dependency-review", "dependency-security"}
           failures = {name: results.get(name) for name in required if results.get(name) != "success"}
-          dependency = results.get("dependency-review")
-          if dependency not in {"success", "skipped"}:
-              failures["dependency-review"] = dependency
           print(json.dumps({"status": "PASS" if not failures else "FAIL", "results": results}, sort_keys=True))
           if failures:
               sys.exit(1)
           PY
+
   build-images:
     name: Build immutable image (${{ matrix.service }})
+    if: ${{ always() && needs.preflight-gate.result == 'success' }}
     needs:
       - preflight-gate
     runs-on: ubuntu-latest
@@ -208,11 +211,22 @@ jobs:
         run: |
           set -euo pipefail
           image="wp01/${{ matrix.service }}:${GITHUB_SHA}"
-          docker build             --label "org.opencontainers.image.revision=${GITHUB_SHA}"             --tag "${image}"             "${{ matrix.context }}"
+          docker build \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --tag "${image}" \
+            "${{ matrix.context }}"
           mkdir -p "release-artifacts/${{ matrix.service }}"
           docker save "${image}" | gzip -9 > "release-artifacts/${{ matrix.service }}/image.tar.gz"
-          sha256sum "release-artifacts/${{ matrix.service }}/image.tar.gz"             > "release-artifacts/${{ matrix.service }}/image.tar.gz.sha256"
-          jq -n             --arg service "${{ matrix.service }}"             --arg context "${{ matrix.context }}"             --arg git_sha "${GITHUB_SHA}"             --arg local_image "${image}"             --arg image_id "$(docker image inspect --format '{{.Id}}' "${image}")"             '{service:$service,context:$context,git_sha:$git_sha,local_image:$local_image,image_id:$image_id}'             > "release-artifacts/${{ matrix.service }}/metadata.json"
+          sha256sum "release-artifacts/${{ matrix.service }}/image.tar.gz" \
+            > "release-artifacts/${{ matrix.service }}/image.tar.gz.sha256"
+          jq -n \
+            --arg service "${{ matrix.service }}" \
+            --arg context "${{ matrix.context }}" \
+            --arg git_sha "${GITHUB_SHA}" \
+            --arg local_image "${image}" \
+            --arg image_id "$(docker image inspect --format '{{.Id}}' "${image}")" \
+            '{service:$service,context:$context,git_sha:$git_sha,local_image:$local_image,image_id:$image_id}' \
+            > "release-artifacts/${{ matrix.service }}/metadata.json"
 
       - name: Verify container liveness and non-mutating readiness
         run: >-
@@ -231,6 +245,7 @@ jobs:
 
   dataform:
     name: Dataform compile
+    if: ${{ always() && needs.preflight-gate.result == 'success' }}
     needs:
       - preflight-gate
     runs-on: ubuntu-latest
@@ -258,6 +273,7 @@ jobs:
 
   dashboard:
     name: Dashboard build
+    if: ${{ always() && needs.preflight-gate.result == 'success' }}
     needs:
       - preflight-gate
     runs-on: ubuntu-latest
@@ -296,6 +312,7 @@ jobs:
 
   terraform:
     name: Terraform validate
+    if: ${{ always() && needs.preflight-gate.result == 'success' }}
     needs:
       - preflight-gate
     runs-on: ubuntu-latest
