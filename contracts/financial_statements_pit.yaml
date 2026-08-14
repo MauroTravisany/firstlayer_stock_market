@@ -1,0 +1,114 @@
+contract_version: 1.1.0
+data_contract_version: audit-contracts-v1
+criticality: P0
+environments:
+- research
+- shadow
+point_in_time:
+  eligibility: BACKTEST_ELIGIBLE
+  reason: Canonical view contains only SEC revisions with verified acceptance timestamp, fiscal metadata and usable facts; revision ordinals are derived over complete immutable history.
+table:
+  name: financial_statements_pit
+  description: Canonical eligible SEC filing revisions exposed to PIT consumers.
+  granularity: One immutable eligible row per revision_id, with derived revision lineage.
+  logical_primary_key:
+  - revision_id
+  append_only: true
+  partition_by: null
+  cluster_by: []
+  corporate_actions_policy: NOT_APPLICABLE
+temporal:
+  event_time: source_published_at
+  available_at: available_at
+  ingested_at: loaded_at
+  timezone: UTC
+  point_in_time_policy: available_at equals verified SEC acceptanceDateTime and is never derived from filing_date or period_end_date.
+source:
+  system: financial_statements_pit_raw filtered canonical view
+  version_field: revision_id
+  original_timezone: UTC
+deduplication:
+  rule: revision_id is globally unique; revision_number and is_restated are derived over complete source history and are never persisted into the raw append-only store.
+retention:
+  policy: Retain every eligible revision indefinitely for replay.
+columns:
+- {name: revision_id, type: STRING, mode: REQUIRED, description: Content-addressed immutable revision identity.}
+- {name: ticker, type: STRING, mode: REQUIRED, description: Canonical ticker.}
+- {name: cik, type: STRING, mode: NULLABLE, description: SEC CIK.}
+- {name: mapping_version, type: STRING, mode: REQUIRED, description: Versioned ticker/CIK/currency mapping.}
+- {name: form_type, type: STRING, mode: REQUIRED, description: SEC filing form.}
+- {name: accession_number, type: STRING, mode: REQUIRED, description: SEC accession number.}
+- {name: source_record_id, type: STRING, mode: REQUIRED, description: SEC source record identifier.}
+- {name: source_is_amendment, type: BOOL, mode: REQUIRED, description: Source-form amendment flag.}
+- {name: revision_number, type: INT64, mode: REQUIRED, description: Chronological revision ordinal derived within fiscal period.}
+- {name: is_restated, type: BOOL, mode: REQUIRED, description: True for source amendments or later revisions of the same fiscal period.}
+- {name: filing_date, type: DATE, mode: NULLABLE, description: Filing date, not availability.}
+- {name: source_published_at, type: TIMESTAMP, mode: REQUIRED, description: Verified SEC acceptance timestamp.}
+- {name: available_at, type: TIMESTAMP, mode: REQUIRED, description: First eligible market-use timestamp.}
+- {name: period_end_date, type: DATE, mode: REQUIRED, description: Fiscal period end.}
+- {name: fiscal_year, type: INT64, mode: REQUIRED, description: Fiscal year from XBRL.}
+- {name: fiscal_quarter, type: INT64, mode: REQUIRED, description: Fiscal quarter from XBRL.}
+- {name: currency, type: STRING, mode: REQUIRED, description: Reporting currency selected by versioned mapping.}
+- {name: revenue, type: FLOAT64, mode: NULLABLE, description: Period revenue.}
+- {name: gross_profit, type: FLOAT64, mode: NULLABLE, description: Period gross profit.}
+- {name: operating_income, type: FLOAT64, mode: NULLABLE, description: Period operating income.}
+- {name: net_income, type: FLOAT64, mode: NULLABLE, description: Period net income.}
+- {name: eps_basic, type: FLOAT64, mode: NULLABLE, description: Basic EPS.}
+- {name: eps_diluted, type: FLOAT64, mode: NULLABLE, description: Diluted EPS.}
+- {name: total_assets, type: FLOAT64, mode: NULLABLE, description: Total assets.}
+- {name: total_liabilities, type: FLOAT64, mode: NULLABLE, description: Total liabilities.}
+- {name: total_debt, type: FLOAT64, mode: NULLABLE, description: Total debt.}
+- {name: debt_current, type: FLOAT64, mode: NULLABLE, description: Current debt.}
+- {name: debt_noncurrent, type: FLOAT64, mode: NULLABLE, description: Noncurrent debt.}
+- {name: cash_and_equivalents, type: FLOAT64, mode: NULLABLE, description: Cash and equivalents.}
+- {name: shares_outstanding, type: FLOAT64, mode: NULLABLE, description: Shares outstanding.}
+- {name: shareholders_equity, type: FLOAT64, mode: NULLABLE, description: Shareholders equity.}
+- {name: operating_cash_flow, type: FLOAT64, mode: NULLABLE, description: Operating cash flow.}
+- {name: free_cash_flow, type: FLOAT64, mode: NULLABLE, description: Reserved FCF.}
+- {name: source, type: STRING, mode: REQUIRED, description: SEC EDGAR source.}
+- {name: source_url, type: STRING, mode: REQUIRED, description: SEC archive URL.}
+- {name: backtest_eligible, type: BOOL, mode: REQUIRED, description: Always true in canonical view.}
+- {name: eligibility_reason, type: STRING, mode: REQUIRED, description: Verified eligibility reason.}
+- {name: quality_status, type: STRING, mode: REQUIRED, description: Eligible PIT quality status.}
+- {name: loaded_at, type: TIMESTAMP, mode: REQUIRED, description: Ingestion timestamp.}
+assertions:
+  not_null:
+  - revision_id
+  - ticker
+  - mapping_version
+  - form_type
+  - accession_number
+  - source_record_id
+  - source_is_amendment
+  - revision_number
+  - is_restated
+  - source_published_at
+  - available_at
+  - period_end_date
+  - fiscal_year
+  - fiscal_quarter
+  - currency
+  - source
+  - source_url
+  - backtest_eligible
+  - eligibility_reason
+  - quality_status
+  - loaded_at
+  unique:
+  - - revision_id
+  accepted_values:
+    source_is_amendment: [true, false]
+    is_restated: [true, false]
+    backtest_eligible: [true]
+    quality_status: [ELIGIBLE_VERIFIED_PIT]
+implementation:
+  mode: CODE_SCHEMA_REFERENCE
+  source_files:
+  - dataform/definitions/financial_statements_pit.sqlx
+  allow_additional_columns: false
+producers:
+- financial_statements_pit_raw
+consumers:
+- financial_quarters_pit
+- trading_financial_context_pit
+- financial_ttm_pit

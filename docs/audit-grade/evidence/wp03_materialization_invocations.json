@@ -1,0 +1,215 @@
+{
+    "compilation_result":  "projects/stocks-437902/locations/us-east1/repositories/portfolio-valuation/compilationResults/0e361ce9-e39a-423a-be9b-1902eafd5a16",
+    "dataset":  "acciones_dataset_shadow_wp03_20260814t013433",
+    "results":  [
+                    {
+                        "order":  1,
+                        "target":  "financial_statements_pit",
+                        "invocation":  "projects/stocks-437902/locations/us-east1/repositories/portfolio-valuation/workflowInvocations/1786671822-e0e6caba-788c-405b-9da8-5c15eb9bda07",
+                        "state":  "SUCCEEDED",
+                        "action_count":  1,
+                        "actions":  [
+                                        {
+                                            "target":  {
+                                                           "database":  "stocks-437902",
+                                                           "schema":  "acciones_dataset_shadow_wp03_20260814t013433",
+                                                           "name":  "financial_statements_pit"
+                                                       },
+                                            "state":  "SUCCEEDED",
+                                            "failureReason":  null
+                                        }
+                                    ],
+                        "transitive_dependencies":  false
+                    },
+                    {
+                        "order":  2,
+                        "target":  "financial_quarters_pit",
+                        "invocation":  "projects/stocks-437902/locations/us-east1/repositories/portfolio-valuation/workflowInvocations/1786671829-4c1bd3fa-5c5e-4d7d-a2c6-7f75da28c5b6",
+                        "state":  "SUCCEEDED",
+                        "action_count":  1,
+                        "actions":  [
+                                        {
+                                            "target":  {
+                                                           "database":  "stocks-437902",
+                                                           "schema":  "acciones_dataset_shadow_wp03_20260814t013433",
+                                                           "name":  "financial_quarters_pit"
+                                                       },
+                                            "state":  "SUCCEEDED",
+                                            "failureReason":  null
+                                        }
+                                    ],
+                        "transitive_dependencies":  false
+                    },
+                    {
+                        "order":  3,
+                        "target":  "financial_ttm_pit",
+                        "invocation":  "projects/stocks-437902/locations/us-east1/repositories/portfolio-valuation/workflowInvocations/1786671850-3324d1af-8cd9-4908-b1f6-785f96ff046b",
+                        "state":  "SUCCEEDED",
+                        "action_count":  1,
+                        "actions":  [
+                                        {
+                                            "target":  {
+                                                           "database":  "stocks-437902",
+                                                           "schema":  "acciones_dataset_shadow_wp03_20260814t013433",
+                                                           "name":  "financial_ttm_pit"
+                                                       },
+                                            "state":  "SUCCEEDED",
+                                            "failureReason":  null
+                                        }
+                                    ],
+                        "transitive_dependencies":  false
+                    },
+                    {
+                        "order":  4,
+                        "target":  "earnings_events_pit",
+                        "invocation":  "projects/stocks-437902/locations/us-east1/repositories/portfolio-valuation/workflowInvocations/1786671872-bfa74308-555d-46c1-82c3-53c441e5c167",
+                        "state":  "SUCCEEDED",
+                        "action_count":  1,
+                        "actions":  [
+                                        {
+                                            "target":  {
+                                                           "database":  "stocks-437902",
+                                                           "schema":  "acciones_dataset_shadow_wp03_20260814t013433",
+                                                           "name":  "earnings_events_pit"
+                                                       },
+                                            "state":  "SUCCEEDED",
+                                            "failureReason":  null
+                                        }
+                                    ],
+                        "transitive_dependencies":  false
+                    },
+                    {
+                        "order":  5,
+                        "target":  "trading_financial_context_pit",
+                        "invocation":  "projects/stocks-437902/locations/us-east1/repositories/portfolio-valuation/workflowInvocations/1786671878-2478a1d4-deb7-4b44-8f65-5b688b46c6f8",
+                        "state":  "SUCCEEDED",
+                        "action_count":  1,
+                        "actions":  [
+                                        {
+                                            "target":  {
+                                                           "database":  "stocks-437902",
+                                                           "schema":  "acciones_dataset_shadow_wp03_20260814t013433",
+                                                           "name":  "trading_financial_context_pit"
+                                                       },
+                                            "state":  "SUCCEEDED",
+                                            "failureReason":  null
+                                        }
+                                    ],
+                        "transitive_dependencies":  false
+                    },
+                    {
+                        "order":  6,
+                        "target":  "trading_earnings_context_pit",
+                        "invocation":  "projects/stocks-437902/locations/us-east1/repositories/portfolio-valuation/workflowInvocations/1786671899-1230ae89-b87a-4068-aa56-bd0e4ff94fde",
+                        "state":  "SUCCEEDED",
+                        "action_count":  1,
+                        "actions":  [
+                                        {
+                                            "target":  {
+                                                           "database":  "stocks-437902",
+                                                           "schema":  "acciones_dataset_shadow_wp03_20260814t013433",
+                                                           "name":  "trading_earnings_context_pit"
+                                                       },
+                                            "state":  "SUCCEEDED",
+                                            "failureReason":  null
+                                        }
+                                    ],
+                        "transitive_dependencies":  false
+                    },
+                    {
+                        "order":  7,
+                        "target":  "portfolio_valuation_pit_shadow",
+                        "invocation":  "projects/stocks-437902/locations/us-east1/repositories/portfolio-valuation/workflowInvocations/1786671937-644c719b-d26c-404b-961e-9854f9fc76d1",
+                        "state":  "SUCCEEDED",
+                        "action_count":  1,
+                        "actions":  [
+                                        {
+                                            "target":  {
+                                                           "database":  "stocks-437902",
+                                                           "schema":  "acciones_dataset_shadow_wp03_20260814t013433",
+                                                           "name":  "portfolio_valuation_pit_shadow"
+                                                       },
+                                            "state":  "SUCCEEDED",
+                                            "failureReason":  null
+                                        }
+                                    ],
+                        "transitive_dependencies":  false
+                    },
+                    {
+                        "order":  8,
+                        "target":  "trading_historical_context_pit",
+                        "invocation":  "projects/stocks-437902/locations/us-east1/repositories/portfolio-valuation/workflowInvocations/1786671979-74460465-f1e6-4244-915f-ba8ded1549cf",
+                        "state":  "SUCCEEDED",
+                        "action_count":  1,
+                        "actions":  [
+                                        {
+                                            "target":  {
+                                                           "database":  "stocks-437902",
+                                                           "schema":  "acciones_dataset_shadow_wp03_20260814t013433",
+                                                           "name":  "trading_historical_context_pit"
+                                                       },
+                                            "state":  "SUCCEEDED",
+                                            "failureReason":  null
+                                        }
+                                    ],
+                        "transitive_dependencies":  false
+                    },
+                    {
+                        "order":  9,
+                        "target":  "wp03_legacy_vs_pit_shadow",
+                        "invocation":  "projects/stocks-437902/locations/us-east1/repositories/portfolio-valuation/workflowInvocations/1786672022-4a4d5f46-eaf1-40e8-b65e-78caf58500ef",
+                        "state":  "SUCCEEDED",
+                        "action_count":  1,
+                        "actions":  [
+                                        {
+                                            "target":  {
+                                                           "database":  "stocks-437902",
+                                                           "schema":  "acciones_dataset_shadow_wp03_20260814t013433",
+                                                           "name":  "wp03_legacy_vs_pit_shadow"
+                                                       },
+                                            "state":  "SUCCEEDED",
+                                            "failureReason":  null
+                                        }
+                                    ],
+                        "transitive_dependencies":  false
+                    },
+                    {
+                        "order":  10,
+                        "target":  "wp03_legacy_invalidation",
+                        "invocation":  "projects/stocks-437902/locations/us-east1/repositories/portfolio-valuation/workflowInvocations/1786672067-7d82aefe-dcf3-41b2-932d-e6e2d8ce9b9b",
+                        "state":  "SUCCEEDED",
+                        "action_count":  1,
+                        "actions":  [
+                                        {
+                                            "target":  {
+                                                           "database":  "stocks-437902",
+                                                           "schema":  "acciones_dataset_shadow_wp03_20260814t013433",
+                                                           "name":  "wp03_legacy_invalidation"
+                                                       },
+                                            "state":  "SUCCEEDED",
+                                            "failureReason":  null
+                                        }
+                                    ],
+                        "transitive_dependencies":  false
+                    },
+                    {
+                        "order":  11,
+                        "target":  "audit_no_lookahead",
+                        "invocation":  "projects/stocks-437902/locations/us-east1/repositories/portfolio-valuation/workflowInvocations/1786672072-8b8fb4fe-348a-4522-9d72-20db55654899",
+                        "state":  "SUCCEEDED",
+                        "action_count":  1,
+                        "actions":  [
+                                        {
+                                            "target":  {
+                                                           "database":  "stocks-437902",
+                                                           "schema":  "acciones_dataset_shadow_wp03_20260814t013433",
+                                                           "name":  "audit_no_lookahead"
+                                                       },
+                                            "state":  "SUCCEEDED",
+                                            "failureReason":  null
+                                        }
+                                    ],
+                        "transitive_dependencies":  false
+                    }
+                ]
+}

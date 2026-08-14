@@ -1,0 +1,230 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "trading_earnings_context_pit",
+  description: "Point-in-time earnings context. Expected events and reported outcomes are consumed only after their immutable observation availability and reported effects expire after a bounded recent-event window.",
+  tags: ["audit-grade", "pit", "earnings", "shadow", "wp03"],
+  bigquery: {
+    partitionBy: "analysis_date",
+    clusterBy: ["ticker", "earnings_event_status"]
+  },
+  assertions: {
+    nonNull: ["analysis_date", "signal_hour", "signal_timestamp_utc", "ticker", "earnings_event_status"],
+    uniqueKey: ["analysis_date", "signal_hour", "ticker"],
+    rowConditions: [
+      "expected_available_at IS NULL OR expected_available_at <= signal_timestamp_utc",
+      "reported_available_at IS NULL OR reported_available_at <= signal_timestamp_utc"
+    ]
+  },
+  dependencies: ["earnings_events_pit", "trading_price_features"]
+}
+
+WITH price_slots AS (
+  SELECT
+    analysis_date,
+    signal_hour,
+    TIMESTAMP(signal_timestamp, "UTC") AS signal_timestamp_utc,
+    ticker
+  FROM ${ref("trading_price_features")}
+),
+expected_asof AS (
+  SELECT * EXCEPT(rn)
+  FROM (
+    SELECT
+      p.analysis_date,
+      p.signal_hour,
+      p.signal_timestamp_utc,
+      p.ticker,
+      e.event_id,
+      e.source_record_id,
+      e.revision,
+      e.earnings_date,
+      e.earnings_time,
+      e.eps_estimate,
+      e.event_status,
+      e.source,
+      e.source_version,
+      e.source_published_at,
+      e.quality_status,
+      e.available_at,
+      ROW_NUMBER() OVER (
+        PARTITION BY p.analysis_date, p.signal_hour, p.ticker
+        ORDER BY e.available_at DESC, e.revision DESC, e.event_id DESC
+      ) AS rn
+    FROM price_slots p
+    LEFT JOIN ${ref("earnings_events_pit")} e
+      ON e.ticker = p.ticker
+     AND e.event_kind = "EXPECTED"
+     AND e.available_at <= p.signal_timestamp_utc
+     AND e.backtest_eligible = TRUE
+  )
+  WHERE rn = 1
+),
+reported_asof AS (
+  SELECT * EXCEPT(rn)
+  FROM (
+    SELECT
+      p.analysis_date,
+      p.signal_hour,
+      p.signal_timestamp_utc,
+      p.ticker,
+      e.event_id,
+      e.source_record_id,
+      e.revision,
+      e.earnings_date,
+      e.reported_eps,
+      e.surprise_pct,
+      e.event_status,
+      e.source,
+      e.source_version,
+      e.source_published_at,
+      e.quality_status,
+      e.available_at,
+      ROW_NUMBER() OVER (
+        PARTITION BY p.analysis_date, p.signal_hour, p.ticker
+        ORDER BY e.available_at DESC, e.revision DESC, e.event_id DESC
+      ) AS rn
+    FROM price_slots p
+    LEFT JOIN ${ref("earnings_events_pit")} e
+      ON e.ticker = p.ticker
+     AND e.event_kind = "REPORTED"
+     AND e.available_at <= p.signal_timestamp_utc
+     AND e.backtest_eligible = TRUE
+  )
+  WHERE rn = 1
+),
+joined AS (
+  SELECT
+    p.*,
+    x.event_id AS expected_event_id,
+    x.source_record_id AS expected_source_record_id,
+    x.revision AS expected_revision,
+    x.earnings_date AS expected_earnings_date,
+    x.earnings_time,
+    x.eps_estimate,
+    x.event_status AS expected_source_event_status,
+    x.source AS expected_source,
+    x.source_version AS expected_source_version,
+    x.source_published_at AS expected_source_published_at,
+    x.quality_status AS expected_quality_status,
+    x.available_at AS expected_available_at,
+    r.event_id AS reported_event_id,
+    r.source_record_id AS reported_source_record_id,
+    r.revision AS reported_revision,
+    r.earnings_date AS reported_earnings_date,
+    r.reported_eps,
+    r.surprise_pct,
+    r.event_status AS reported_source_event_status,
+    r.source AS reported_source,
+    r.source_version AS reported_source_version,
+    r.source_published_at AS reported_source_published_at,
+    r.quality_status AS reported_quality_status,
+    r.available_at AS reported_available_at,
+    DATE_DIFF(x.earnings_date, p.analysis_date, DAY) AS days_to_expected_earnings,
+    DATE_DIFF(
+      p.analysis_date,
+      COALESCE(r.earnings_date, DATE(r.available_at)),
+      DAY
+    ) AS reported_age_days
+  FROM price_slots p
+  LEFT JOIN expected_asof x
+    ON x.analysis_date = p.analysis_date
+   AND x.signal_hour = p.signal_hour
+   AND x.ticker = p.ticker
+  LEFT JOIN reported_asof r
+    ON r.analysis_date = p.analysis_date
+   AND r.signal_hour = p.signal_hour
+   AND r.ticker = p.ticker
+)
+SELECT
+  analysis_date,
+  signal_hour,
+  signal_timestamp_utc,
+  ticker,
+  COALESCE(expected_earnings_date, reported_earnings_date) AS earnings_date,
+  expected_earnings_date,
+  reported_earnings_date,
+  days_to_expected_earnings AS days_to_earnings,
+  reported_age_days,
+  earnings_time,
+  eps_estimate,
+  reported_eps,
+  surprise_pct,
+  CASE
+    WHEN expected_earnings_date IS NOT NULL
+      AND days_to_expected_earnings BETWEEN 0 AND 3
+      THEN "EARNINGS_IMMINENT"
+    WHEN expected_earnings_date IS NOT NULL
+      AND days_to_expected_earnings BETWEEN 4 AND 10
+      THEN "PRE_EARNINGS_WINDOW"
+    WHEN reported_eps IS NOT NULL
+      AND reported_age_days BETWEEN 0 AND 5
+      AND surprise_pct < -5
+      THEN "RECENT_NEGATIVE_SURPRISE"
+    WHEN reported_eps IS NOT NULL
+      AND reported_age_days BETWEEN 0 AND 5
+      AND surprise_pct > 5
+      THEN "RECENT_POSITIVE_SURPRISE"
+    WHEN reported_eps IS NOT NULL
+      AND reported_age_days BETWEEN 0 AND 5
+      THEN "RECENT_RESULT"
+    WHEN expected_event_id IS NULL AND reported_event_id IS NULL
+      THEN "NO_EARNINGS_DATA"
+    ELSE "NO_CURRENT_EARNINGS_EVENT"
+  END AS earnings_event_status,
+  CASE
+    WHEN expected_earnings_date IS NOT NULL
+      AND days_to_expected_earnings BETWEEN 0 AND 3 THEN -0.75
+    WHEN expected_earnings_date IS NOT NULL
+      AND days_to_expected_earnings BETWEEN 4 AND 10 THEN -0.35
+    WHEN reported_eps IS NOT NULL
+      AND reported_age_days BETWEEN 0 AND 5
+      AND surprise_pct < -5 THEN -1.25
+    WHEN reported_eps IS NOT NULL
+      AND reported_age_days BETWEEN 0 AND 5
+      AND surprise_pct > 5 THEN 0.75
+    WHEN reported_eps IS NOT NULL
+      AND reported_age_days BETWEEN 0 AND 5 THEN 0.10
+    WHEN expected_event_id IS NULL AND reported_event_id IS NULL THEN -0.10
+    ELSE 0.0
+  END AS earnings_event_score,
+  CASE
+    WHEN expected_event_id IS NULL AND reported_event_id IS NULL
+      THEN "Sin observacion PIT de calendario o resultado."
+    WHEN expected_earnings_date IS NOT NULL
+      AND days_to_expected_earnings BETWEEN 0 AND 3
+      THEN "Resultados dentro de 3 dias segun la ultima expectativa observada antes de la senal."
+    WHEN expected_earnings_date IS NOT NULL
+      AND days_to_expected_earnings BETWEEN 4 AND 10
+      THEN "Resultados proximos segun el calendario observado antes de la senal."
+    WHEN reported_eps IS NOT NULL
+      AND reported_age_days BETWEEN 0 AND 5
+      AND surprise_pct < -5
+      THEN "Resultado negativo observado y aun dentro de la ventana reciente."
+    WHEN reported_eps IS NOT NULL
+      AND reported_age_days BETWEEN 0 AND 5
+      AND surprise_pct > 5
+      THEN "Resultado positivo observado y aun dentro de la ventana reciente."
+    WHEN reported_eps IS NOT NULL
+      AND reported_age_days BETWEEN 0 AND 5
+      THEN "Resultado observado y aun dentro de la ventana reciente."
+    ELSE "No existe un evento de earnings vigente para esta senal."
+  END AS earnings_context_note,
+  expected_event_id,
+  expected_source_record_id,
+  expected_revision,
+  expected_source,
+  expected_source_version,
+  expected_source_published_at,
+  expected_quality_status,
+  expected_available_at,
+  reported_event_id,
+  reported_source_record_id,
+  reported_revision,
+  reported_source,
+  reported_source_version,
+  reported_source_published_at,
+  reported_quality_status,
+  reported_available_at,
+  CURRENT_TIMESTAMP() AS calculated_at
+FROM joined

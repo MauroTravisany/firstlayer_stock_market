@@ -1,0 +1,248 @@
+{
+  "captured_at": "2026-08-14T01:48:46.813811+00:00",
+  "ci_run_id": "31725001827",
+  "contract_set_hash": "893f69a02d7caf3616561129d9e633f19998427aaaff365ca01e330ba85a8ecd",
+  "dataset_id": "acciones_dataset_shadow_wp03_20260814t013433",
+  "dataset_labels": {
+    "environment": "shadow",
+    "work_package": "wp03"
+  },
+  "dataset_location": "us-east1",
+  "evaluation": {
+    "hard_gate_count": 0,
+    "problems": [],
+    "status": "PASS",
+    "warning_count": 1,
+    "warnings": [
+      {
+        "code": "INCOMPLETE_Q4_ROWS_RETAINED_FAIL_CLOSED",
+        "count": 2054
+      }
+    ]
+  },
+  "evidence_checksum": "42eec7cafd1722ffa5dcbf9d4e9925f8135150556d703b16ac2a9b61dbc629f2",
+  "git_sha": "bb665f9d0b78370788888594e8b19a98de75b1dd",
+  "location": "us-east1",
+  "mapping_version": "sec-company-tickers-2026-08-11-v1",
+  "operation": "WP03_SHADOW_EVIDENCE_CAPTURE",
+  "production_change_allowed": false,
+  "project_id": "stocks-437902",
+  "query_hashes": {
+    "canonical_summary": "18a52b53520b8c120941b815e7a503e0e9fe24b5eb7b979a1407669e60feb0ea",
+    "comparison_summary": "0c4aa4a3f1d56c5cf0726b4ce01c07dfec0efc072d835c879f1458226c90f1c3",
+    "earnings_context_summary": "4538c7f521c50cfda9b0331efdb5f2d723880b734f72f645893e5bb759b277cc",
+    "earnings_summary": "9ded517df6cfd3a976291ae4d2109b4f0cea7efbcd891ba6520fb720fd166155",
+    "invalidation_summary": "855152e0434a62b54dfc5957458be25479bfa6d7798e923b0d1524dfd8781c69",
+    "no_lookahead_summary": "5d127dcd896f02c16f8cd6077cec5aaa08e83a6fac1b399538da20ea035a4025",
+    "quarter_summary": "5bc1bafb8443733bcbb484aab3d226950a9cbe74df00cab46c286fd35d022e89",
+    "raw_summary": "5bff1539c61055069cabf7a0f81817e29bcbb68ddf31fc87d2a017e70c81dd16",
+    "ttm_summary": "eefe881a104648bb049d33b3fdd4f447c3660060e953f66fcc372423c8866240",
+    "valuation_summary": "187c7e60a76ecf972e0d40235379fc6f61d7e2166dd5c8c639d9fa3c7ee414ee"
+  },
+  "query_job_ids": {
+    "canonical_summary": "5674c49d-025b-4c5b-8394-93fb7841b844",
+    "comparison_summary": "1c76bba3-b905-4e37-97ef-25c629377c4f",
+    "earnings_context_summary": "ef38564c-b344-4502-9f3a-b3573a94f6ce",
+    "earnings_summary": "ba1f0069-a13b-4049-a32d-98efe44f7523",
+    "invalidation_summary": "87707ae7-a218-4e88-81e3-f9d2cd9e67ba",
+    "no_lookahead_summary": "973cd187-03da-4005-84ac-67d57d6d1aa8",
+    "quarter_summary": "ca8b2796-4104-44c3-9925-c5a1ca2d15e5",
+    "raw_summary": "f7b8b92b-4e0c-46da-82c4-2335bc16a659",
+    "ttm_summary": "a8aa8ee4-14e6-476c-97c1-507b0171df16",
+    "valuation_summary": "e086ca50-bf33-4707-af60-0f287b19efd1"
+  },
+  "query_results": {
+    "canonical_summary": {
+      "availability_mismatch_count": 0,
+      "duplicate_revision_count": 0,
+      "invalid_quality_count": 0,
+      "invalid_revision_number_count": 0,
+      "max_revision_number": 1,
+      "missing_availability_count": 0,
+      "restated_row_count": 0,
+      "row_count": 90,
+      "unexpected_mapping_count": 0
+    },
+    "comparison_summary": {
+      "promotion_violation_count": 0,
+      "row_count": 31786,
+      "status_counts": [
+        {
+          "pit_divergence_type": "EARNINGS_CONTEXT_CHANGED",
+          "row_count": 35
+        },
+        {
+          "pit_divergence_type": "FUNDAMENTAL_GROWTH_CHANGED",
+          "row_count": 16
+        },
+        {
+          "pit_divergence_type": "LEGACY_USED_UNVERIFIABLE_FINANCIAL",
+          "row_count": 4395
+        },
+        {
+          "pit_divergence_type": "NO_MATERIAL_DIFFERENCE",
+          "row_count": 5564
+        },
+        {
+          "pit_divergence_type": "VALUATION_CLASSIFICATION_CHANGED",
+          "row_count": 21776
+        }
+      ]
+    },
+    "earnings_context_summary": {
+      "expected_after_signal_count": 0,
+      "reported_after_signal_count": 0,
+      "row_count": 31786,
+      "stale_recent_status_count": 0
+    },
+    "earnings_summary": {
+      "availability_mismatch_count": 0,
+      "duplicate_event_count": 0,
+      "expected_row_count": 2397,
+      "ineligible_row_count": 0,
+      "invalid_kind_count": 0,
+      "invalid_revision_count": 0,
+      "reported_row_count": 1928,
+      "row_count": 4325
+    },
+    "invalidation_summary": {
+      "classification_violation_count": 0,
+      "promotion_violation_count": 0,
+      "recomputation_violation_count": 0,
+      "row_count": 10
+    },
+    "no_lookahead_summary": {
+      "sample_violations": [],
+      "violation_count": 0
+    },
+    "quarter_summary": {
+      "available_after_signal_count": 0,
+      "incomplete_q4_count": 2054,
+      "missing_currency_count": 0,
+      "q4_component_after_annual_count": 0,
+      "q4_component_after_signal_count": 0,
+      "q4_row_count": 7399,
+      "row_count": 30037
+    },
+    "raw_summary": {
+      "duplicate_revision_count": 0,
+      "eligible_row_count": 90,
+      "mapping_versions": [
+        "sec-company-tickers-2026-08-11-v1"
+      ],
+      "max_available_at": "2026-07-31T10:01:02+00:00",
+      "max_loaded_at": "2026-08-14T01:41:56.495119+00:00",
+      "min_available_at": "2022-03-18T00:33:34+00:00",
+      "min_loaded_at": "2026-08-14T01:41:52.153697+00:00",
+      "other_mapping_row_count": 0,
+      "rejected_row_count": 0,
+      "row_count": 90,
+      "target_mapping_row_count": 90
+    },
+    "ttm_summary": {
+      "available_after_signal_count": 0,
+      "complete_row_count": 2448,
+      "invalid_complete_row_count": 0,
+      "missing_lineage_count": 0,
+      "row_count": 3256
+    },
+    "valuation_summary": {
+      "cross_currency_arithmetic_count": 0,
+      "financial_after_signal_count": 0,
+      "negative_multiple_count": 0,
+      "price_after_signal_count": 0,
+      "production_change_violation_count": 0,
+      "promotion_mode_violation_count": 0,
+      "row_count": 31786
+    }
+  },
+  "raw_schema_drift": [],
+  "schema_snapshot_hash": "258c90c5e1eef07d26cb91d19950df57d5ba2ce176b2845a48dd15bec19c1081",
+  "schema_version": 1,
+  "table_metadata": {
+    "audit_no_lookahead": {
+      "modified": "2026-08-14T01:47:52.892000+00:00",
+      "num_rows": 0,
+      "schema_sha256": "95669a35cb0e4aaac62e1593fe39305256bf1be3695283fa762f26de412dccf5",
+      "table_id": "stocks-437902.acciones_dataset_shadow_wp03_20260814t013433.audit_no_lookahead",
+      "table_type": "VIEW"
+    },
+    "earnings_events_pit": {
+      "modified": "2026-08-14T01:44:34.645000+00:00",
+      "num_rows": 4325,
+      "schema_sha256": "5c70de1c13a529478a7a7d1fa269445cf20224cbbe8027160a223dcae5c1af48",
+      "table_id": "stocks-437902.acciones_dataset_shadow_wp03_20260814t013433.earnings_events_pit",
+      "table_type": "TABLE"
+    },
+    "financial_quarters_pit": {
+      "modified": "2026-08-14T01:44:04.574000+00:00",
+      "num_rows": 30037,
+      "schema_sha256": "ef248ed09355099e5132db3313c7ba63e05c1206211098ec66ead4fc093d9fce",
+      "table_id": "stocks-437902.acciones_dataset_shadow_wp03_20260814t013433.financial_quarters_pit",
+      "table_type": "TABLE"
+    },
+    "financial_statements_pit": {
+      "modified": "2026-08-14T01:43:44.185000+00:00",
+      "num_rows": 0,
+      "schema_sha256": "d6f69e3ada832c475537d596ca1e7c2935d7dde31ede07286add213b1d35498f",
+      "table_id": "stocks-437902.acciones_dataset_shadow_wp03_20260814t013433.financial_statements_pit",
+      "table_type": "VIEW"
+    },
+    "financial_statements_pit_raw": {
+      "modified": "2026-08-14T01:42:52.006000+00:00",
+      "num_rows": 90,
+      "schema_sha256": "6e27efdfe7de3d6d9ad0d40b89dd7c979c5eb39125cf7621b6a28b65f3ddc1d2",
+      "table_id": "stocks-437902.acciones_dataset_shadow_wp03_20260814t013433.financial_statements_pit_raw",
+      "table_type": "TABLE"
+    },
+    "financial_ttm_pit": {
+      "modified": "2026-08-14T01:44:23.634000+00:00",
+      "num_rows": 3256,
+      "schema_sha256": "7256c27103721c89c5ef93cbdff250bb7661129ad9366b9ee642d65ef4c9a744",
+      "table_id": "stocks-437902.acciones_dataset_shadow_wp03_20260814t013433.financial_ttm_pit",
+      "table_type": "TABLE"
+    },
+    "portfolio_valuation_pit_shadow": {
+      "modified": "2026-08-14T01:46:14.010000+00:00",
+      "num_rows": 31786,
+      "schema_sha256": "027eb10099bc92a87ba97f5706405b6aa20b98bdcd1addda26b0e7ce2f09bd54",
+      "table_id": "stocks-437902.acciones_dataset_shadow_wp03_20260814t013433.portfolio_valuation_pit_shadow",
+      "table_type": "TABLE"
+    },
+    "trading_earnings_context_pit": {
+      "modified": "2026-08-14T01:45:33.526000+00:00",
+      "num_rows": 31786,
+      "schema_sha256": "0db04e7fcb39982548534ec9b881fe3425224656f533d3933e9930e7796c4f47",
+      "table_id": "stocks-437902.acciones_dataset_shadow_wp03_20260814t013433.trading_earnings_context_pit",
+      "table_type": "TABLE"
+    },
+    "trading_financial_context_pit": {
+      "modified": "2026-08-14T01:44:52.961000+00:00",
+      "num_rows": 3256,
+      "schema_sha256": "64cfa1542f8fc0f49c20258676aa43a3b82a86195587530554e7a40e276f36e7",
+      "table_id": "stocks-437902.acciones_dataset_shadow_wp03_20260814t013433.trading_financial_context_pit",
+      "table_type": "TABLE"
+    },
+    "trading_historical_context_pit": {
+      "modified": "2026-08-14T01:46:54.026000+00:00",
+      "num_rows": 31786,
+      "schema_sha256": "6369c3f50a354dd17b8be67ac4924da522f54f49f6e88d7e719f18f6078f8225",
+      "table_id": "stocks-437902.acciones_dataset_shadow_wp03_20260814t013433.trading_historical_context_pit",
+      "table_type": "TABLE"
+    },
+    "wp03_legacy_invalidation": {
+      "modified": "2026-08-14T01:47:49.580000+00:00",
+      "num_rows": 10,
+      "schema_sha256": "1a18583e155ca21ba50211cc8a28fb7a6854fbad2b54d200aa84bf76e3ebb5e4",
+      "table_id": "stocks-437902.acciones_dataset_shadow_wp03_20260814t013433.wp03_legacy_invalidation",
+      "table_type": "TABLE"
+    },
+    "wp03_legacy_vs_pit_shadow": {
+      "modified": "2026-08-14T01:47:39.451000+00:00",
+      "num_rows": 31786,
+      "schema_sha256": "cb3adf3f37d7504e4454da7cda491af2848a79468c5a628a0b5d6e27f7790cbd",
+      "table_id": "stocks-437902.acciones_dataset_shadow_wp03_20260814t013433.wp03_legacy_vs_pit_shadow",
+      "table_type": "TABLE"
+    }
+  }
+}

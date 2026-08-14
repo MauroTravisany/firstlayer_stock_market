@@ -45,11 +45,11 @@ Una fila solo pasa a `PASS` con enlace a código, prueba ejecutada y evidencia r
 
 | ID | Requisito/invariante | Riesgo actual | WP | Evidencia requerida | Estado inicial |
 |---|---|---|---|---|---|
-| PIT-01 | `available_at <= signal_timestamp` | Estados usan period end como disponibilidad | WP-03 | test de filing tardío + audit SQL con 0 violaciones | MISSING |
-| PIT-02 | Fecha real de filing/publicación | `report_date` nulo | WP-03 | source adapter + contract + fixture | MISSING |
-| PIT-03 | Revisiones/restatements versionadas | Historia puede sobrescribirse semánticamente | WP-03 | snapshot anterior reproducible | MISSING |
-| PIT-04 | YoY sobre serie trimestral deduplicada | LAG se calcula tras join multiplicado | WP-03 | golden quarterly fixture | MISSING |
-| PIT-05 | Earnings calendar y reported separados | Riesgo de retroactividad | WP-03 | event version tests | MISSING |
+| PIT-01 | `available_at <= signal_timestamp` | Estados usan period end como disponibilidad | WP-03 | [`WP-03.md`](evidence/WP-03.md), [`wp03_shadow_evidence.json`](evidence/wp03_shadow_evidence.json): `audit_no_lookahead.violation_count=0` | PASS |
+| PIT-02 | Fecha real de filing/publicación | `report_date` nulo | WP-03 | [`wp03_shadow_preflight.json`](evidence/wp03_shadow_preflight.json) + backfill SEC live acotado, 90/90 filas elegibles | PASS |
+| PIT-03 | Revisiones/restatements versionadas | Historia puede sobrescribirse semánticamente | WP-03 | [`wp03_shadow_backfill_execution.json`](evidence/wp03_shadow_backfill_execution.json) + [`wp03_shadow_backfill_idempotence.json`](evidence/wp03_shadow_backfill_idempotence.json): 90 inserts y luego 0; 90 IDs distintos | PASS |
+| PIT-04 | YoY sobre serie trimestral deduplicada | LAG se calcula tras join multiplicado | WP-03 | [`wp03_schema_graph_result.json`](evidence/wp03_schema_graph_result.json) + evidencia live: quarter 30.037, TTM 3.256, 0 filas complete invalidas | PASS |
+| PIT-05 | Earnings calendar y reported separados | Riesgo de retroactividad | WP-03 | [`wp03_shadow_evidence.json`](evidence/wp03_shadow_evidence.json): 2.397 EXPECTED, 1.928 REPORTED, 0 availability mismatch/after-signal | PASS |
 | PIT-06 | Macro vintage cuando es revisable | Valor actual puede contaminar historia | WP-03/07 | vintage contract/report | PLANNED |
 | PIT-07 | Universo versionado | `universe_version` queda fijado en el experimento, pero aún falta membership PIT | WP-02/07 | registry + futura tabla de membresía | PARTIAL |
 

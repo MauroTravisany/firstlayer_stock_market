@@ -1,0 +1,74 @@
+{
+  "eligibility_reasons": {
+    "VERIFIED_SOURCE_AVAILABILITY_AND_FISCAL_METADATA": 90
+  },
+  "eligible_row_count": 90,
+  "end_year": 2026,
+  "executed_at": "2026-08-14T01:42:53.634914+00:00",
+  "generated_at": "2026-08-14T01:42:44.342541+00:00",
+  "git_sha": "bb665f9d0b78370788888594e8b19a98de75b1dd",
+  "mapping_sha256": "8d7604a10934ce8209fd7e4eec2e6fb1eafa3feaf43403a70c2c9fa922342e9d",
+  "mapping_version": "sec-company-tickers-2026-08-11-v1",
+  "max_rows": 1000,
+  "mode": "EXECUTED_SHADOW_WRITE",
+  "operation": "WP03_SHADOW_SEC_BACKFILL",
+  "plan_checksum": "629f76534565d962bcc58cb1f48e1c53bb2822260ac56961cca53416bb3b3189",
+  "production_change_allowed": false,
+  "revision_set_sha256": "518a266b4d83e471eb889ae96e59cbae3cb9a483464d320ca9fddcb65317705e",
+  "row_count": 90,
+  "schema_version": 1,
+  "start_year": 2022,
+  "ticker_results": [
+    {
+      "eligible_rows": 18,
+      "reporting_currency": "USD",
+      "rows": 18,
+      "status": "SEC_EDGAR",
+      "ticker": "AAPL"
+    },
+    {
+      "eligible_rows": 18,
+      "reporting_currency": "USD",
+      "rows": 18,
+      "status": "SEC_EDGAR",
+      "ticker": "MSFT"
+    },
+    {
+      "eligible_rows": 18,
+      "reporting_currency": "USD",
+      "rows": 18,
+      "status": "SEC_EDGAR",
+      "ticker": "NVDA"
+    },
+    {
+      "eligible_rows": 18,
+      "reporting_currency": "USD",
+      "rows": 18,
+      "status": "SEC_EDGAR",
+      "ticker": "META"
+    },
+    {
+      "eligible_rows": 18,
+      "reporting_currency": "USD",
+      "rows": 18,
+      "status": "SEC_EDGAR",
+      "ticker": "AMZN"
+    }
+  ],
+  "tickers": [
+    "AAPL",
+    "MSFT",
+    "NVDA",
+    "META",
+    "AMZN"
+  ],
+  "write_result": {
+    "dataset_labels": {
+      "environment": "shadow",
+      "work_package": "wp03"
+    },
+    "destination_table": "stocks-437902.acciones_dataset_shadow_wp03_20260814t013433.financial_statements_pit_raw",
+    "inserted_rows": 0,
+    "staged_rows": 90
+  }
+}

@@ -1,0 +1,16 @@
+{
+    "final_sha":  "bb665f9d0b78370788888594e8b19a98de75b1dd",
+    "dataform_tree_sha":  "410b470259f9c003c44d53f3a926713b92d31e27",
+    "previous_dataform_production_sha":  "e3f754171b4c0a54915b27594589df69155f8e57",
+    "dataform_snapshot_commit":  "80854d7cbe39d2deae23ae112f66639a1dbc3697",
+    "candidate_branch":  "dataform-wp03-shadow-bb665f9d0b78",
+    "root_entries":  [
+                         "README.md",
+                         "contracts",
+                         "definitions",
+                         "package-lock.json",
+                         "package.json",
+                         "workflow_settings.yaml"
+                     ],
+    "production_change_allowed":  false
+}

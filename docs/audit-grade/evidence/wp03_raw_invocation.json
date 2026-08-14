@@ -1,0 +1,53 @@
+{
+    "invocation":  {
+                       "name":  "projects/stocks-437902/locations/us-east1/repositories/portfolio-valuation/workflowInvocations/1786671598-991febfd-63c9-4937-a152-e411e6a68eb0",
+                       "compilationResult":  "projects/10359734256/locations/us-east1/repositories/portfolio-valuation/compilationResults/0e361ce9-e39a-423a-be9b-1902eafd5a16",
+                       "invocationConfig":  {
+                                                "includedTargets":  [
+                                                                        {
+                                                                            "database":  "stocks-437902",
+                                                                            "schema":  "acciones_dataset_shadow_wp03_20260814t013433",
+                                                                            "name":  "financial_statements_pit_raw"
+                                                                        }
+                                                                    ],
+                                                "serviceAccount":  "stock-alert-runner@stocks-437902.iam.gserviceaccount.com",
+                                                "queryPriority":  "QUERY_PRIORITY_UNSPECIFIED"
+                                            },
+                       "state":  "SUCCEEDED",
+                       "invocationTiming":  {
+                                                "startTime":  "2026-08-14T01:39:58.932443Z",
+                                                "endTime":  "2026-08-14T01:40:01.475521103Z"
+                                            },
+                       "resolvedCompilationResult":  "projects/10359734256/locations/us-east1/repositories/portfolio-valuation/compilationResults/0e361ce9-e39a-423a-be9b-1902eafd5a16",
+                       "internalMetadata":  "{\"db_metadata_insert_time\":\"2026-08-14T01:39:58.941030Z\",\"lineage_emission_enabled\":true,\"mendel_lineage_gate_enabled\":false,\"quota_server_enabled\":true,\"service_account\":\"service-10359734256@gcp-sa-dataform.iam.gserviceaccount.com\",\"unique_ccfe_id\":\"82721e13-b128-4409-9649-1d2ae29cfe7b\"}",
+                       "privateResourceMetadata":  {
+
+                                                   }
+                   },
+    "actions":  {
+                    "workflowInvocationActions":  [
+                                                      {
+                                                          "target":  {
+                                                                         "database":  "stocks-437902",
+                                                                         "schema":  "acciones_dataset_shadow_wp03_20260814t013433",
+                                                                         "name":  "financial_statements_pit_raw"
+                                                                     },
+                                                          "canonicalTarget":  {
+                                                                                  "database":  "stocks-437902",
+                                                                                  "schema":  "acciones_dataset_shadow_wp03_20260814t013433",
+                                                                                  "name":  "financial_statements_pit_raw"
+                                                                              },
+                                                          "state":  "SUCCEEDED",
+                                                          "invocationTiming":  {
+                                                                                   "startTime":  "2026-08-14T01:39:59.116164477Z",
+                                                                                   "endTime":  "2026-08-14T01:40:01.468645970Z"
+                                                                               },
+                                                          "bigqueryAction":  {
+                                                                                 "sqlScript":  "    BEGIN\n  CREATE SCHEMA IF NOT EXISTS `stocks-437902.acciones_dataset_shadow_wp03_20260814t013433` OPTIONS(location=\"us-east1\");\nEXCEPTION WHEN ERROR THEN\n  IF NOT CONTAINS_SUBSTR(@@error.message, \"already exists: dataset\") AND\n    NOT CONTAINS_SUBSTR(@@error.message, \"too many dataset metadata update operations\") AND\n    NOT CONTAINS_SUBSTR(@@error.message, \"User does not have bigquery.datasets.create permission\")\n  THEN\n    RAISE USING MESSAGE = @@error.message;\n  END IF;\nEND;\n    BEGIN\n      CREATE TABLE IF NOT EXISTS `stocks-437902.acciones_dataset_shadow_wp03_20260814t013433.financial_statements_pit_raw` (\n  revision_id STRING NOT NULL,\n  ticker STRING NOT NULL,\n  cik STRING,\n  mapping_version STRING NOT NULL,\n  form_type STRING,\n  accession_number STRING,\n  source_record_id STRING,\n  source_is_amendment BOOL NOT NULL,\n  filing_date DATE,\n  source_published_at TIMESTAMP,\n  available_at TIMESTAMP,\n  period_end_date DATE,\n  fiscal_year INT64,\n  fiscal_quarter INT64,\n  currency STRING,\n  revenue FLOAT64,\n  gross_profit FLOAT64,\n  operating_income FLOAT64,\n  net_income FLOAT64,\n  eps_basic FLOAT64,\n  eps_diluted FLOAT64,\n  total_assets FLOAT64,\n  total_liabilities FLOAT64,\n  total_debt FLOAT64,\n  debt_current FLOAT64,\n  debt_noncurrent FLOAT64,\n  cash_and_equivalents FLOAT64,\n  shares_outstanding FLOAT64,\n  shareholders_equity FLOAT64,\n  operating_cash_flow FLOAT64,\n  free_cash_flow FLOAT64,\n  source STRING,\n  source_url STRING,\n  backtest_eligible BOOL NOT NULL,\n  eligibility_reason STRING NOT NULL,\n  quality_status STRING NOT NULL,\n  loaded_at TIMESTAMP NOT NULL\n)\nCLUSTER BY ticker, fiscal_year, fiscal_quarter;\n    END;\n    BEGIN\n      DECLARE dataform_table_type DEFAULT (\n  SELECT ANY_VALUE(table_type)\n  FROM `stocks-437902.acciones_dataset_shadow_wp03_20260814t013433.INFORMATION_SCHEMA.TABLES`\n  WHERE table_name = \u0027financial_statements_pit_raw\u0027\n);\n      IF dataform_table_type IS NOT NULL AND dataform_table_type != \u0027EXTERNAL\u0027 THEN\n  IF dataform_table_type = \u0027BASE TABLE\u0027 THEN\n    ALTER TABLE IF EXISTS `stocks-437902.acciones_dataset_shadow_wp03_20260814t013433.financial_statements_pit_raw` SET OPTIONS(description=\u0027\u0027\u0027Creates the append-only SEC filing revision store used by WP-03. Only immutable source fields are persisted; revision ordinals are derived downstream.\u0027\u0027\u0027);\n  ELSEIF dataform_table_type = \u0027VIEW\u0027 THEN\n    ALTER VIEW IF EXISTS `stocks-437902.acciones_dataset_shadow_wp03_20260814t013433.financial_statements_pit_raw` SET OPTIONS(description=\u0027\u0027\u0027Creates the append-only SEC filing revision store used by WP-03. Only immutable source fields are persisted; revision ordinals are derived downstream.\u0027\u0027\u0027);\n  ELSEIF dataform_table_type = \u0027MATERIALIZED VIEW\u0027 THEN\n    ALTER MATERIALIZED VIEW IF EXISTS `stocks-437902.acciones_dataset_shadow_wp03_20260814t013433.financial_statements_pit_raw` SET OPTIONS(description=\u0027\u0027\u0027Creates the append-only SEC filing revision store used by WP-03. Only immutable source fields are persisted; revision ordinals are derived downstream.\u0027\u0027\u0027);\n  END IF;\nEND IF;\n    END;",
+                                                                                 "jobId":  "dataform-gcp-9bc5f6bacf4d1cedeb7ca8f07ea6bc7a0a8a2361f44ad1a7455ea9aef7b2f733-0"
+                                                                             },
+                                                          "internalMetadata":  "{\"authentication\":{\"authServiceAccountName\":\"stock-alert-runner@stocks-437902.iam.gserviceaccount.com\",\"apiScopes\":[5210],\"delegateServiceAccounts\":[\"service-10359734256@gcp-sa-dataform.iam.gserviceaccount.com\"]},\"canceled\":false,\"completion_time\":\"2026-08-14T01:40:01.468645970Z\",\"job_end_time\":\"2026-08-14T01:40:01.468645970Z\",\"labels\":{\"dataform-action-type\":\"operations\"}}"
+                                                      }
+                                                  ]
+                }
+}

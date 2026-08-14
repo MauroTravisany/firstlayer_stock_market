@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import sys
-from datetime import date, datetime
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -24,13 +24,14 @@ def parse_bool(value, default=False):
 def parse_tickers(value):
     if isinstance(value, str):
         value = value.replace(";", ",").split(",")
-
     return [str(ticker).strip().upper() for ticker in value if str(ticker).strip()]
 
 
 def parse_snapshot_date(value):
     if not value:
-        return datetime.now(ZoneInfo(os.environ.get("TIME_ZONE", "America/Santiago"))).date()
+        return datetime.now(
+            ZoneInfo(os.environ.get("TIME_ZONE", "America/Santiago"))
+        ).date()
     return datetime.strptime(value, "%Y-%m-%d").date()
 
 
@@ -41,41 +42,86 @@ def default_tickers():
 def resolve_tickers(request_json, config):
     if "tickers" in request_json:
         return parse_tickers(request_json.get("tickers"))
-
     from custom_function.portfolio_operations import fetch_enabled_tickers_with_peers
 
-    tickers = fetch_enabled_tickers_with_peers(config["project_id"], config["portfolio_table"], config["peer_universe_table"])
-    if tickers:
-        return tickers
-
-    return default_tickers()
+    tickers = fetch_enabled_tickers_with_peers(
+        config["project_id"],
+        config["portfolio_table"],
+        config["peer_universe_table"],
+    )
+    return tickers or default_tickers()
 
 
 def process_ticker(ticker, config, snapshot_date):
-    from custom_function.bq_operations import merge_financial_ratios, merge_financial_statements
-    from custom_function.data_processing import save_financial_data_to_json
     from custom_function.gcs_operations import upload_to_gcs
 
-    files = save_financial_data_to_json(ticker, snapshot_date)
     bucket_name = config["bucket_name"]
+    if config.get("use_pit_financials"):
+        from custom_function.pit_bq_operations import append_statement_revisions
+        from custom_function.pit_ingestion import save_pit_financial_statements_to_json
 
-    statements_blob = f"{ticker}/financial_statements/{files['statements_file']}" if files["statements_file"] else None
+        files = save_pit_financial_statements_to_json(ticker, snapshot_date, config)
+        if files.get("not_applicable"):
+            return {
+                "status": "success",
+                "ticker": ticker,
+                "snapshot_date": str(snapshot_date),
+                "financial_statements_rows": 0,
+                "backtest_eligible_rows": 0,
+                "rows_loaded": 0,
+                "mapping_version": files["mapping_version"],
+                "data_status": files["data_status"],
+                "severity": files["severity"],
+                "source": "NOT_APPLICABLE",
+                "message": files["message"],
+            }
+
+        statements_blob = (
+            f"{ticker}/financial_statements_pit/{files['statements_file']}"
+        )
+        upload_to_gcs(bucket_name, files["statements_file"], statements_blob)
+        inserted = append_statement_revisions(
+            config["financial_statements_pit_raw_table"],
+            f"gs://{bucket_name}/{statements_blob}",
+        )
+        return {
+            "status": "success" if files["severity"] != "ERROR" else "error",
+            "ticker": ticker,
+            "snapshot_date": str(snapshot_date),
+            "financial_statements_rows": files["statements_count"],
+            "backtest_eligible_rows": files["eligible_count"],
+            "rows_loaded": inserted,
+            "mapping_version": files["mapping_version"],
+            "data_status": files["data_status"],
+            "severity": files["severity"],
+            "source": "SEC_EDGAR_PIT",
+            "message": files["message"],
+        }
+
+    from custom_function.bq_operations import (
+        merge_financial_ratios,
+        merge_financial_statements,
+    )
+    from custom_function.data_processing import save_financial_data_to_json
+
+    files = save_financial_data_to_json(ticker, snapshot_date)
+    statements_blob = (
+        f"{ticker}/financial_statements/{files['statements_file']}"
+        if files["statements_file"]
+        else None
+    )
     ratios_blob = f"{ticker}/financial_ratios/{files['ratios_file']}"
-
     upload_to_gcs(bucket_name, files["ratios_file"], ratios_blob)
-
     if files["statements_count"] > 0 and statements_blob:
         upload_to_gcs(bucket_name, files["statements_file"], statements_blob)
         merge_financial_statements(
             config["financial_statements_table"],
             f"gs://{bucket_name}/{statements_blob}",
         )
-
     merge_financial_ratios(
         config["financial_ratios_table"],
         f"gs://{bucket_name}/{ratios_blob}",
     )
-
     return {
         "status": "success",
         "ticker": ticker,
@@ -85,6 +131,7 @@ def process_ticker(ticker, config, snapshot_date):
         "data_status": files["data_status"],
         "severity": files["severity"],
         "rows_loaded": files["statements_count"] + files["ratios_count"],
+        "source": "LEGACY_YFINANCE",
         "message": files["message"],
     }
 
@@ -94,36 +141,65 @@ def main(request):
     if probe is not None:
         return probe
     request_json = request.get_json(silent=True) or {}
-    dry_run = parse_bool(request_json.get("dry_run", request.args.get("dry_run")), False)
-    send_alert = parse_bool(request_json.get("send_alert", request.args.get("send_alert")), True)
-
+    dry_run = parse_bool(
+        request_json.get("dry_run", request.args.get("dry_run")), False
+    )
+    send_alert = parse_bool(
+        request_json.get("send_alert", request.args.get("send_alert")), True
+    )
     try:
         snapshot_date = parse_snapshot_date(
-            request_json.get("snapshot_date") or request.args.get("snapshot_date") or os.environ.get("SNAPSHOT_DATE")
+            request_json.get("snapshot_date")
+            or request.args.get("snapshot_date")
+            or os.environ.get("SNAPSHOT_DATE")
         )
     except ValueError as exc:
-        return json.dumps({"status": "error", "message": str(exc)}), 400, {"Content-Type": "application/json"}
-
+        return (
+            json.dumps({"status": "error", "message": str(exc)}),
+            400,
+            {"Content-Type": "application/json"},
+        )
     try:
         config = load_config()
-        if request.args.get("tickers") and "tickers" not in request_json:
-            tickers = parse_tickers(request.args.get("tickers"))
-        else:
-            tickers = resolve_tickers(request_json, config)
+        tickers = (
+            parse_tickers(request.args.get("tickers"))
+            if request.args.get("tickers") and "tickers" not in request_json
+            else resolve_tickers(request_json, config)
+        )
     except Exception as exc:
         logging.exception("Error al cargar configuracion o portafolio")
-        return json.dumps({"status": "error", "message": str(exc)}), 500, {"Content-Type": "application/json"}
-
+        return (
+            json.dumps({"status": "error", "message": str(exc)}),
+            500,
+            {"Content-Type": "application/json"},
+        )
     if not tickers:
-        return json.dumps({"status": "error", "message": "No enabled tickers found in portfolio"}), 400, {"Content-Type": "application/json"}
-
+        return (
+            json.dumps(
+                {
+                    "status": "error",
+                    "message": "No enabled tickers found in portfolio",
+                }
+            ),
+            400,
+            {"Content-Type": "application/json"},
+        )
     if dry_run:
         return (
             json.dumps(
                 {
                     "status": "dry_run",
                     "snapshot_date": str(snapshot_date),
-                    "source": "portfolio_assets" if "tickers" not in request_json else "request",
+                    "source": (
+                        "SEC_EDGAR_PIT"
+                        if config.get("use_pit_financials")
+                        else "LEGACY_YFINANCE"
+                    ),
+                    "mapping_version": (
+                        config.get("ticker_cik_map_version")
+                        if config.get("use_pit_financials")
+                        else None
+                    ),
                     "tickers": tickers,
                     "rows": len(tickers),
                 }
@@ -154,19 +230,38 @@ def main(request):
     alert_error = None
     quality = None
     try:
-        from custom_function.monitoring import persist_quality_events, quality_summary, send_quality_alert
+        from custom_function.monitoring import (
+            persist_quality_events,
+            quality_summary,
+            send_quality_alert,
+        )
 
         persist_quality_events(config, "stockfinancial", snapshot_date, results)
         quality = quality_summary(results)
         if send_alert:
-            alert_sent, alert_error = send_quality_alert(config, "stockfinancial", snapshot_date, results)
+            alert_sent, alert_error = send_quality_alert(
+                config, "stockfinancial", snapshot_date, results
+            )
     except Exception as exc:
         logging.exception("Fallo monitoreo de calidad stockfinancial")
         alert_error = str(exc)
-
-    status_code = 207 if any(result["status"] == "error" or result.get("severity") == "ERROR" for result in results) else 200
+    status_code = (
+        207
+        if any(
+            result["status"] == "error" or result.get("severity") == "ERROR"
+            for result in results
+        )
+        else 200
+    )
     return (
-        json.dumps({"results": results, "quality": quality, "alert_sent": alert_sent, "alert_error": alert_error}),
+        json.dumps(
+            {
+                "results": results,
+                "quality": quality,
+                "alert_sent": alert_sent,
+                "alert_error": alert_error,
+            }
+        ),
         status_code,
         {"Content-Type": "application/json"},
     )

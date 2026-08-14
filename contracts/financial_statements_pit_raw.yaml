@@ -1,0 +1,218 @@
+contract_version: 1.2.0
+data_contract_version: audit-contracts-v1
+criticality: P0
+environments:
+- research
+- shadow
+point_in_time:
+  eligibility: NOT_BACKTEST_ELIGIBLE
+  reason: Raw append-only store contains both eligible and rejected source revisions; consumers must use financial_statements_pit, which derives revision ordinals and filters verified availability and quality.
+table:
+  name: financial_statements_pit_raw
+  description: Append-only SEC filing source-revision store with publication, versioned CIK mapping and ingestion lineage.
+  granularity: One immutable row per content-addressed SEC source revision.
+  logical_primary_key:
+  - revision_id
+  append_only: true
+  partition_by: null
+  cluster_by:
+  - ticker
+  - fiscal_year
+  - fiscal_quarter
+  corporate_actions_policy: NOT_APPLICABLE
+temporal:
+  event_time: source_published_at
+  available_at: available_at
+  ingested_at: loaded_at
+  timezone: UTC
+  point_in_time_policy: A source revision is eligible only when SEC acceptanceDateTime is present; period_end_date and filing_date never substitute for availability.
+source:
+  system: SEC EDGAR submissions and companyfacts APIs
+  version_field: revision_id
+  original_timezone: UTC
+deduplication:
+  rule: revision_id is SHA-256 of immutable filing, mapping and fact content; atomic MERGE inserts unseen IDs only and never updates an existing raw revision.
+retention:
+  policy: Retain every observed source revision indefinitely so restatements never erase prior market-visible state.
+columns:
+- name: revision_id
+  type: STRING
+  mode: REQUIRED
+  description: Content-addressed immutable source-revision identity.
+- name: ticker
+  type: STRING
+  mode: REQUIRED
+  description: Canonical trading ticker.
+- name: cik
+  type: STRING
+  mode: NULLABLE
+  description: Ten-digit SEC Central Index Key.
+- name: mapping_version
+  type: STRING
+  mode: REQUIRED
+  description: Version of the repository-controlled ticker/CIK/reporting-currency mapping.
+- name: form_type
+  type: STRING
+  mode: NULLABLE
+  description: SEC form type such as 10-Q or 10-K, including amendments.
+- name: accession_number
+  type: STRING
+  mode: NULLABLE
+  description: SEC accession number identifying the filing source revision.
+- name: source_record_id
+  type: STRING
+  mode: NULLABLE
+  description: Source-native immutable record identifier; SEC accession number for EDGAR.
+- name: source_is_amendment
+  type: BOOL
+  mode: REQUIRED
+  description: True only when the source form itself is an amendment such as 10-Q/A or 10-K/A.
+- name: filing_date
+  type: DATE
+  mode: NULLABLE
+  description: SEC filing calendar date; not used as availability fallback.
+- name: source_published_at
+  type: TIMESTAMP
+  mode: NULLABLE
+  description: SEC acceptanceDateTime when present.
+- name: available_at
+  type: TIMESTAMP
+  mode: NULLABLE
+  description: Earliest verified timestamp at which this source revision may be consumed.
+- name: period_end_date
+  type: DATE
+  mode: NULLABLE
+  description: Fiscal reporting period end; never a publication timestamp.
+- name: fiscal_year
+  type: INT64
+  mode: NULLABLE
+  description: Fiscal year from XBRL metadata when available.
+- name: fiscal_quarter
+  type: INT64
+  mode: NULLABLE
+  description: Fiscal quarter from XBRL fp metadata; annual FY maps to 4 for later Q4 normalization.
+- name: currency
+  type: STRING
+  mode: NULLABLE
+  description: Reporting currency fixed by the versioned mapping and required for monetary fact selection.
+- name: revenue
+  type: FLOAT64
+  mode: NULLABLE
+  description: Revenue fact selected for the filing period.
+- name: gross_profit
+  type: FLOAT64
+  mode: NULLABLE
+  description: Gross profit fact selected for the filing period.
+- name: operating_income
+  type: FLOAT64
+  mode: NULLABLE
+  description: Operating income fact selected for the filing period.
+- name: net_income
+  type: FLOAT64
+  mode: NULLABLE
+  description: Net income fact selected for the filing period.
+- name: eps_basic
+  type: FLOAT64
+  mode: NULLABLE
+  description: Basic earnings per share.
+- name: eps_diluted
+  type: FLOAT64
+  mode: NULLABLE
+  description: Diluted earnings per share.
+- name: total_assets
+  type: FLOAT64
+  mode: NULLABLE
+  description: Total assets instant fact.
+- name: total_liabilities
+  type: FLOAT64
+  mode: NULLABLE
+  description: Total liabilities instant fact.
+- name: total_debt
+  type: FLOAT64
+  mode: NULLABLE
+  description: Total debt, direct fact or current plus noncurrent components.
+- name: debt_current
+  type: FLOAT64
+  mode: NULLABLE
+  description: Current debt component when reported.
+- name: debt_noncurrent
+  type: FLOAT64
+  mode: NULLABLE
+  description: Noncurrent debt component when reported.
+- name: cash_and_equivalents
+  type: FLOAT64
+  mode: NULLABLE
+  description: Cash and cash equivalents instant fact.
+- name: shares_outstanding
+  type: FLOAT64
+  mode: NULLABLE
+  description: Shares outstanding instant fact used for historical market-cap derivation.
+- name: shareholders_equity
+  type: FLOAT64
+  mode: NULLABLE
+  description: Shareholders equity instant fact.
+- name: operating_cash_flow
+  type: FLOAT64
+  mode: NULLABLE
+  description: Operating cash flow duration fact.
+- name: free_cash_flow
+  type: FLOAT64
+  mode: NULLABLE
+  description: Reserved FCF field; remains null until a fully specified derivation is implemented.
+- name: source
+  type: STRING
+  mode: NULLABLE
+  description: Canonical source identifier.
+- name: source_url
+  type: STRING
+  mode: NULLABLE
+  description: SEC filing archive URL.
+- name: backtest_eligible
+  type: BOOL
+  mode: REQUIRED
+  description: True only when verifiable availability, fiscal lineage and at least one usable core fact satisfy the WP-03 gate.
+- name: eligibility_reason
+  type: STRING
+  mode: REQUIRED
+  description: Machine-readable reason for eligibility or rejection.
+- name: quality_status
+  type: STRING
+  mode: REQUIRED
+  description: Data-quality classification independent from the eligibility boolean.
+- name: loaded_at
+  type: TIMESTAMP
+  mode: REQUIRED
+  description: UTC ingestion timestamp.
+assertions:
+  not_null:
+  - revision_id
+  - ticker
+  - mapping_version
+  - source_is_amendment
+  - backtest_eligible
+  - eligibility_reason
+  - quality_status
+  - loaded_at
+  unique:
+  - - revision_id
+  accepted_values:
+    backtest_eligible:
+    - true
+    - false
+    source_is_amendment:
+    - true
+    - false
+    quality_status:
+    - ELIGIBLE_VERIFIED_PIT
+    - UNVERIFIED_AVAILABLE_AT
+    - UNVERIFIED_FISCAL_PERIOD
+    - NO_USABLE_FINANCIAL_FACTS
+implementation:
+  mode: DATAFORM_CREATE
+  dataform_definition: dataform/definitions/financial_statements_pit_raw.sqlx
+producers:
+- cloud-functions/financial_data/config/ticker_cik_map.v1.json
+- cloud-functions/financial_data/custom_function/sec_source.py
+- cloud-functions/financial_data/custom_function/pit_bq_operations.py
+consumers:
+- financial_statements_pit

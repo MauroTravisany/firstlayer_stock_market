@@ -3,8 +3,10 @@ defaultLocation: us-east1
 defaultDataset: acciones_dataset
 vars:
   auditDataset: acciones_dataset
+  operationalDataset: acciones_dataset
   environment: shadow
   dataContractVersion: audit-contracts-v1
+  financialMappingVersion: sec-company-tickers-2026-08-11-v1
   featureSetVersion: legacy-feature-set-v1
   executionModelVersion: legacy-daily-execution-v1
   costModelVersion: legacy-estimated-cost-v1

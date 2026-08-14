@@ -1,0 +1,110 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "earnings_events_pit",
+  description: "Point-in-time earnings observations. Expected calendar and reported outcomes are distinct immutable observations and are eligible only from the system observation timestamp.",
+  tags: ["audit-grade", "pit", "earnings", "wp03"],
+  bigquery: {
+    partitionBy: "DATE(observed_at)",
+    clusterBy: ["ticker", "event_kind"]
+  },
+  assertions: {
+    nonNull: ["event_id", "source_record_id", "ticker", "event_kind", "observed_at", "available_at", "ingested_at", "revision", "source", "quality_status", "eligibility_reason"],
+    uniqueKey: ["event_id"],
+    rowConditions: [
+      "available_at = observed_at",
+      "ingested_at = observed_at",
+      "revision > 0",
+      "backtest_eligible = TRUE"
+    ]
+  }
+}
+
+WITH observations AS (
+  SELECT
+    snapshot_date,
+    SAFE_CAST(signal_hour AS TIME) AS signal_hour,
+    ticker,
+    earnings_date,
+    earnings_time,
+    eps_estimate,
+    reported_eps,
+    surprise_pct,
+    event_status,
+    source,
+    loaded_at AS observed_at,
+    TO_HEX(SHA256(TO_JSON_STRING(STRUCT(
+      ticker,
+      snapshot_date,
+      SAFE_CAST(signal_hour AS TIME),
+      earnings_date,
+      earnings_time,
+      eps_estimate,
+      reported_eps,
+      surprise_pct,
+      event_status,
+      source,
+      loaded_at
+    )))) AS observation_hash
+  FROM `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.vars.operationalDataset}.macro_earnings_calendar`
+  WHERE loaded_at IS NOT NULL
+),
+expanded AS (
+  SELECT
+    CONCAT("expected_", observation_hash) AS event_id,
+    observation_hash AS source_record_id,
+    ticker,
+    "EXPECTED" AS event_kind,
+    earnings_date,
+    earnings_time,
+    eps_estimate,
+    CAST(NULL AS FLOAT64) AS reported_eps,
+    CAST(NULL AS FLOAT64) AS surprise_pct,
+    event_status,
+    source,
+    "YFINANCE_OBSERVATION_V1" AS source_version,
+    CAST(NULL AS TIMESTAMP) AS source_published_at,
+    observed_at,
+    observed_at AS available_at,
+    observed_at AS ingested_at,
+    "OBSERVED_AT_INGESTION_ONLY" AS quality_status,
+    TRUE AS backtest_eligible,
+    "OBSERVED_EXPECTATION_NOT_BACKFILLED" AS eligibility_reason
+  FROM observations
+  WHERE earnings_date IS NOT NULL
+
+  UNION ALL
+
+  SELECT
+    CONCAT("reported_", observation_hash) AS event_id,
+    observation_hash AS source_record_id,
+    ticker,
+    "REPORTED" AS event_kind,
+    earnings_date,
+    earnings_time,
+    eps_estimate,
+    reported_eps,
+    surprise_pct,
+    event_status,
+    source,
+    "YFINANCE_OBSERVATION_V1" AS source_version,
+    CAST(NULL AS TIMESTAMP) AS source_published_at,
+    observed_at,
+    observed_at AS available_at,
+    observed_at AS ingested_at,
+    "OBSERVED_AT_INGESTION_ONLY" AS quality_status,
+    TRUE AS backtest_eligible,
+    "OBSERVED_REPORTED_RESULT_NOT_BACKFILLED" AS eligibility_reason
+  FROM observations
+  WHERE reported_eps IS NOT NULL OR surprise_pct IS NOT NULL
+),
+versioned AS (
+  SELECT
+    *,
+    ROW_NUMBER() OVER (
+      PARTITION BY ticker, event_kind, earnings_date
+      ORDER BY available_at, event_id
+    ) AS revision
+  FROM expanded
+)
+SELECT * FROM versioned

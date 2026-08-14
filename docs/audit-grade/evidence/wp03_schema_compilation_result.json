@@ -1,0 +1,28 @@
+{
+    "name":  "projects/stocks-437902/locations/us-east1/repositories/portfolio-valuation/compilationResults/84639e32-db37-4402-ba3a-6b7a4007d159",
+    "gitCommitish":  "dataform-wp03-shadow-bb665f9d0b78",
+    "codeCompilationConfig":  {
+                                  "defaultDatabase":  "stocks-437902",
+                                  "defaultSchema":  "acciones_dataset",
+                                  "assertionSchema":  "acciones_dataset_shadow_wp03_schema_20260814t013433",
+                                  "vars":  {
+                                               "auditDataset":  "acciones_dataset_shadow_wp03_schema_20260814t013433",
+                                               "environment":  "shadow",
+                                               "financialMappingVersion":  "sec-company-tickers-2026-08-11-v1",
+                                               "operationalDataset":  "acciones_dataset",
+                                               "universeVersion":  "manual-watchlist-v1",
+                                               "dataContractVersion":  "audit-contracts-v1",
+                                               "executionModelVersion":  "legacy-daily-execution-v1",
+                                               "costModelVersion":  "legacy-estimated-cost-v1",
+                                               "featureSetVersion":  "legacy-feature-set-v1"
+                                           },
+                                  "defaultLocation":  "us-east1"
+                              },
+    "dataformCoreVersion":  "3.0.0",
+    "resolvedGitCommitSha":  "80854d7cbe39d2deae23ae112f66639a1dbc3697",
+    "createTime":  "2026-08-14T01:35:36.802527944Z",
+    "internalMetadata":  "{\"db_metadata_insert_time\":\"2026-08-14T01:35:37.879962Z\"}",
+    "privateResourceMetadata":  {
+
+                                }
+}
