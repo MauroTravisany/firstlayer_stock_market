@@ -1,0 +1,67 @@
+contract_version: 1.0.0
+data_contract_version: audit-contracts-v1
+criticality: P0
+environments: [research, shadow]
+point_in_time:
+  eligibility: NOT_BACKTEST_ELIGIBLE
+  reason: The table preserves both verified prospective actions and historical provider backfills without verifiable publication time; consumers must filter backtest_eligible and quality_status.
+table:
+  name: corporate_actions_pit
+  description: Append-only split and dividend revisions with explicit availability and eligibility lineage.
+  granularity: One immutable row per provider corporate-action revision.
+  logical_primary_key: [action_id]
+  append_only: true
+  partition_by: ex_date
+  cluster_by: [ticker, action_type]
+  corporate_actions_policy: VERIFIED_ACTIONS_ONLY_FOR_POINT_IN_TIME_ADJUSTMENT
+temporal:
+  event_time: source_published_at
+  available_at: available_at
+  ingested_at: ingested_at
+  timezone: UTC
+  point_in_time_policy: Historical provider actions without source_published_at are retained as UNVERIFIED_AVAILABLE_AT and are never eligible for historical replay.
+source:
+  system: Provider corporate-action feeds
+  version_field: action_id
+  original_timezone: UTC
+deduplication:
+  rule: action_id hashes provider record revision value and availability; existing revisions are never updated.
+retention:
+  policy: Retain all revisions indefinitely so later corrections cannot rewrite historical snapshots.
+columns:
+- {name: action_id, type: STRING, mode: REQUIRED, description: Content-addressed action revision identity.}
+- {name: ingestion_run_id, type: STRING, mode: REQUIRED, description: Ingestion run UUID.}
+- {name: ticker, type: STRING, mode: REQUIRED, description: Canonical ticker.}
+- {name: action_type, type: STRING, mode: REQUIRED, description: Corporate action type.}
+- {name: ex_date, type: DATE, mode: REQUIRED, description: Ex-date.}
+- {name: record_date, type: DATE, mode: NULLABLE, description: Record date.}
+- {name: pay_date, type: DATE, mode: NULLABLE, description: Payment date.}
+- {name: ratio, type: FLOAT64, mode: NULLABLE, description: Split ratio.}
+- {name: cash_amount, type: FLOAT64, mode: NULLABLE, description: Cash dividend per share.}
+- {name: currency, type: STRING, mode: NULLABLE, description: Action currency.}
+- {name: provider, type: STRING, mode: REQUIRED, description: Provider identifier.}
+- {name: source_record_id, type: STRING, mode: REQUIRED, description: Provider record identity.}
+- {name: source_version, type: STRING, mode: REQUIRED, description: Provider adapter version.}
+- {name: source_published_at, type: TIMESTAMP, mode: NULLABLE, description: Verified provider publication timestamp when available.}
+- {name: available_at, type: TIMESTAMP, mode: REQUIRED, description: First usable timestamp.}
+- {name: ingested_at, type: TIMESTAMP, mode: REQUIRED, description: UTC ingestion timestamp.}
+- {name: revision, type: INT64, mode: REQUIRED, description: Source revision ordinal.}
+- {name: backtest_eligible, type: BOOL, mode: REQUIRED, description: True only with verified point-in-time availability.}
+- {name: quality_status, type: STRING, mode: REQUIRED, description: Eligibility-independent data-quality status.}
+assertions:
+  not_null: [action_id, ingestion_run_id, ticker, action_type, ex_date, provider, source_record_id, source_version, available_at, ingested_at, revision, backtest_eligible, quality_status]
+  unique:
+  - [action_id]
+  accepted_values:
+    action_type: [SPLIT, DIVIDEND, SYMBOL_CHANGE, MERGER]
+    backtest_eligible: [true, false]
+    quality_status: [ELIGIBLE_VERIFIED_PIT, UNVERIFIED_AVAILABLE_AT]
+implementation:
+  mode: DATAFORM_CREATE
+  dataform_definition: dataform/definitions/corporate_actions_pit.sqlx
+producers:
+- cloud-functions/daily_stocks/custom_function/wp04_ingestion.py
+- cloud-functions/daily_stocks/custom_function/wp04_bq_operations.py
+consumers:
+- market_price_canonical
+- audit_canonical_prices
