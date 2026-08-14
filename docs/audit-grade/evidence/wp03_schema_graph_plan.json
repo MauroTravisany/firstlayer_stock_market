@@ -1,0 +1,977 @@
+{
+  "actions_document_sha256": "0a61f7e0b8b5b6575159cb28c3a741e7e1da302113b393a8076e40f6c1b6bc49",
+  "allowed_operational_inputs": [
+    "asset_profile",
+    "macro_earnings_calendar",
+    "portfolio_valuation_daily",
+    "trading_historical_context",
+    "trading_price_features",
+    "valuation_model_profile"
+  ],
+  "assertion_count": 20,
+  "assertions": [
+    {
+      "action_type": "assertion",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_earnings_events_pit_assertions_rowConditions",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "earnings_events_pit",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/earnings_events_pit.sqlx",
+      "parent_action": {
+        "database": "stocks-437902",
+        "name": "earnings_events_pit",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "sql_sha256": "01cae1731942416f3ac47d2762fb1bbc63c6aefc56c3998227aca0af31ce2dfe",
+      "target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_earnings_events_pit_assertions_rowConditions",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "assertion",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_earnings_events_pit_assertions_uniqueKey_0",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "earnings_events_pit",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/earnings_events_pit.sqlx",
+      "parent_action": {
+        "database": "stocks-437902",
+        "name": "earnings_events_pit",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "sql_sha256": "2358fe322c1a5d065b78374c73840e3de5af1692b7f69f72d2d18039d7fda645",
+      "target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_earnings_events_pit_assertions_uniqueKey_0",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "assertion",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_financial_quarters_pit_assertions_rowConditions",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "financial_quarters_pit",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/financial_quarters_pit.sqlx",
+      "parent_action": {
+        "database": "stocks-437902",
+        "name": "financial_quarters_pit",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "sql_sha256": "6800e1487b4154f342d70e5527f40519959b9ce20adf44d66b0bc207bb610b0d",
+      "target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_financial_quarters_pit_assertions_rowConditions",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "assertion",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_financial_quarters_pit_assertions_uniqueKey_0",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "financial_quarters_pit",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/financial_quarters_pit.sqlx",
+      "parent_action": {
+        "database": "stocks-437902",
+        "name": "financial_quarters_pit",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "sql_sha256": "9b360df4d7d746b48f97c8f163bdea672bd47c9cccab61489b57bd89424551a8",
+      "target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_financial_quarters_pit_assertions_uniqueKey_0",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "assertion",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_financial_statements_pit_assertions_rowConditions",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "financial_statements_pit",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/financial_statements_pit.sqlx",
+      "parent_action": {
+        "database": "stocks-437902",
+        "name": "financial_statements_pit",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "sql_sha256": "410ae588d25fbadab3ec9b2f2388ae1424024047fda1e2095e4ac1fd113ac3fa",
+      "target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_financial_statements_pit_assertions_rowConditions",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "assertion",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_financial_statements_pit_assertions_uniqueKey_0",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "financial_statements_pit",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/financial_statements_pit.sqlx",
+      "parent_action": {
+        "database": "stocks-437902",
+        "name": "financial_statements_pit",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "sql_sha256": "32f9fbd8ad98d00a6e26b1ab8e73f33a6479e65f9b879b1e82d1f492aa301e2b",
+      "target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_financial_statements_pit_assertions_uniqueKey_0",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "assertion",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_financial_ttm_pit_assertions_rowConditions",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "financial_ttm_pit",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/financial_ttm_pit.sqlx",
+      "parent_action": {
+        "database": "stocks-437902",
+        "name": "financial_ttm_pit",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "sql_sha256": "4282244c5db98c1b3e6988eb997c54230f589bffa2b919c65decbfd76939c1f6",
+      "target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_financial_ttm_pit_assertions_rowConditions",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "assertion",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_financial_ttm_pit_assertions_uniqueKey_0",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "financial_ttm_pit",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/financial_ttm_pit.sqlx",
+      "parent_action": {
+        "database": "stocks-437902",
+        "name": "financial_ttm_pit",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "sql_sha256": "487532232eefa0c0587dffd78014e1564fe3916cb0d4742c57280784445dddb8",
+      "target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_financial_ttm_pit_assertions_uniqueKey_0",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "assertion",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_portfolio_valuation_pit_shadow_assertions_rowConditions",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "portfolio_valuation_pit_shadow",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/portfolio_valuation_pit_shadow.sqlx",
+      "parent_action": {
+        "database": "stocks-437902",
+        "name": "portfolio_valuation_pit_shadow",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "sql_sha256": "f623880d13300f84357487df65c7b16bd16c175d851b4f7fd8af9b3fb36ca043",
+      "target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_portfolio_valuation_pit_shadow_assertions_rowConditions",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "assertion",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_portfolio_valuation_pit_shadow_assertions_uniqueKey_0",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "portfolio_valuation_pit_shadow",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/portfolio_valuation_pit_shadow.sqlx",
+      "parent_action": {
+        "database": "stocks-437902",
+        "name": "portfolio_valuation_pit_shadow",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "sql_sha256": "d55a96193da07d7560821c0d42b56bf3c6ccdf9104fc9346ae2690eba902c5c3",
+      "target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_portfolio_valuation_pit_shadow_assertions_uniqueKey_0",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "assertion",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_trading_earnings_context_pit_assertions_rowConditions",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "trading_earnings_context_pit",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/trading_earnings_context_pit.sqlx",
+      "parent_action": {
+        "database": "stocks-437902",
+        "name": "trading_earnings_context_pit",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "sql_sha256": "fea94d182e1f9dfaeabb7a5762f2f50564369ab118eab6749db963e93f5c5b61",
+      "target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_trading_earnings_context_pit_assertions_rowConditions",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "assertion",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_trading_earnings_context_pit_assertions_uniqueKey_0",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "trading_earnings_context_pit",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/trading_earnings_context_pit.sqlx",
+      "parent_action": {
+        "database": "stocks-437902",
+        "name": "trading_earnings_context_pit",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "sql_sha256": "49ae0236dc85d97e57fdcbd7513cbc0bd9ec5a35bb82e24ad208bce1edca7f5a",
+      "target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_trading_earnings_context_pit_assertions_uniqueKey_0",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "assertion",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_trading_financial_context_pit_assertions_rowConditions",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "trading_financial_context_pit",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/trading_financial_context_pit.sqlx",
+      "parent_action": {
+        "database": "stocks-437902",
+        "name": "trading_financial_context_pit",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "sql_sha256": "84392b5f9b889a086893444960275e54ea28f6f6fc481154dc1fdb8f1e9a7af0",
+      "target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_trading_financial_context_pit_assertions_rowConditions",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "assertion",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_trading_financial_context_pit_assertions_uniqueKey_0",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "trading_financial_context_pit",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/trading_financial_context_pit.sqlx",
+      "parent_action": {
+        "database": "stocks-437902",
+        "name": "trading_financial_context_pit",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "sql_sha256": "1fd6ebea1004e1c24546d1a1bd8115228e02f7f7a66bd96be34360702675e494",
+      "target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_trading_financial_context_pit_assertions_uniqueKey_0",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "assertion",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_trading_historical_context_pit_assertions_rowConditions",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "trading_historical_context_pit",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/trading_historical_context_pit.sqlx",
+      "parent_action": {
+        "database": "stocks-437902",
+        "name": "trading_historical_context_pit",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "sql_sha256": "0b009e12d08f3006e33cd79924aa30c2137cc034b47526b5cd9cc4302005592f",
+      "target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_trading_historical_context_pit_assertions_rowConditions",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "assertion",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_trading_historical_context_pit_assertions_uniqueKey_0",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "trading_historical_context_pit",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/trading_historical_context_pit.sqlx",
+      "parent_action": {
+        "database": "stocks-437902",
+        "name": "trading_historical_context_pit",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "sql_sha256": "2aa6442f27618eb1ccae3064b6bd7d242d128eb71e11f07e791be03977ef6069",
+      "target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_trading_historical_context_pit_assertions_uniqueKey_0",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "assertion",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_wp03_legacy_invalidation_assertions_rowConditions",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "wp03_legacy_invalidation",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/wp03_legacy_invalidation.sqlx",
+      "parent_action": {
+        "database": "stocks-437902",
+        "name": "wp03_legacy_invalidation",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "sql_sha256": "81b7b8f38e82236f802f7ee467c8d908f5db60f683b84df685078f14e2a59dc7",
+      "target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_wp03_legacy_invalidation_assertions_rowConditions",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "assertion",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_wp03_legacy_invalidation_assertions_uniqueKey_0",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "wp03_legacy_invalidation",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/wp03_legacy_invalidation.sqlx",
+      "parent_action": {
+        "database": "stocks-437902",
+        "name": "wp03_legacy_invalidation",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "sql_sha256": "c5f4b25f261ae44b521363b00aec34af01e3e67612e34ab8751133914a9940b7",
+      "target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_wp03_legacy_invalidation_assertions_uniqueKey_0",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "assertion",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_wp03_legacy_vs_pit_shadow_assertions_rowConditions",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "wp03_legacy_vs_pit_shadow",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/wp03_legacy_vs_pit_shadow.sqlx",
+      "parent_action": {
+        "database": "stocks-437902",
+        "name": "wp03_legacy_vs_pit_shadow",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "sql_sha256": "0c5fd4ddcc0798897fc1cdcc916332285eed331207453ea210f6765f5d8a072e",
+      "target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_wp03_legacy_vs_pit_shadow_assertions_rowConditions",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "assertion",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_wp03_legacy_vs_pit_shadow_assertions_uniqueKey_0",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "wp03_legacy_vs_pit_shadow",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/wp03_legacy_vs_pit_shadow.sqlx",
+      "parent_action": {
+        "database": "stocks-437902",
+        "name": "wp03_legacy_vs_pit_shadow",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "sql_sha256": "5b9ef1ad829c11f013251a1d095dac14bb4093aed1d973cdea523cdf05798d59",
+      "target": {
+        "database": "stocks-437902",
+        "name": "acciones_dataset_shadow_wp03_schema_20260814t013433_wp03_legacy_vs_pit_shadow_assertions_uniqueKey_0",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    }
+  ],
+  "compilation_result": "projects/stocks-437902/locations/us-east1/repositories/portfolio-valuation/compilationResults/84639e32-db37-4402-ba3a-6b7a4007d159",
+  "generated_assertion_count": 20,
+  "git_sha": "bb665f9d0b78370788888594e8b19a98de75b1dd",
+  "join_key_policy_version": "wp03-explicit-join-keys-v1",
+  "layers": [
+    [
+      "earnings_events_pit",
+      "financial_statements_pit",
+      "wp03_legacy_invalidation"
+    ],
+    [
+      "financial_quarters_pit",
+      "trading_earnings_context_pit"
+    ],
+    [
+      "financial_ttm_pit",
+      "trading_financial_context_pit"
+    ],
+    [
+      "portfolio_valuation_pit_shadow"
+    ],
+    [
+      "audit_no_lookahead",
+      "trading_historical_context_pit"
+    ],
+    [
+      "wp03_legacy_vs_pit_shadow"
+    ]
+  ],
+  "mode": "PLAN",
+  "operation": "WP03_COMPILED_SQL_SCHEMA_GRAPH",
+  "operational_dataset": "acciones_dataset",
+  "plan_checksum": "e811d0928af9273555eba2425bf708cd50f17d163583d923dbe464908fd028a8",
+  "production_change_allowed": false,
+  "project_id": "stocks-437902",
+  "required_action_count": 12,
+  "required_action_type_counts": {
+    "assertion": 1,
+    "operations": 1,
+    "relation": 10
+  },
+  "required_action_types": {
+    "audit_no_lookahead": "assertion",
+    "earnings_events_pit": "relation",
+    "financial_quarters_pit": "relation",
+    "financial_statements_pit": "relation",
+    "financial_statements_pit_raw": "operations",
+    "financial_ttm_pit": "relation",
+    "portfolio_valuation_pit_shadow": "relation",
+    "trading_earnings_context_pit": "relation",
+    "trading_financial_context_pit": "relation",
+    "trading_historical_context_pit": "relation",
+    "wp03_legacy_invalidation": "relation",
+    "wp03_legacy_vs_pit_shadow": "relation"
+  },
+  "required_actions": [
+    {
+      "action_type": "operations",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "financial_statements_pit_raw",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [],
+      "disabled": false,
+      "file_path": "definitions/financial_statements_pit_raw.sqlx",
+      "parent_action": null,
+      "sql_sha256": "aa61e92ba6e9c1a7583855b32a6f07134ce005d2192765f102bbda66544d18cb",
+      "target": {
+        "database": "stocks-437902",
+        "name": "financial_statements_pit_raw",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "relation",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "financial_statements_pit",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "financial_statements_pit_raw",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/financial_statements_pit.sqlx",
+      "parent_action": null,
+      "sql_sha256": "992c4541ec8270708c7d5c4ab35ce1d4e367bfaa08109bfdea752035bf3ac1ab",
+      "target": {
+        "database": "stocks-437902",
+        "name": "financial_statements_pit",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "relation",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "financial_quarters_pit",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "financial_statements_pit",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        },
+        {
+          "database": "stocks-437902",
+          "name": "trading_price_features",
+          "schema": "acciones_dataset"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/financial_quarters_pit.sqlx",
+      "parent_action": null,
+      "sql_sha256": "d5e15d2c3a33e69f6e71492bf6ca0e31547e8532e256dccb1cb87ff12b3e56d6",
+      "target": {
+        "database": "stocks-437902",
+        "name": "financial_quarters_pit",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "relation",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "financial_ttm_pit",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "financial_quarters_pit",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/financial_ttm_pit.sqlx",
+      "parent_action": null,
+      "sql_sha256": "5cd2abec526f9acf4910553f3b56a4c8d2537b7a5ca2d83b19662811f771e5a4",
+      "target": {
+        "database": "stocks-437902",
+        "name": "financial_ttm_pit",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "relation",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "earnings_events_pit",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [],
+      "disabled": false,
+      "file_path": "definitions/earnings_events_pit.sqlx",
+      "parent_action": null,
+      "sql_sha256": "ac84d5a7542a0c5373dd4d6bb1040e105e27b756530a2bbf9160f3c43aade9ae",
+      "target": {
+        "database": "stocks-437902",
+        "name": "earnings_events_pit",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "relation",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "trading_financial_context_pit",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "financial_quarters_pit",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/trading_financial_context_pit.sqlx",
+      "parent_action": null,
+      "sql_sha256": "83ab0fa9a8f60c2f8f255f8f8a05806380f6ca3a8f744ec06e0b733bd0836aba",
+      "target": {
+        "database": "stocks-437902",
+        "name": "trading_financial_context_pit",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "relation",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "trading_earnings_context_pit",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "earnings_events_pit",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        },
+        {
+          "database": "stocks-437902",
+          "name": "trading_price_features",
+          "schema": "acciones_dataset"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/trading_earnings_context_pit.sqlx",
+      "parent_action": null,
+      "sql_sha256": "d8e07f14cea8ba902a86544bed44b87a098fd5343a22ccfcf970a7f6cd2ef7b8",
+      "target": {
+        "database": "stocks-437902",
+        "name": "trading_earnings_context_pit",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "relation",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "portfolio_valuation_pit_shadow",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "financial_ttm_pit",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        },
+        {
+          "database": "stocks-437902",
+          "name": "trading_price_features",
+          "schema": "acciones_dataset"
+        },
+        {
+          "database": "stocks-437902",
+          "name": "asset_profile",
+          "schema": "acciones_dataset"
+        },
+        {
+          "database": "stocks-437902",
+          "name": "valuation_model_profile",
+          "schema": "acciones_dataset"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/portfolio_valuation_pit_shadow.sqlx",
+      "parent_action": null,
+      "sql_sha256": "29f40b4cec7737139910b2cd8caf875c8eb661269a2d3472bb5d70bd791488b7",
+      "target": {
+        "database": "stocks-437902",
+        "name": "portfolio_valuation_pit_shadow",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "relation",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "trading_historical_context_pit",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "trading_historical_context",
+          "schema": "acciones_dataset"
+        },
+        {
+          "database": "stocks-437902",
+          "name": "trading_financial_context_pit",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        },
+        {
+          "database": "stocks-437902",
+          "name": "trading_earnings_context_pit",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        },
+        {
+          "database": "stocks-437902",
+          "name": "portfolio_valuation_pit_shadow",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/trading_historical_context_pit.sqlx",
+      "parent_action": null,
+      "sql_sha256": "b10e57bcfbe67165b7136cfd2a119db31c2ee784ed855bda1171df9eb9410f9f",
+      "target": {
+        "database": "stocks-437902",
+        "name": "trading_historical_context_pit",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "relation",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "wp03_legacy_vs_pit_shadow",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "trading_historical_context",
+          "schema": "acciones_dataset"
+        },
+        {
+          "database": "stocks-437902",
+          "name": "trading_historical_context_pit",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        },
+        {
+          "database": "stocks-437902",
+          "name": "portfolio_valuation_daily",
+          "schema": "acciones_dataset"
+        },
+        {
+          "database": "stocks-437902",
+          "name": "portfolio_valuation_pit_shadow",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/wp03_legacy_vs_pit_shadow.sqlx",
+      "parent_action": null,
+      "sql_sha256": "1c0ada1e59bbd89b2b660a4f36ec731b8c500e3a6d18e4e36bc23fc34e0efb57",
+      "target": {
+        "database": "stocks-437902",
+        "name": "wp03_legacy_vs_pit_shadow",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "relation",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "wp03_legacy_invalidation",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [],
+      "disabled": false,
+      "file_path": "definitions/wp03_legacy_invalidation.sqlx",
+      "parent_action": null,
+      "sql_sha256": "d4d21050864dc896af3b2312c929ea20a526e0578c05b53caf4ad7694091c8d6",
+      "target": {
+        "database": "stocks-437902",
+        "name": "wp03_legacy_invalidation",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    },
+    {
+      "action_type": "assertion",
+      "canonical_target": {
+        "database": "stocks-437902",
+        "name": "audit_no_lookahead",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      },
+      "dependency_targets": [
+        {
+          "database": "stocks-437902",
+          "name": "financial_quarters_pit",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        },
+        {
+          "database": "stocks-437902",
+          "name": "trading_financial_context_pit",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        },
+        {
+          "database": "stocks-437902",
+          "name": "trading_earnings_context_pit",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        },
+        {
+          "database": "stocks-437902",
+          "name": "portfolio_valuation_pit_shadow",
+          "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+        }
+      ],
+      "disabled": false,
+      "file_path": "definitions/audit_no_lookahead.sqlx",
+      "parent_action": null,
+      "sql_sha256": "ea184731ebacf9b58cd590ccee2e809ddc39593494702b82a0d1e1a140e5c270",
+      "target": {
+        "database": "stocks-437902",
+        "name": "audit_no_lookahead",
+        "schema": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+      }
+    }
+  ],
+  "required_assertion_count": 1,
+  "required_output_count": 12,
+  "schema_action_policy_version": "wp03-native-action-types-v1",
+  "schema_version": 1,
+  "total_assertion_count": 21,
+  "validation_dataset": "acciones_dataset_shadow_wp03_schema_20260814t013433"
+}

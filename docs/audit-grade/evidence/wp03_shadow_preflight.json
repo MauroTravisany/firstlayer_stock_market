@@ -1,0 +1,241 @@
+{
+  "captured_at": "2026-08-14T01:34:59.405819+00:00",
+  "datasets": {
+    "operational": {
+      "access": "READ_ONLY",
+      "dataset_id": "stocks-437902.acciones_dataset",
+      "location": "us-east1",
+      "status": "PASS"
+    },
+    "shadow": {
+      "access": "WRITE_WP03_OUTPUTS_ONLY",
+      "dataset_id": "stocks-437902.acciones_dataset_shadow_wp03_20260814t013433",
+      "existing_tables": [],
+      "labels": {
+        "environment": "shadow",
+        "work_package": "wp03"
+      },
+      "location": "us-east1",
+      "problems": [],
+      "status": "PASS",
+      "unexpected_tables": []
+    }
+  },
+  "git_sha": "bb665f9d0b78370788888594e8b19a98de75b1dd",
+  "location": "us-east1",
+  "operation": "WP03_SHADOW_PREREQUISITE_PREFLIGHT",
+  "operational_dataset": "acciones_dataset",
+  "operational_inputs": {
+    "asset_profile": {
+      "access": "READ_ONLY",
+      "consumers": [
+        "portfolio_valuation_pit_shadow"
+      ],
+      "missing_columns": [],
+      "modified": "2026-08-14T00:20:02.429000+00:00",
+      "num_rows": 28,
+      "problems": [],
+      "required_columns": [
+        "industry",
+        "peer_group",
+        "sector",
+        "ticker"
+      ],
+      "schema_sha256": "1c4e95135d23a2446dd0ca01f479eb3fa8a318b8b9bca1caf139dd23989c4d5a",
+      "status": "PASS",
+      "table_id": "stocks-437902.acciones_dataset.asset_profile",
+      "table_type": "TABLE"
+    },
+    "macro_earnings_calendar": {
+      "access": "READ_ONLY",
+      "consumers": [
+        "earnings_events_pit"
+      ],
+      "missing_columns": [],
+      "modified": "2026-08-14T00:12:37.039000+00:00",
+      "num_rows": 2882,
+      "problems": [],
+      "required_columns": [
+        "earnings_date",
+        "earnings_time",
+        "eps_estimate",
+        "event_status",
+        "loaded_at",
+        "reported_eps",
+        "signal_hour",
+        "snapshot_date",
+        "source",
+        "surprise_pct",
+        "ticker"
+      ],
+      "schema_sha256": "cd912203fd9e710c4a4b2664c09de02fcf2edecebbe4d75f7c43c4580eb08f40",
+      "status": "PASS",
+      "table_id": "stocks-437902.acciones_dataset.macro_earnings_calendar",
+      "table_type": "TABLE"
+    },
+    "portfolio_valuation_daily": {
+      "access": "READ_ONLY",
+      "consumers": [
+        "wp03_legacy_vs_pit_shadow"
+      ],
+      "missing_columns": [],
+      "modified": "2026-08-14T00:20:37.532000+00:00",
+      "num_rows": 70066,
+      "problems": [],
+      "required_columns": [
+        "analysis_date",
+        "classification",
+        "ticker",
+        "valuation_score"
+      ],
+      "schema_sha256": "c9a2ec5af9590006f44f000df5d10672b0ef42023a6794d0557ebb8ec8426f34",
+      "status": "PASS",
+      "table_id": "stocks-437902.acciones_dataset.portfolio_valuation_daily",
+      "table_type": "TABLE"
+    },
+    "trading_historical_context": {
+      "access": "READ_ONLY",
+      "consumers": [
+        "trading_historical_context_pit",
+        "wp03_legacy_vs_pit_shadow"
+      ],
+      "missing_columns": [],
+      "modified": "2026-08-14T00:22:49.236000+00:00",
+      "num_rows": 31786,
+      "problems": [],
+      "required_columns": [
+        "analysis_date",
+        "asset_type",
+        "calculated_at",
+        "classification",
+        "company_lifecycle_context",
+        "company_status",
+        "context_similarity_key",
+        "crypto_context_regime",
+        "days_to_earnings",
+        "debt_to_equity_asof",
+        "earnings_context_note",
+        "earnings_date",
+        "earnings_event_score",
+        "earnings_event_status",
+        "fcf_margin_asof",
+        "fundamental_final_score",
+        "fundamental_quality_score",
+        "fundamental_risk_score",
+        "fundamental_valuation_score",
+        "historical_fear_regime",
+        "monetary_regime_proxy",
+        "net_margin_asof",
+        "period_end_date",
+        "political_regime_proxy",
+        "report_date",
+        "revenue_yoy",
+        "risk_level",
+        "signal_hour",
+        "status_group",
+        "technical_trend",
+        "ticker"
+      ],
+      "schema_sha256": "755ae4592021cf33a9f6fade297b74791e649ead73232908fa7d4a11633d5b6f",
+      "status": "PASS",
+      "table_id": "stocks-437902.acciones_dataset.trading_historical_context",
+      "table_type": "TABLE"
+    },
+    "trading_price_features": {
+      "access": "READ_ONLY",
+      "consumers": [
+        "financial_quarters_pit",
+        "trading_earnings_context_pit",
+        "portfolio_valuation_pit_shadow"
+      ],
+      "missing_columns": [],
+      "modified": "2026-08-14T00:20:56.849000+00:00",
+      "num_rows": 31786,
+      "problems": [],
+      "required_columns": [
+        "analysis_date",
+        "asset_type",
+        "previous_close",
+        "signal_hour",
+        "signal_timestamp",
+        "ticker"
+      ],
+      "schema_sha256": "b2e7568f6a1c1c9fa1a385d1af02945ef703d76ae34d971ff3d8326920318da9",
+      "status": "PASS",
+      "table_id": "stocks-437902.acciones_dataset.trading_price_features",
+      "table_type": "TABLE"
+    },
+    "valuation_model_profile": {
+      "access": "READ_ONLY",
+      "consumers": [
+        "portfolio_valuation_pit_shadow"
+      ],
+      "missing_columns": [],
+      "modified": "2026-08-14T00:20:02.387000+00:00",
+      "num_rows": 21,
+      "problems": [],
+      "required_columns": [
+        "operating_margin_bad",
+        "operating_margin_good",
+        "operating_margin_weight",
+        "pb_cheap",
+        "pb_expensive",
+        "pb_extreme",
+        "pb_fair",
+        "pb_weight",
+        "pe_cheap",
+        "pe_expensive",
+        "pe_extreme",
+        "pe_fair",
+        "pe_weight",
+        "peer_group",
+        "profit_margin_bad",
+        "profit_margin_good",
+        "profit_margin_weight",
+        "ps_cheap",
+        "ps_expensive",
+        "ps_extreme",
+        "ps_fair",
+        "ps_weight",
+        "valuation_model"
+      ],
+      "schema_sha256": "08947a31e65125ff4ae3b0e43758ad2a643a0c3aea72a2790bad59719e1142e2",
+      "status": "PASS",
+      "table_id": "stocks-437902.acciones_dataset.valuation_model_profile",
+      "table_type": "TABLE"
+    }
+  },
+  "preflight_checksum": "2ee6bf31774820c5937dafa2868fda9697ac11df24035f645224ec3cff79cd94",
+  "problems": [],
+  "production_change_allowed": false,
+  "project_id": "stocks-437902",
+  "repository_static_inputs": {
+    "legacy_result_registry": {
+      "affected_result_count": 10,
+      "consumer_path": "dataform\\definitions\\wp03_legacy_invalidation.sqlx",
+      "consumer_sha256": "ac40919dafc4e61e39f93ad2dc504710288cf31008332cae329a39209a0b4100",
+      "problems": [],
+      "resolution_mode": "FROZEN_REPOSITORY_SNAPSHOT",
+      "source_path": "dataform\\definitions\\legacy_result_registry.sqlx",
+      "source_sha256": "bd09c260c183bd755b21d7fc411af0ebf18598ffbdd236bd4116b1dcaf6720ed",
+      "status": "PASS"
+    }
+  },
+  "schema_version": 1,
+  "shadow_dataset": "acciones_dataset_shadow_wp03_20260814t013433",
+  "status": "PASS",
+  "wp03_outputs": [
+    "financial_statements_pit_raw",
+    "financial_statements_pit",
+    "financial_quarters_pit",
+    "financial_ttm_pit",
+    "earnings_events_pit",
+    "trading_financial_context_pit",
+    "trading_earnings_context_pit",
+    "portfolio_valuation_pit_shadow",
+    "trading_historical_context_pit",
+    "wp03_legacy_vs_pit_shadow",
+    "wp03_legacy_invalidation",
+    "audit_no_lookahead"
+  ]
+}
