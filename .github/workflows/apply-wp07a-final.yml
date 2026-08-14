@@ -1,0 +1,59 @@
+name: Apply WP-07A final hardening
+
+on:
+  push:
+    branches:
+      - chatgpt/wp-07a-probabilistic-valuation
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wp07a-final-hardening
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/wp-07a-probabilistic-valuation
+          fetch-depth: 0
+
+      - name: Reconstruct and apply reviewed final hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d .wp07a_final_patch_parts
+          cat .wp07a_final_patch_parts/part_* | base64 --decode > /tmp/wp07a_final_patch.py
+          python /tmp/wp07a_final_patch.py
+          rm -rf .wp07a_final_patch_parts .github/workflows/apply-wp07a-final.yml /tmp/wp07a_final_patch.py
+
+      - name: Verify final candidate before commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --requirement requirements-ci.txt
+          python -m compileall -q packages tests
+          python -m unittest discover -s tests -p 'test_*.py'
+          python scripts/ci/verify_repo_invariants.py
+          python scripts/ci/verify_action_pinning.py
+          git diff --check
+          test -f config/valuation/wp07a_policy_v3.json
+          test ! -e config/valuation/wp07a_policy_v2.json
+          test ! -e .wp07a_final_patch_parts
+          test ! -e .github/workflows/apply-wp07a-final.yml
+
+      - name: Commit exact reviewed final hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet && { echo 'No final hardening changes to commit'; exit 1; }
+          git commit -m 'fix(wp07a): bind calibration to reusable model identity'
+          git push origin HEAD:chatgpt/wp-07a-probabilistic-valuation
