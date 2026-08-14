@@ -1,9 +1,20 @@
+js {
+  const useCanonicalPrices = dataform.projectConfig.vars.useCanonicalPrices === "true";
+  const targetSchema = useCanonicalPrices
+    ? dataform.projectConfig.vars.auditDataset
+    : dataform.projectConfig.vars.operationalDataset;
+}
+
 config {
   type: "table",
-  schema: "acciones_dataset",
+  schema: targetSchema,
   name: "trading_price_features",
-  description: "Features diarios homogeneos para paper trading y backtesting historico. Cada activo tiene una sola vela OHLCV por fecha, incluso si ese dia llegaron velas intradia.",
-  tags: ["trading", "paper", "daily"],
+  description: useCanonicalPrices
+    ? "Feature-flagged WP-04 shadow bridge backed by the canonical price series."
+    : "Legacy daily features retained as the rollback path until WP-04 shadow gates pass.",
+  tags: useCanonicalPrices
+    ? ["audit-grade", "prices", "shadow", "wp04"]
+    : ["trading", "paper", "daily", "legacy"],
   bigquery: {
     partitionBy: "analysis_date",
     clusterBy: ["ticker"]
@@ -11,11 +22,17 @@ config {
   assertions: {
     nonNull: ["analysis_date", "ticker", "signal_hour"],
     uniqueKey: ["analysis_date", "ticker", "signal_hour"]
-  }
+  },
+  dependencies: useCanonicalPrices
+    ? ["trading_price_features_canonical_shadow"]
+    : []
 }
 
--- Historical rows and recent 15-minute rows must not share a technical series.
--- This canonical layer turns both into one comparable daily OHLCV candle.
+${useCanonicalPrices ? `
+SELECT *
+FROM ${ref("trading_price_features_canonical_shadow")}
+` : `
+-- Legacy rollback branch. Do not reinterpret it as audit-grade history.
 WITH daily_prices AS (
   SELECT
     p.ticker,
@@ -31,7 +48,7 @@ WITH daily_prices AS (
     MIN(p.low) AS day_low,
     MAX(p.high) AS day_high,
     SUM(p.volumen) AS day_volume
-  FROM `stocks-437902.acciones_dataset.valores_acciones_recientes` p
+  FROM \`stocks-437902.acciones_dataset.valores_acciones_recientes\` p
   JOIN ${ref("trading_watchlist")} w
     ON w.ticker = p.ticker
    AND w.enabled
@@ -87,14 +104,22 @@ crypto_context AS (
     MAX(IF(ticker = "BTC-USD", return_60d, NULL)) AS btc_return_60d,
     MAX(IF(ticker = "ETH-USD", return_20d, NULL)) AS eth_return_20d,
     MAX(IF(ticker = "ETH-USD", return_60d, NULL)) AS eth_return_60d,
-    SAFE_DIVIDE(MAX(IF(ticker = "ETH-USD", day_close, NULL)), MAX(IF(ticker = "BTC-USD", day_close, NULL))) AS eth_btc_ratio,
-    MAX(IF(ticker = "ETH-USD", return_60d, NULL)) - MAX(IF(ticker = "BTC-USD", return_60d, NULL)) AS eth_vs_btc_60d,
+    SAFE_DIVIDE(
+      MAX(IF(ticker = "ETH-USD", day_close, NULL)),
+      MAX(IF(ticker = "BTC-USD", day_close, NULL))
+    ) AS eth_btc_ratio,
+    MAX(IF(ticker = "ETH-USD", return_60d, NULL))
+      - MAX(IF(ticker = "BTC-USD", return_60d, NULL)) AS eth_vs_btc_60d,
     CASE
       WHEN MAX(IF(ticker = "BTC-USD", return_60d, NULL)) > 0.08
-       AND MAX(IF(ticker = "ETH-USD", return_60d, NULL)) - MAX(IF(ticker = "BTC-USD", return_60d, NULL)) > 0.08 THEN "ALTCOIN_ROTATION"
-      WHEN MAX(IF(ticker = "BTC-USD", return_60d, NULL)) > 0.08 THEN "BTC_DOMINANTE"
+       AND MAX(IF(ticker = "ETH-USD", return_60d, NULL))
+        - MAX(IF(ticker = "BTC-USD", return_60d, NULL)) > 0.08
+        THEN "ALTCOIN_ROTATION"
+      WHEN MAX(IF(ticker = "BTC-USD", return_60d, NULL)) > 0.08
+        THEN "BTC_DOMINANTE"
       WHEN MAX(IF(ticker = "BTC-USD", return_60d, NULL)) < -0.12
-       AND MAX(IF(ticker = "ETH-USD", return_60d, NULL)) < -0.12 THEN "CRYPTO_DEBIL"
+       AND MAX(IF(ticker = "ETH-USD", return_60d, NULL)) < -0.12
+        THEN "CRYPTO_DEBIL"
       ELSE "CRYPTO_NEUTRAL"
     END AS crypto_regime
   FROM features
@@ -116,3 +141,4 @@ SELECT
 FROM features f
 LEFT JOIN crypto_context c
   ON c.analysis_date = f.analysis_date
+`}

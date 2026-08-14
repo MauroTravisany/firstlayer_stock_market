@@ -1,0 +1,365 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "market_price_canonical",
+  description: "Canonical WP-04 price series with raw OHLC for execution, adjusted close for returns and exactly one selected granularity per session or UTC crypto bucket.",
+  tags: ["audit-grade", "canonical", "prices", "shadow", "wp04"],
+  bigquery: {
+    partitionBy: "session_date",
+    clusterBy: ["ticker", "canonical_interval", "quality_status"]
+  },
+  assertions: {
+    nonNull: ["price_id", "ticker", "asset_type", "exchange", "session_date", "bar_start", "bar_end", "canonical_interval", "raw_open", "raw_high", "raw_low", "raw_close", "adjusted_close", "currency", "provider", "source_interval", "coverage_ratio", "quality_status", "selected_by_rule", "data_snapshot_id", "available_at", "ingested_at", "production_change_allowed"],
+    uniqueKey: ["ticker", "bar_start", "canonical_interval"]
+  }
+}
+
+WITH latest_raw AS (
+  SELECT * EXCEPT (rn)
+  FROM (
+    SELECT
+      r.*,
+      ROW_NUMBER() OVER (
+        PARTITION BY r.provider, r.ticker, r.source_interval, r.bar_start
+        ORDER BY r.available_at DESC, r.ingested_at DESC, r.raw_revision_id DESC
+      ) AS rn
+    FROM ${ref("market_price_raw")} r
+    WHERE r.quality_status = "RAW_VALIDATED"
+      AND r.available_at >= r.bar_end
+  )
+  WHERE rn = 1
+),
+tradable_sessions AS (
+  SELECT *
+  FROM ${ref("market_session_calendar")}
+  WHERE session_status IN ("OPEN", "EARLY_CLOSE")
+    AND exchange IN ("XNYS", "FX_24_5")
+    AND asset_type IN ("STOCK", "ETF", "FX")
+),
+primary_daily AS (
+  SELECT * EXCEPT (rn)
+  FROM (
+    SELECT
+      r.*,
+      s.session_date,
+      s.open_utc AS session_open_utc,
+      s.close_utc AS session_close_utc,
+      ROW_NUMBER() OVER (
+        PARTITION BY r.ticker, s.session_date
+        ORDER BY r.available_at DESC, r.ingested_at DESC, r.raw_revision_id DESC
+      ) AS rn
+    FROM latest_raw r
+    JOIN tradable_sessions s
+      ON s.exchange = r.exchange
+     AND s.asset_type = r.asset_type
+     AND s.session_date = IF(
+       r.exchange = "XNYS",
+       DATE(r.bar_start, "America/New_York"),
+       DATE(r.bar_start)
+     )
+    WHERE r.provider = "YAHOO"
+      AND r.source_interval = "1d"
+  )
+  WHERE rn = 1
+),
+primary_intraday AS (
+  SELECT
+    r.ticker,
+    ANY_VALUE(r.asset_type) AS asset_type,
+    ANY_VALUE(r.exchange) AS exchange,
+    s.session_date,
+    s.open_utc AS session_open_utc,
+    s.close_utc AS session_close_utc,
+    ARRAY_AGG(r.open ORDER BY r.bar_start LIMIT 1)[SAFE_OFFSET(0)] AS raw_open,
+    MAX(r.high) AS raw_high,
+    MIN(r.low) AS raw_low,
+    ARRAY_AGG(r.close ORDER BY r.bar_start DESC LIMIT 1)[SAFE_OFFSET(0)] AS raw_close,
+    SUM(r.volume) AS raw_volume,
+    ANY_VALUE(r.currency) AS currency,
+    ANY_VALUE(r.provider) AS provider,
+    COUNT(DISTINCT r.bar_start) AS observed_bars,
+    ANY_VALUE(s.expected_15m_bars) AS expected_bars,
+    LEAST(
+      1.0,
+      SAFE_DIVIDE(
+        COUNT(DISTINCT r.bar_start),
+        ANY_VALUE(s.expected_15m_bars)
+      )
+    ) AS coverage_ratio,
+    MAX(r.available_at) AS available_at,
+    MAX(r.ingested_at) AS ingested_at,
+    ARRAY_AGG(r.raw_revision_id ORDER BY r.bar_start) AS source_revision_ids
+  FROM latest_raw r
+  JOIN tradable_sessions s
+    ON s.exchange = r.exchange
+   AND s.asset_type = r.asset_type
+   AND r.bar_start >= s.open_utc
+   AND r.bar_end <= s.close_utc
+  WHERE r.provider = "YAHOO"
+    AND r.source_interval = "15m"
+    AND r.asset_type IN ("STOCK", "ETF")
+  GROUP BY r.ticker, s.session_date, s.open_utc, s.close_utc
+),
+selected_daily AS (
+  SELECT
+    d.ticker,
+    d.asset_type,
+    d.exchange,
+    d.session_date,
+    d.session_open_utc AS bar_start,
+    d.session_close_utc AS bar_end,
+    IF(
+      i.coverage_ratio >= CAST(${JSON.stringify(dataform.projectConfig.vars.minimumIntradayCoverage || "0.95")} AS FLOAT64),
+      i.raw_open,
+      d.open
+    ) AS raw_open,
+    IF(
+      i.coverage_ratio >= CAST(${JSON.stringify(dataform.projectConfig.vars.minimumIntradayCoverage || "0.95")} AS FLOAT64),
+      i.raw_high,
+      d.high
+    ) AS raw_high,
+    IF(
+      i.coverage_ratio >= CAST(${JSON.stringify(dataform.projectConfig.vars.minimumIntradayCoverage || "0.95")} AS FLOAT64),
+      i.raw_low,
+      d.low
+    ) AS raw_low,
+    IF(
+      i.coverage_ratio >= CAST(${JSON.stringify(dataform.projectConfig.vars.minimumIntradayCoverage || "0.95")} AS FLOAT64),
+      i.raw_close,
+      d.close
+    ) AS raw_close,
+    COALESCE(d.adjusted_close, d.close) AS adjusted_close,
+    IF(
+      i.coverage_ratio >= CAST(${JSON.stringify(dataform.projectConfig.vars.minimumIntradayCoverage || "0.95")} AS FLOAT64),
+      i.raw_volume,
+      d.volume
+    ) AS raw_volume,
+    d.currency,
+    d.provider,
+    IF(
+      i.coverage_ratio >= CAST(${JSON.stringify(dataform.projectConfig.vars.minimumIntradayCoverage || "0.95")} AS FLOAT64),
+      "15m",
+      "1d"
+    ) AS source_interval,
+    COALESCE(i.coverage_ratio, 0.0) AS coverage_ratio,
+    CASE
+      WHEN i.coverage_ratio >= CAST(${JSON.stringify(dataform.projectConfig.vars.minimumIntradayCoverage || "0.95")} AS FLOAT64)
+        THEN "INTRADAY_COMPLETE"
+      WHEN i.ticker IS NULL THEN "DAILY_FALLBACK_NO_INTRADAY"
+      ELSE "DAILY_FALLBACK_INCOMPLETE_INTRADAY"
+    END AS selected_by_rule,
+    IF(
+      i.coverage_ratio >= CAST(${JSON.stringify(dataform.projectConfig.vars.minimumIntradayCoverage || "0.95")} AS FLOAT64),
+      GREATEST(i.available_at, d.available_at),
+      d.available_at
+    ) AS available_at,
+    IF(
+      i.coverage_ratio >= CAST(${JSON.stringify(dataform.projectConfig.vars.minimumIntradayCoverage || "0.95")} AS FLOAT64),
+      GREATEST(i.ingested_at, d.ingested_at),
+      d.ingested_at
+    ) AS ingested_at,
+    IF(
+      i.coverage_ratio >= CAST(${JSON.stringify(dataform.projectConfig.vars.minimumIntradayCoverage || "0.95")} AS FLOAT64),
+      ARRAY_CONCAT(i.source_revision_ids, [d.raw_revision_id]),
+      [d.raw_revision_id]
+    ) AS source_revision_ids
+  FROM primary_daily d
+  LEFT JOIN primary_intraday i
+    ON i.ticker = d.ticker
+   AND i.session_date = d.session_date
+),
+eligible_actions AS (
+  SELECT
+    ticker,
+    ex_date AS session_date,
+    MAX(IF(action_type = "SPLIT", ratio, NULL)) AS split_factor,
+    SUM(IF(action_type = "DIVIDEND", cash_amount, 0)) AS dividend_amount,
+    ARRAY_AGG(action_id ORDER BY available_at, revision, action_id) AS action_ids,
+    MAX(available_at) AS action_available_at,
+    MAX(ingested_at) AS action_ingested_at
+  FROM ${ref("corporate_actions_pit")}
+  WHERE backtest_eligible
+    AND quality_status = "ELIGIBLE_VERIFIED_PIT"
+  GROUP BY ticker, session_date
+),
+daily_enriched AS (
+  SELECT
+    p.*,
+    COALESCE(a.split_factor, 1.0) AS split_factor,
+    COALESCE(a.dividend_amount, 0.0) AS dividend_amount,
+    COALESCE(a.action_ids, ARRAY<STRING>[]) AS action_ids,
+    r.reconciliation_id,
+    COALESCE(r.status, "SOURCE_MISSING") AS reconciliation_status,
+    COALESCE(
+      r.blocks_quality,
+      ${dataform.projectConfig.vars.requireSecondaryPriceSource === "true" ? "TRUE" : "FALSE"}
+    ) AS reconciliation_blocks_quality,
+    COALESCE(
+      GREATEST(p.available_at, a.action_available_at, r.available_at),
+      p.available_at,
+      a.action_available_at,
+      r.available_at
+    ) AS final_available_at,
+    COALESCE(
+      GREATEST(p.ingested_at, a.action_ingested_at, r.ingested_at),
+      p.ingested_at,
+      a.action_ingested_at,
+      r.ingested_at
+    ) AS final_ingested_at
+  FROM selected_daily p
+  LEFT JOIN eligible_actions a
+    ON a.ticker = p.ticker
+   AND a.session_date = p.session_date
+  LEFT JOIN ${ref("price_source_reconciliation")} r
+    ON r.ticker = p.ticker
+   AND r.session_date = p.session_date
+),
+crypto_hourly AS (
+  SELECT *
+  FROM latest_raw
+  WHERE asset_type = "CRYPTO"
+    AND provider = "YAHOO"
+    AND source_interval = "1h"
+    AND EXTRACT(MINUTE FROM bar_start) = 0
+    AND EXTRACT(SECOND FROM bar_start) = 0
+),
+crypto_bucketed AS (
+  SELECT
+    *,
+    TIMESTAMP_SECONDS(DIV(UNIX_SECONDS(bar_start), 14400) * 14400) AS bucket_start
+  FROM crypto_hourly
+),
+crypto_canonical AS (
+  SELECT
+    ticker,
+    ANY_VALUE(asset_type) AS asset_type,
+    ANY_VALUE(exchange) AS exchange,
+    bucket_start,
+    TIMESTAMP_ADD(bucket_start, INTERVAL 4 HOUR) AS bucket_end,
+    ARRAY_AGG(open ORDER BY bar_start LIMIT 1)[SAFE_OFFSET(0)] AS raw_open,
+    MAX(high) AS raw_high,
+    MIN(low) AS raw_low,
+    ARRAY_AGG(close ORDER BY bar_start DESC LIMIT 1)[SAFE_OFFSET(0)] AS raw_close,
+    ARRAY_AGG(COALESCE(adjusted_close, close) ORDER BY bar_start DESC LIMIT 1)[SAFE_OFFSET(0)] AS adjusted_close,
+    SUM(volume) AS raw_volume,
+    ANY_VALUE(currency) AS currency,
+    ANY_VALUE(provider) AS provider,
+    MAX(available_at) AS available_at,
+    MAX(ingested_at) AS ingested_at,
+    ARRAY_AGG(raw_revision_id ORDER BY bar_start) AS source_revision_ids,
+    COUNT(DISTINCT bar_start) AS observed_bars
+  FROM crypto_bucketed
+  GROUP BY ticker, bucket_start
+  HAVING observed_bars = 4
+)
+
+SELECT
+  TO_HEX(SHA256(CONCAT(
+    p.ticker,
+    "|",
+    CAST(p.bar_start AS STRING),
+    "|1d|",
+    ARRAY_TO_STRING(p.source_revision_ids, ","),
+    "|",
+    p.selected_by_rule,
+    "|",
+    COALESCE(p.reconciliation_id, "NO_RECONCILIATION")
+  ))) AS price_id,
+  p.ticker,
+  p.asset_type,
+  p.exchange,
+  p.session_date,
+  p.bar_start,
+  p.bar_end,
+  "1d" AS canonical_interval,
+  p.raw_open,
+  p.raw_high,
+  p.raw_low,
+  p.raw_close,
+  p.adjusted_close,
+  p.raw_volume,
+  p.split_factor,
+  p.dividend_amount,
+  p.currency,
+  p.provider,
+  p.source_interval,
+  p.coverage_ratio,
+  p.reconciliation_id,
+  p.reconciliation_status,
+  CASE
+    WHEN p.reconciliation_blocks_quality THEN p.reconciliation_status
+    WHEN p.reconciliation_status = "SOURCE_MISSING" THEN "CANONICAL_SINGLE_SOURCE"
+    WHEN p.source_interval = "15m" AND p.coverage_ratio = 1 THEN "CANONICAL_RECONCILED"
+    WHEN p.source_interval = "15m" THEN "CANONICAL_COVERAGE_ACCEPTED"
+    ELSE "CANONICAL_DAILY_FALLBACK"
+  END AS quality_status,
+  p.selected_by_rule,
+  TO_HEX(SHA256(CONCAT(
+    p.ticker,
+    "|",
+    CAST(p.session_date AS STRING),
+    "|",
+    ARRAY_TO_STRING(p.source_revision_ids, ","),
+    "|",
+    ARRAY_TO_STRING(p.action_ids, ","),
+    "|",
+    COALESCE(p.reconciliation_id, "NO_RECONCILIATION")
+  ))) AS data_snapshot_id,
+  p.final_available_at AS available_at,
+  p.final_ingested_at AS ingested_at,
+  p.source_revision_ids,
+  p.action_ids,
+  FALSE AS production_change_allowed
+FROM daily_enriched p
+WHERE p.raw_open IS NOT NULL
+  AND p.raw_high IS NOT NULL
+  AND p.raw_low IS NOT NULL
+  AND p.raw_close IS NOT NULL
+  AND p.adjusted_close IS NOT NULL
+
+UNION ALL
+
+SELECT
+  TO_HEX(SHA256(CONCAT(
+    c.ticker,
+    "|",
+    CAST(c.bucket_start AS STRING),
+    "|4h|",
+    ARRAY_TO_STRING(c.source_revision_ids, ",")
+  ))) AS price_id,
+  c.ticker,
+  c.asset_type,
+  c.exchange,
+  DATE(c.bucket_start) AS session_date,
+  c.bucket_start AS bar_start,
+  c.bucket_end AS bar_end,
+  "4h" AS canonical_interval,
+  c.raw_open,
+  c.raw_high,
+  c.raw_low,
+  c.raw_close,
+  c.adjusted_close,
+  c.raw_volume,
+  1.0 AS split_factor,
+  0.0 AS dividend_amount,
+  c.currency,
+  c.provider,
+  "1h" AS source_interval,
+  1.0 AS coverage_ratio,
+  CAST(NULL AS STRING) AS reconciliation_id,
+  "NOT_REQUIRED_CRYPTO" AS reconciliation_status,
+  "CANONICAL_RECONCILED" AS quality_status,
+  "CRYPTO_4H_COMPLETE" AS selected_by_rule,
+  TO_HEX(SHA256(CONCAT(
+    c.ticker,
+    "|",
+    CAST(c.bucket_start AS STRING),
+    "|",
+    ARRAY_TO_STRING(c.source_revision_ids, ",")
+  ))) AS data_snapshot_id,
+  c.available_at,
+  c.ingested_at,
+  c.source_revision_ids,
+  ARRAY<STRING>[] AS action_ids,
+  FALSE AS production_change_allowed
+FROM crypto_canonical c

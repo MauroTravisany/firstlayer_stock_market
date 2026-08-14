@@ -1,4 +1,4 @@
-"""Deterministic XNYS and 24/7 session calendars for WP-04."""
+"""Deterministic XNYS, FX 24/5 and crypto 24/7 session calendars."""
 
 from __future__ import annotations
 
@@ -17,10 +17,11 @@ def _nth_weekday(year: int, month: int, weekday: int, n: int) -> dt.date:
 
 
 def _last_weekday(year: int, month: int, weekday: int) -> dt.date:
-    if month == 12:
-        next_month = dt.date(year + 1, 1, 1)
-    else:
-        next_month = dt.date(year, month + 1, 1)
+    next_month = (
+        dt.date(year + 1, 1, 1)
+        if month == 12
+        else dt.date(year, month + 1, 1)
+    )
     day = next_month - dt.timedelta(days=1)
     return day - dt.timedelta(days=(day.weekday() - weekday) % 7)
 
@@ -87,7 +88,8 @@ def session_for_date(
     asset_type: str = "STOCK",
 ) -> SessionSpec | None:
     asset_type = asset_type.upper()
-    if asset_type == "CRYPTO" or exchange.upper() == "CRYPTO_24_7":
+    exchange = exchange.upper()
+    if asset_type == "CRYPTO" or exchange == "CRYPTO_24_7":
         open_utc = dt.datetime.combine(day, dt.time.min, tzinfo=UTC)
         return SessionSpec(
             "CRYPTO_24_7",
@@ -98,7 +100,20 @@ def session_for_date(
             "OPEN",
             "UTC",
         )
-    if exchange.upper() != "XNYS":
+    if asset_type == "FX" or exchange == "FX_24_5":
+        if day.weekday() >= 5:
+            return None
+        open_utc = dt.datetime.combine(day, dt.time.min, tzinfo=UTC)
+        return SessionSpec(
+            "FX_24_5",
+            "FX",
+            day,
+            open_utc,
+            open_utc + dt.timedelta(days=1),
+            "OPEN",
+            "UTC",
+        )
+    if exchange != "XNYS":
         raise ValueError(f"unsupported exchange {exchange}")
     if day.weekday() >= 5 or day in xnys_holidays(day.year):
         return None
@@ -127,11 +142,7 @@ def iter_sessions(
         raise ValueError("end cannot precede start")
     day = start
     while day <= end:
-        session = session_for_date(
-            day,
-            exchange=exchange,
-            asset_type=asset_type,
-        )
+        session = session_for_date(day, exchange=exchange, asset_type=asset_type)
         if session is not None:
             yield session
         day += dt.timedelta(days=1)
@@ -139,6 +150,8 @@ def iter_sessions(
 
 def interval_seconds(interval: str) -> int:
     value = interval.strip().lower()
+    if len(value) < 2:
+        raise ValueError(f"unsupported interval {interval}")
     unit = value[-1]
     amount = int(value[:-1])
     multipliers = {"m": 60, "h": 3600, "d": 86400}

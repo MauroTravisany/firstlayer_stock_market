@@ -11,3 +11,11 @@ vars:
   executionModelVersion: legacy-daily-execution-v1
   costModelVersion: legacy-estimated-cost-v1
   universeVersion: manual-watchlist-v1
+  useCanonicalPrices: "false"
+  minimumIntradayCoverage: "0.95"
+  requireSecondaryPriceSource: "false"
+  priceCloseToleranceBps: "10"
+  priceVolumeToleranceRatio: "0.10"
+  priceSourceStaleSeconds: "86400"
+  usdClpTicker: "CLP=X"
+  priceModelVersion: wp04-canonical-prices-v1

@@ -1,0 +1,38 @@
+config {
+  type: "operations",
+  hasOutput: true,
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "market_price_raw",
+  description: "Append-only WP-04 provider price revisions with interval, timezone, availability and ingestion lineage.",
+  tags: ["audit-grade", "prices", "raw", "wp04"]
+}
+
+CREATE TABLE IF NOT EXISTS ${self()} (
+  raw_revision_id STRING NOT NULL,
+  raw_record_id STRING NOT NULL,
+  ingestion_run_id STRING NOT NULL,
+  provider STRING NOT NULL,
+  provider_symbol STRING NOT NULL,
+  ticker STRING NOT NULL,
+  asset_type STRING NOT NULL,
+  exchange STRING NOT NULL,
+  source_interval STRING NOT NULL,
+  source_timezone STRING NOT NULL,
+  bar_start TIMESTAMP NOT NULL,
+  bar_end TIMESTAMP NOT NULL,
+  open FLOAT64,
+  high FLOAT64,
+  low FLOAT64,
+  close FLOAT64,
+  adjusted_close FLOAT64,
+  volume FLOAT64,
+  currency STRING NOT NULL,
+  source_record_id STRING NOT NULL,
+  source_version STRING NOT NULL,
+  payload_hash STRING NOT NULL,
+  available_at TIMESTAMP NOT NULL,
+  ingested_at TIMESTAMP NOT NULL,
+  quality_status STRING NOT NULL
+)
+PARTITION BY DATE(bar_start)
+CLUSTER BY ticker, provider, source_interval;
