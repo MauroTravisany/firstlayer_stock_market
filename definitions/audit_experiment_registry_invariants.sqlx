@@ -1,0 +1,240 @@
+config {
+  type: "assertion",
+  tags: ["audit-grade", "wp02", "registry", "blocking"],
+  dependencies: [
+    "audit_data_snapshots",
+    "audit_experiment_runs",
+    "audit_experiment_candidates",
+    "audit_experiment_artifacts",
+    "audit_experiment_decisions"
+  ]
+}
+
+WITH
+snapshot_keys AS (
+  SELECT data_snapshot_id, COUNT(*) AS row_count
+  FROM ${ref("audit_data_snapshots")}
+  GROUP BY data_snapshot_id
+),
+experiment_keys AS (
+  SELECT experiment_id, run_id, COUNT(*) AS row_count
+  FROM ${ref("audit_experiment_runs")}
+  GROUP BY experiment_id, run_id
+),
+experiment_ids AS (
+  SELECT experiment_id, COUNT(*) AS row_count
+  FROM ${ref("audit_experiment_runs")}
+  GROUP BY experiment_id
+),
+run_ids AS (
+  SELECT run_id, COUNT(*) AS row_count
+  FROM ${ref("audit_experiment_runs")}
+  GROUP BY run_id
+),
+candidate_keys AS (
+  SELECT experiment_id, run_id, candidate_id, COUNT(*) AS row_count
+  FROM ${ref("audit_experiment_candidates")}
+  GROUP BY experiment_id, run_id, candidate_id
+),
+candidate_collisions AS (
+  SELECT candidate_id, COUNT(DISTINCT CONCAT(experiment_id, "|", run_id)) AS identity_count
+  FROM ${ref("audit_experiment_candidates")}
+  GROUP BY candidate_id
+),
+candidate_counts AS (
+  SELECT
+    experiment_id,
+    run_id,
+    COUNT(*) AS candidate_count,
+    COUNT(DISTINCT hypothesis_index) AS distinct_hypothesis_count,
+    MIN(hypothesis_index) AS min_hypothesis_index,
+    MAX(hypothesis_index) AS max_hypothesis_index,
+    COUNTIF(candidate_status = "COMPLETED" AND result_checksum IS NOT NULL) AS completed_count
+  FROM ${ref("audit_experiment_candidates")}
+  GROUP BY experiment_id, run_id
+),
+artifact_keys AS (
+  SELECT experiment_id, run_id, artifact_id, COUNT(*) AS row_count
+  FROM ${ref("audit_experiment_artifacts")}
+  GROUP BY experiment_id, run_id, artifact_id
+),
+artifact_collisions AS (
+  SELECT artifact_id, COUNT(DISTINCT CONCAT(experiment_id, "|", run_id)) AS identity_count
+  FROM ${ref("audit_experiment_artifacts")}
+  GROUP BY artifact_id
+),
+artifact_counts AS (
+  SELECT
+    experiment_id,
+    run_id,
+    COUNT(*) AS artifact_count,
+    COUNTIF(artifact_type = "RESULT_SUMMARY") AS result_summary_count,
+    MAX(IF(artifact_type = "RESULT_SUMMARY", checksum, NULL)) AS result_summary_checksum,
+    COUNTIF(immutable IS NOT TRUE) AS mutable_count
+  FROM ${ref("audit_experiment_artifacts")}
+  GROUP BY experiment_id, run_id
+),
+decision_keys AS (
+  SELECT experiment_id, run_id, decision_id, COUNT(*) AS row_count
+  FROM ${ref("audit_experiment_decisions")}
+  GROUP BY experiment_id, run_id, decision_id
+),
+decision_collisions AS (
+  SELECT decision_id, COUNT(DISTINCT CONCAT(experiment_id, "|", run_id)) AS identity_count
+  FROM ${ref("audit_experiment_decisions")}
+  GROUP BY decision_id
+),
+decision_counts AS (
+  SELECT
+    experiment_id,
+    run_id,
+    COUNT(*) AS decision_count,
+    COUNTIF(production_change_allowed IS NOT FALSE) AS production_authority_count
+  FROM ${ref("audit_experiment_decisions")}
+  GROUP BY experiment_id, run_id
+),
+violations AS (
+  SELECT "DUPLICATE_DATA_SNAPSHOT_ID" AS violation_code, data_snapshot_id AS entity_id, row_count AS violation_count
+  FROM snapshot_keys WHERE row_count > 1
+
+  UNION ALL
+  SELECT "DUPLICATE_EXPERIMENT_RUN_KEY", CONCAT(experiment_id, "|", run_id), row_count
+  FROM experiment_keys WHERE row_count > 1
+
+  UNION ALL
+  SELECT "DUPLICATE_EXPERIMENT_ID", experiment_id, row_count
+  FROM experiment_ids WHERE row_count > 1
+
+  UNION ALL
+  SELECT "DUPLICATE_RUN_ID", run_id, row_count
+  FROM run_ids WHERE row_count > 1
+
+  UNION ALL
+  SELECT "DUPLICATE_CANDIDATE_KEY", CONCAT(experiment_id, "|", run_id, "|", candidate_id), row_count
+  FROM candidate_keys WHERE row_count > 1
+
+  UNION ALL
+  SELECT "CANDIDATE_ID_CROSS_RUN_COLLISION", candidate_id, identity_count
+  FROM candidate_collisions WHERE identity_count > 1
+
+  UNION ALL
+  SELECT "DUPLICATE_ARTIFACT_KEY", CONCAT(experiment_id, "|", run_id, "|", artifact_id), row_count
+  FROM artifact_keys WHERE row_count > 1
+
+  UNION ALL
+  SELECT "DUPLICATE_ARTIFACT_ID", artifact_id, identity_count
+  FROM artifact_collisions WHERE identity_count > 1
+
+  UNION ALL
+  SELECT "DUPLICATE_DECISION_KEY", CONCAT(experiment_id, "|", run_id, "|", decision_id), row_count
+  FROM decision_keys WHERE row_count > 1
+
+  UNION ALL
+  SELECT "DUPLICATE_DECISION_ID", decision_id, identity_count
+  FROM decision_collisions WHERE identity_count > 1
+
+  UNION ALL
+  SELECT "INVALID_EXPERIMENT_ID_FORMAT", experiment_id, 1
+  FROM ${ref("audit_experiment_runs")}
+  WHERE NOT REGEXP_CONTAINS(
+    experiment_id,
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+  )
+
+  UNION ALL
+  SELECT "INVALID_RUN_ID_FORMAT", run_id, 1
+  FROM ${ref("audit_experiment_runs")}
+  WHERE NOT REGEXP_CONTAINS(run_id, r"^run_[0-9a-f]{64}$")
+
+  UNION ALL
+  SELECT "INVALID_CANDIDATE_ID_FORMAT", candidate_id, 1
+  FROM ${ref("audit_experiment_candidates")}
+  WHERE NOT REGEXP_CONTAINS(candidate_id, r"^cand_[0-9a-f]{64}$")
+
+  UNION ALL
+  SELECT "INVALID_EXPERIMENT_STATUS", experiment_id, 1
+  FROM ${ref("audit_experiment_runs")}
+  WHERE status NOT IN ("CREATED", "CANDIDATES_READY", "RUNNING", "COMPLETED", "REJECTED", "FAILED", "CANCELLED")
+
+  UNION ALL
+  SELECT "EXPERIMENT_PRODUCTION_AUTHORITY", experiment_id, 1
+  FROM ${ref("audit_experiment_runs")}
+  WHERE production_change_allowed IS NOT FALSE
+
+  UNION ALL
+  SELECT "SNAPSHOT_NOT_PUBLISHED", r.experiment_id, 1
+  FROM ${ref("audit_experiment_runs")} r
+  LEFT JOIN ${ref("audit_data_snapshots")} s USING (data_snapshot_id)
+  WHERE s.data_snapshot_id IS NULL
+     OR s.snapshot_status != "PUBLISHED"
+     OR s.quality_gate_status != "PASS"
+     OR s.immutable IS NOT TRUE
+     OR s.production_change_allowed IS NOT FALSE
+     OR s.content_checksum != r.data_snapshot_checksum
+     OR s.data_contract_version != r.data_contract_version
+     OR s.contract_set_hash != r.contract_set_hash
+     OR s.schema_snapshot_hash != r.schema_snapshot_hash
+
+  UNION ALL
+  SELECT "CANDIDATE_PRODUCTION_AUTHORITY", candidate_id, 1
+  FROM ${ref("audit_experiment_candidates")}
+  WHERE production_change_allowed IS NOT FALSE
+
+  UNION ALL
+  SELECT "MUTABLE_ARTIFACT", CONCAT(experiment_id, "|", artifact_id), 1
+  FROM ${ref("audit_experiment_artifacts")}
+  WHERE immutable IS NOT TRUE
+
+  UNION ALL
+  SELECT "DECISION_PRODUCTION_AUTHORITY", CONCAT(experiment_id, "|", decision_id), 1
+  FROM ${ref("audit_experiment_decisions")}
+  WHERE production_change_allowed IS NOT FALSE
+
+  UNION ALL
+  SELECT "ACTIVE_EXPERIMENT_INCOMPLETE", r.experiment_id, 1
+  FROM ${ref("audit_experiment_runs")} r
+  LEFT JOIN candidate_counts c USING (experiment_id, run_id)
+  WHERE r.status IN ("CANDIDATES_READY", "RUNNING", "COMPLETED")
+    AND (
+      COALESCE(c.candidate_count, 0) = 0
+      OR c.candidate_count != r.hypothesis_count
+      OR c.distinct_hypothesis_count != c.candidate_count
+      OR c.min_hypothesis_index != 1
+      OR c.max_hypothesis_index != c.candidate_count
+    )
+
+  UNION ALL
+  SELECT "COMPLETED_EXPERIMENT_INCOMPLETE", r.experiment_id, 1
+  FROM ${ref("audit_experiment_runs")} r
+  LEFT JOIN candidate_counts c USING (experiment_id, run_id)
+  LEFT JOIN artifact_counts a USING (experiment_id, run_id)
+  LEFT JOIN decision_counts d USING (experiment_id, run_id)
+  WHERE r.status = "COMPLETED"
+    AND (
+      r.completed_at IS NULL
+      OR r.results_checksum IS NULL
+      OR LENGTH(r.results_checksum) != 64
+      OR COALESCE(c.completed_count, 0) != COALESCE(c.candidate_count, 0)
+      OR COALESCE(a.result_summary_count, 0) != 1
+      OR a.result_summary_checksum != r.results_checksum
+      OR COALESCE(a.mutable_count, 0) != 0
+      OR COALESCE(d.decision_count, 0) = 0
+      OR COALESCE(d.production_authority_count, 0) != 0
+    )
+
+  UNION ALL
+  SELECT "PUBLISHED_SNAPSHOT_INVALID", data_snapshot_id, 1
+  FROM ${ref("audit_data_snapshots")}
+  WHERE snapshot_status = "PUBLISHED"
+    AND (
+      immutable IS NOT TRUE
+      OR published_at IS NULL
+      OR LENGTH(content_checksum) != 64
+      OR LENGTH(source_manifest_hash) != 64
+      OR LENGTH(contract_set_hash) != 64
+      OR LENGTH(schema_snapshot_hash) != 64
+      OR quality_gate_status != "PASS"
+      OR production_change_allowed IS NOT FALSE
+    )
+)
+SELECT * FROM violations

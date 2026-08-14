@@ -1,0 +1,26 @@
+config {
+  type: "operations",
+  database: dataform.projectConfig.defaultDatabase,
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "audit_experiment_decisions",
+  hasOutput: true,
+  tags: ["audit-grade", "wp02", "registry"]
+}
+
+CREATE TABLE IF NOT EXISTS ${self()} (
+  experiment_id STRING NOT NULL,
+  run_id STRING NOT NULL,
+  decision_id STRING NOT NULL,
+  candidate_id STRING,
+  decision_type STRING NOT NULL,
+  decision_status STRING NOT NULL,
+  reason_code STRING NOT NULL,
+  evidence_json STRING NOT NULL,
+  actor_type STRING NOT NULL,
+  actor_id STRING,
+  production_change_allowed BOOL NOT NULL,
+  created_at TIMESTAMP NOT NULL
+)
+PARTITION BY DATE(created_at)
+CLUSTER BY experiment_id, run_id, decision_type
+OPTIONS(description = "Append-only mechanical and human decision evidence without production authority.");
