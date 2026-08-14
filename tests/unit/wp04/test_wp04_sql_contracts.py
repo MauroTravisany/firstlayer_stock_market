@@ -17,6 +17,7 @@ RELATIONS = {
     "market_price_canonical",
     "fx_rates_pit",
     "trading_price_features_canonical_shadow",
+    "trading_price_features_wp04_shadow",
     "wp04_legacy_vs_canonical_shadow",
     "trading_price_features",
 }
@@ -33,7 +34,7 @@ class Wp04SqlContractTests(unittest.TestCase):
         }
 
     def test_required_action_inventory_and_native_types(self):
-        self.assertEqual(10, len(WP04_ACTIONS))
+        self.assertEqual(11, len(WP04_ACTIONS))
         for name in OPERATIONS:
             self.assertRegex(self.sources[name], r'type:\s*"operations"')
         for name in RELATIONS:
@@ -48,14 +49,18 @@ class Wp04SqlContractTests(unittest.TestCase):
                     "schema: dataform.projectConfig.vars.auditDataset",
                     self.sources[name],
                 )
-        bridge = self.sources["trading_price_features"]
+        legacy = self.sources["trading_price_features"]
+        self.assertIn('schema: "acciones_dataset"', legacy)
+        bridge = self.sources["trading_price_features_wp04_shadow"]
         self.assertIn("useCanonicalPrices", bridge)
         self.assertIn("dataform.projectConfig.vars.auditDataset", bridge)
         self.assertIn("dataform.projectConfig.vars.operationalDataset", bridge)
 
     def test_no_join_using_in_wp04_sql(self):
         pattern = re.compile(r"(?is)\bJOIN\b[\s\S]{0,300}?\bUSING\s*\(")
-        offenders = [name for name, source in self.sources.items() if pattern.search(source)]
+        offenders = [
+            name for name, source in self.sources.items() if pattern.search(source)
+        ]
         self.assertEqual([], offenders)
 
     def test_price_canonical_separates_execution_and_return_series(self):
@@ -104,10 +109,13 @@ class Wp04SqlContractTests(unittest.TestCase):
     def test_feature_flag_defaults_to_legacy_rollback(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertRegex(workflow, r"useCanonicalPrices:\s*[\"']?false")
-        bridge = self.sources["trading_price_features"]
+        bridge = self.sources["trading_price_features_wp04_shadow"]
         self.assertIn('=== "true"', bridge)
-        self.assertIn("Legacy rollback branch", bridge)
+        self.assertIn("LEGACY_ROLLBACK", bridge)
+        self.assertIn("CANONICAL_WP04", bridge)
         self.assertIn("trading_price_features_canonical_shadow", bridge)
+        legacy = self.sources["trading_price_features"]
+        self.assertNotIn("useCanonicalPrices", legacy)
 
     def test_reconciliation_and_fx_fail_closed(self):
         reconciliation = self.sources["price_source_reconciliation"]
@@ -129,6 +137,8 @@ class Wp04SqlContractTests(unittest.TestCase):
         dual = self.sources["wp04_legacy_vs_canonical_shadow"]
         self.assertIn("FALSE AS promotion_eligible", dual)
         self.assertIn("FALSE AS production_change_allowed", dual)
+        bridge = self.sources["trading_price_features_wp04_shadow"]
+        self.assertIn("FALSE AS promotion_eligible", bridge)
         audit = self.sources["audit_canonical_prices"]
         self.assertIn("PRODUCTION_CHANGE_ALLOWED", audit)
         self.assertIn("LEGACY_COMPARISON_PROMOTION_ELIGIBLE", audit)
