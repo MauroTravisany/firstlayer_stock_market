@@ -14,9 +14,23 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.wp04_schema_policy import (
-    ACK, PASS, REQUIRED_ASSERTIONS, Error, build_plan, digest,
-    load_actions_document, verify_clean_checkout, verify_plan_checksum,
+    ACK,
+    OPERATIONS,
+    PASS,
+    REQUIRED_ACTIONS,
+    REQUIRED_ASSERTIONS,
+    Error,
+    build_plan,
+    digest,
+    load_actions_document,
+    verify_clean_checkout,
+    verify_plan_checksum,
 )
+
+ACKNOWLEDGEMENT = ACK
+PASS_STATUS = PASS
+OPERATION_ACTIONS = OPERATIONS
+Wp04SchemaCheckError = Error
 
 
 def load_bigquery():
