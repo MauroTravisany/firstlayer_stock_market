@@ -1,5 +1,5 @@
 {
-  "contract_set_hash": "893f69a02d7caf3616561129d9e633f19998427aaaff365ca01e330ba85a8ecd",
+  "contract_set_hash": "954796de8bd7a40d71a25aee822535bf8cf9b58bdddbb284fb3d47049ad63dd2",
   "contracts": [
     {
       "contract_hash": "8619f792d93c0c90eb921360971472ac11f080ae7069c3260437a0b13122ea0d",
@@ -37,6 +37,13 @@
       "table": "audit_experiment_runs"
     },
     {
+      "contract_hash": "db094aa5af5f45fd6b786074ea756c6baf260e13e9c54da44e2e6d6987f5b453",
+      "contract_version": "1.0.0",
+      "criticality": "P0",
+      "point_in_time_eligibility": "NOT_BACKTEST_ELIGIBLE",
+      "table": "corporate_actions_pit"
+    },
+    {
       "contract_hash": "f69f2cec43c0a137c049b86e95f7458451f35fb798e060eef1d46cff0d279b4e",
       "contract_version": "1.0.0",
       "criticality": "P0",
@@ -65,11 +72,46 @@
       "table": "financial_statements_pit_raw"
     },
     {
+      "contract_hash": "e0d436905c9757354c54a6ce7c40e399260f87232fc347e31e3b92d17bce5512",
+      "contract_version": "1.0.0",
+      "criticality": "P0",
+      "point_in_time_eligibility": "BACKTEST_ELIGIBLE",
+      "table": "fx_rates_pit"
+    },
+    {
       "contract_hash": "184f22ce84f9eba179f7a71cf279f7610fde5aaa65243968cade4c33094c1623",
       "contract_version": "1.0.0",
       "criticality": "P0",
       "point_in_time_eligibility": "NOT_BACKTEST_ELIGIBLE",
       "table": "macro_earnings_calendar"
+    },
+    {
+      "contract_hash": "656f31411812ca4b0c11c08b7c7e75902c294e050fec0bbd75f758d2bd225c1a",
+      "contract_version": "1.0.0",
+      "criticality": "P0",
+      "point_in_time_eligibility": "BACKTEST_ELIGIBLE",
+      "table": "market_price_canonical"
+    },
+    {
+      "contract_hash": "e6f1da5d23222bd354cbbe0f763ac2113fde8c88d1a0fe24056bf311ec72b112",
+      "contract_version": "1.0.0",
+      "criticality": "P0",
+      "point_in_time_eligibility": "NOT_BACKTEST_ELIGIBLE",
+      "table": "market_price_raw"
+    },
+    {
+      "contract_hash": "fcee919219ef6403d1fb9ed4cde44acaa0262f6bae68f6d1ee543500e19879f6",
+      "contract_version": "1.0.0",
+      "criticality": "P0",
+      "point_in_time_eligibility": "REGISTRY_ONLY",
+      "table": "market_session_calendar"
+    },
+    {
+      "contract_hash": "c9cd150a88132ba12dc8b08db6e38bbc9d2b6390c5d8acd029a3fa6fa9a07b18",
+      "contract_version": "1.0.0",
+      "criticality": "P0",
+      "point_in_time_eligibility": "REGISTRY_ONLY",
+      "table": "price_source_reconciliation"
     },
     {
       "contract_hash": "019f704de68ad11bf2e8328cab390d96d3e689f858974aac053ffcabb4256fe3",
@@ -108,6 +150,6 @@
     }
   ],
   "data_contract_version": "audit-contracts-v1",
-  "schema_snapshot_hash": "258c90c5e1eef07d26cb91d19950df57d5ba2ce176b2845a48dd15bec19c1081",
+  "schema_snapshot_hash": "febd3ec35f65d9fd761831bbb88ee1ef1d90c1b3db8ad5dd79b78111a2630413",
   "schema_version": 1
 }
