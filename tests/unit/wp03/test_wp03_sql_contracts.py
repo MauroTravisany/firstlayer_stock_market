@@ -31,7 +31,8 @@ WP03_OUTPUTS = (
     "wp03_legacy_invalidation",
     "audit_no_lookahead",
 )
-STATIC_OPERATIONAL_REF_SOURCES = (
+OPERATIONAL_REF_SOURCES = (
+    "trading_price_features",
     "asset_profile",
     "valuation_model_profile",
     "trading_historical_context",
@@ -57,27 +58,29 @@ class Wp03SqlContractTests(unittest.TestCase):
                     "schema: dataform.projectConfig.vars.auditDataset", sql
                 )
 
-        for source in STATIC_OPERATIONAL_REF_SOURCES:
+        for source in OPERATIONAL_REF_SOURCES:
             with self.subTest(source=source):
                 sql = self.read(f"{source}.sqlx")
                 self.assertIn('schema: "acciones_dataset"', sql)
 
-        # WP-04 may route this single source through a feature flag. The
-        # default must remain the operational legacy table, while the enabled
-        # path must target auditDataset. This preserves WP-03 input isolation
-        # without blocking an additive, rollback-safe price migration.
-        price_features = self.read("trading_price_features.sqlx")
-        self.assertEqual("false", str(settings["vars"]["useCanonicalPrices"]).lower())
-        self.assertIn("useCanonicalPrices", price_features)
+        # WP-04 keeps the operational action unchanged and introduces a
+        # separate shadow-only migration bridge. The feature flag defaults to
+        # legacy rollback and can never redirect WP-03 inputs implicitly.
+        self.assertEqual(
+            "false", str(settings["vars"]["useCanonicalPrices"]).lower()
+        )
+        bridge = self.read("trading_price_features_wp04_shadow.sqlx")
+        self.assertIn("useCanonicalPrices", bridge)
         self.assertIn(
-            "dataform.projectConfig.vars.operationalDataset", price_features
+            "dataform.projectConfig.vars.operationalDataset", bridge
         )
         self.assertIn(
-            "dataform.projectConfig.vars.auditDataset", price_features
+            "schema: dataform.projectConfig.vars.auditDataset", bridge
         )
-        self.assertIn("Legacy rollback branch", price_features)
+        self.assertIn("LEGACY_ROLLBACK", bridge)
+        self.assertIn("CANONICAL_WP04", bridge)
         self.assertIn(
-            "trading_price_features_canonical_shadow", price_features
+            "trading_price_features_canonical_shadow", bridge
         )
 
         earnings = self.read("earnings_events_pit.sqlx")
