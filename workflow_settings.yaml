@@ -1,3 +1,21 @@
 defaultProject: stocks-437902
 defaultLocation: us-east1
 defaultDataset: acciones_dataset
+vars:
+  auditDataset: acciones_dataset
+  operationalDataset: acciones_dataset
+  environment: shadow
+  dataContractVersion: audit-contracts-v1
+  financialMappingVersion: sec-company-tickers-2026-08-11-v1
+  featureSetVersion: legacy-feature-set-v1
+  executionModelVersion: legacy-daily-execution-v1
+  costModelVersion: legacy-estimated-cost-v1
+  universeVersion: manual-watchlist-v1
+  useCanonicalPrices: "false"
+  minimumIntradayCoverage: "0.95"
+  requireSecondaryPriceSource: "false"
+  priceCloseToleranceBps: "10"
+  priceVolumeToleranceRatio: "0.10"
+  priceSourceStaleSeconds: "86400"
+  usdClpTicker: "CLP=X"
+  priceModelVersion: wp04-canonical-prices-v1
