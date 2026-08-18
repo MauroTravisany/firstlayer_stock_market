@@ -1,8 +1,9 @@
-"""Resolve safe moving provider windows for WP-04.
+"""Resolve and verify safe moving provider windows for WP-04.
 
 Yahoo evaluates intraday retention against the provider's current clock, not
-against the requested backfill end date. This module produces deterministic,
-checksummed effective dates with conservative safety buffers.
+against a historical backfill end date. This module resolves a current bounded
+window, records the UTC anchor and produces a deterministic checksum that is
+bound into the WP-04 backfill plan.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ import argparse
 import datetime as dt
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Mapping
@@ -20,7 +22,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
-POLICY_VERSION = "wp04-yahoo-moving-window-v1"
+POLICY_VERSION = "wp04-yahoo-provider-window-v1"
 INTRADAY_RETENTION_DAYS = 60
 INTRADAY_SAFETY_BUFFER_DAYS = 2
 INTRADAY_SAFE_LOOKBACK_DAYS = (
@@ -35,6 +37,7 @@ DEFAULT_DAILY_START_DATE = dt.date(2024, 1, 1)
 DEFAULT_END_LAG_DAYS = 2
 DEFAULT_INTRADAY_LOOKBACK_DAYS = 45
 DEFAULT_HOURLY_LOOKBACK_DAYS = 365
+SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 class ProviderWindowError(ValueError):
@@ -47,6 +50,7 @@ def _canonical_json(value: Any) -> str:
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=True,
+        allow_nan=False,
     )
 
 
@@ -60,6 +64,22 @@ def _aware_utc(value: dt.datetime | None = None) -> dt.datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ProviderWindowError("anchor_at must be timezone-aware")
     return value.astimezone(dt.timezone.utc)
+
+
+def _date(document: Mapping[str, Any], key: str) -> dt.date:
+    try:
+        return dt.date.fromisoformat(str(document[key]))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ProviderWindowError(f"{key} must be an ISO date") from exc
+
+
+def _datetime(document: Mapping[str, Any], key: str) -> dt.datetime:
+    try:
+        value = str(document[key]).replace("Z", "+00:00")
+        parsed = dt.datetime.fromisoformat(value)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ProviderWindowError(f"{key} must be an ISO datetime") from exc
+    return _aware_utc(parsed)
 
 
 def resolve_provider_window(
@@ -107,6 +127,8 @@ def resolve_provider_window(
         raise ProviderWindowError(
             "resolved 1h start is outside the safe moving window"
         )
+    if intraday_start > end_date or hourly_start > end_date:
+        raise ProviderWindowError("provider window does not overlap end_date")
 
     stable = {
         "schema_version": 1,
@@ -123,6 +145,7 @@ def resolve_provider_window(
             "interval": "15m",
             "retention_days": INTRADAY_RETENTION_DAYS,
             "safety_buffer_days": INTRADAY_SAFETY_BUFFER_DAYS,
+            "safe_lookback_days": INTRADAY_SAFE_LOOKBACK_DAYS,
             "lookback_days": intraday_lookback_days,
             "earliest_safe_start_date": intraday_earliest.isoformat(),
             "within_provider_window": True,
@@ -131,16 +154,102 @@ def resolve_provider_window(
             "interval": "1h",
             "retention_days": HOURLY_RETENTION_DAYS,
             "safety_buffer_days": HOURLY_SAFETY_BUFFER_DAYS,
+            "safe_lookback_days": HOURLY_SAFE_LOOKBACK_DAYS,
             "lookback_days": hourly_lookback_days,
             "earliest_safe_start_date": hourly_earliest.isoformat(),
             "within_provider_window": True,
         },
         "production_change_allowed": False,
     }
-    return {**stable, "window_checksum": _sha256(stable)}
+    result = {**stable, "window_checksum": _sha256(stable)}
+    verify_provider_window(result)
+    return result
 
 
-def _date(value: str) -> dt.date:
+def verify_provider_window(document: Mapping[str, Any]) -> str:
+    """Fail closed unless a provider-window document is complete and untampered."""
+
+    if not isinstance(document, Mapping):
+        raise ProviderWindowError("provider window must be an object")
+    stable = dict(document)
+    checksum = str(stable.pop("window_checksum", "")).lower()
+    if not SHA256.fullmatch(checksum):
+        raise ProviderWindowError("window_checksum must be SHA-256")
+    if stable.get("operation") != "WP04_PROVIDER_WINDOW_RESOLUTION":
+        raise ProviderWindowError("provider window operation is invalid")
+    if stable.get("policy_version") != POLICY_VERSION:
+        raise ProviderWindowError("provider window policy version is invalid")
+    if stable.get("production_change_allowed") is not False:
+        raise ProviderWindowError("provider window cannot allow production changes")
+    actual = _sha256(stable)
+    if actual != checksum:
+        raise ProviderWindowError(
+            f"provider window checksum mismatch: expected {checksum}, actual {actual}"
+        )
+
+    anchor_at = _datetime(stable, "anchor_at_utc")
+    anchor_date = _date(stable, "provider_anchor_date")
+    start_date = _date(stable, "start_date")
+    end_date = _date(stable, "end_date")
+    intraday_start = _date(stable, "intraday_start_date")
+    hourly_start = _date(stable, "hourly_start_date")
+    if anchor_at.date() != anchor_date:
+        raise ProviderWindowError("provider anchor date does not match anchor_at")
+    if not start_date <= intraday_start <= end_date:
+        raise ProviderWindowError("15m window is outside the daily scope")
+    if not start_date <= hourly_start <= end_date:
+        raise ProviderWindowError("1h window is outside the daily scope")
+
+    intraday = stable.get("intraday")
+    hourly = stable.get("hourly")
+    if not isinstance(intraday, Mapping) or not isinstance(hourly, Mapping):
+        raise ProviderWindowError("provider interval policies are missing")
+    expected_intraday = {
+        "interval": "15m",
+        "retention_days": INTRADAY_RETENTION_DAYS,
+        "safety_buffer_days": INTRADAY_SAFETY_BUFFER_DAYS,
+        "safe_lookback_days": INTRADAY_SAFE_LOOKBACK_DAYS,
+        "earliest_safe_start_date": (
+            anchor_date - dt.timedelta(days=INTRADAY_SAFE_LOOKBACK_DAYS)
+        ).isoformat(),
+        "within_provider_window": True,
+    }
+    expected_hourly = {
+        "interval": "1h",
+        "retention_days": HOURLY_RETENTION_DAYS,
+        "safety_buffer_days": HOURLY_SAFETY_BUFFER_DAYS,
+        "safe_lookback_days": HOURLY_SAFE_LOOKBACK_DAYS,
+        "earliest_safe_start_date": (
+            anchor_date - dt.timedelta(days=HOURLY_SAFE_LOOKBACK_DAYS)
+        ).isoformat(),
+        "within_provider_window": True,
+    }
+    for key, value in expected_intraday.items():
+        if intraday.get(key) != value:
+            raise ProviderWindowError(f"invalid 15m provider policy field {key}")
+    for key, value in expected_hourly.items():
+        if hourly.get(key) != value:
+            raise ProviderWindowError(f"invalid 1h provider policy field {key}")
+    try:
+        intraday_lookback = int(intraday["lookback_days"])
+        hourly_lookback = int(hourly["lookback_days"])
+        end_lag_days = int(stable["end_lag_days"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ProviderWindowError("provider lookback metadata is invalid") from exc
+    if not 1 <= intraday_lookback <= INTRADAY_SAFE_LOOKBACK_DAYS:
+        raise ProviderWindowError("15m lookback exceeds safe provider policy")
+    if not 1 <= hourly_lookback <= HOURLY_SAFE_LOOKBACK_DAYS:
+        raise ProviderWindowError("1h lookback exceeds safe provider policy")
+    if end_lag_days < 1 or end_date != anchor_date - dt.timedelta(days=end_lag_days):
+        raise ProviderWindowError("provider end-date lag is invalid")
+    if intraday_start != end_date - dt.timedelta(days=intraday_lookback):
+        raise ProviderWindowError("15m start does not match declared lookback")
+    if hourly_start != end_date - dt.timedelta(days=hourly_lookback):
+        raise ProviderWindowError("1h start does not match declared lookback")
+    return checksum
+
+
+def _cli_date(value: str) -> dt.date:
     try:
         return dt.date.fromisoformat(value)
     except ValueError as exc:
@@ -161,7 +270,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--daily-start-date",
-        type=_date,
+        type=_cli_date,
         default=DEFAULT_DAILY_START_DATE,
     )
     parser.add_argument("--end-lag-days", type=int, default=DEFAULT_END_LAG_DAYS)

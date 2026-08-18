@@ -1,4 +1,9 @@
-"""Create a WP-04 backfill plan using current safe provider windows."""
+"""Create a checksum-bound WP-04 plan using safe moving provider windows.
+
+This is the only authorized planning entrypoint for the live WP-04 shadow
+validation. Execution remains in :mod:`tools.wp04_shadow_backfill` and never
+refetches provider data.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +19,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools import wp04_shadow_backfill as backfill
+from tools.wp04_backfill_core import finalize_plan
 from tools.wp04_provider_window import (
     DEFAULT_DAILY_START_DATE,
     DEFAULT_END_LAG_DAYS,
@@ -47,7 +53,7 @@ def build_windowed_plan(
     anchor_at: dt.datetime | None = None,
     planner: Callable[..., dict[str, Any]] = backfill.build_plan,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Resolve safe dates, then invoke the reviewed bounded planner."""
+    """Resolve safe dates, fetch once, and bind policy to plan checksum."""
 
     window = resolve_provider_window(
         anchor_at=anchor_at,
@@ -70,11 +76,13 @@ def build_windowed_plan(
         work_dir=work_dir,
         timeout_seconds=timeout_seconds,
     )
-    result = {
-        **plan,
-        "provider_window_policy": window,
-        "provider_window_checksum": window["window_checksum"],
-    }
+    result = finalize_plan(
+        {
+            **plan,
+            "provider_window_policy": window,
+            "provider_window_checksum": window["window_checksum"],
+        }
+    )
     return result, window
 
 

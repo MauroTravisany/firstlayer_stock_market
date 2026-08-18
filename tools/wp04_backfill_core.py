@@ -1,16 +1,18 @@
 """Compatibility facade for WP-04 bounded-backfill planning helpers.
 
 The reviewed implementation is retained in :mod:`tools.wp04_backfill_core_impl`.
-This facade corrects the market-calendar expectation contract without changing
-plan identity, JSONL hashing, append-only semantics, or provider scope.
+This facade corrects market-calendar expectations and binds the moving Yahoo
+provider-window policy into every executable plan checksum.
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import re
 from typing import Any, Mapping, Sequence
 
 from tools import wp04_backfill_core_impl as _core
+from tools.wp04_provider_window import verify_provider_window
 
 
 ASSET_TYPES = _core.ASSET_TYPES
@@ -29,10 +31,66 @@ validate_date_ranges = _core.validate_date_ranges
 validate_max_rows = _core.validate_max_rows
 write_jsonl = _core.write_jsonl
 read_jsonl = _core.read_jsonl
-plan_identity = _core.plan_identity
-finalize_plan = _core.finalize_plan
 verify_plan_files = _core.verify_plan_files
-verify_plan_checksum = _core.verify_plan_checksum
+
+
+def _provider_window_identity(
+    plan: Mapping[str, Any],
+    *,
+    required: bool,
+) -> dict[str, Any]:
+    policy = plan.get("provider_window_policy")
+    checksum = plan.get("provider_window_checksum")
+    if policy is None and checksum is None:
+        if required:
+            raise Wp04BackfillError(
+                "plan is missing checksum-bound provider_window_policy"
+            )
+        return {}
+    if not isinstance(policy, Mapping):
+        raise Wp04BackfillError("provider_window_policy must be an object")
+    try:
+        verified = verify_provider_window(policy)
+    except ValueError as exc:
+        raise Wp04BackfillError(str(exc)) from exc
+    if str(checksum or "").lower() != verified:
+        raise Wp04BackfillError("provider_window_checksum mismatch")
+    return {
+        "provider_window_policy": dict(policy),
+        "provider_window_checksum": verified,
+    }
+
+
+def plan_identity(plan: Mapping[str, Any]) -> dict[str, Any]:
+    """Return immutable plan identity, including provider policy when present."""
+
+    return {
+        **_core.plan_identity(plan),
+        **_provider_window_identity(plan, required=False),
+    }
+
+
+def finalize_plan(plan: Mapping[str, Any]) -> dict[str, Any]:
+    """Attach a deterministic checksum to the full immutable plan identity."""
+
+    result = dict(plan)
+    result["plan_checksum"] = _core.sha256_json(plan_identity(result))
+    return result
+
+
+def verify_plan_checksum(plan: Mapping[str, Any], expected: str) -> str:
+    """Verify a reviewed plan and require a bound moving-provider window."""
+
+    expected = str(expected or "").strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", expected):
+        raise Wp04BackfillError("expected_plan_checksum must be SHA-256")
+    _provider_window_identity(plan, required=True)
+    actual = _core.sha256_json(plan_identity(plan))
+    if actual != expected or str(plan.get("plan_checksum")) != expected:
+        raise Wp04BackfillError(
+            f"plan checksum mismatch: expected {expected}, actual {actual}"
+        )
+    return actual
 
 
 def calendar_rows(

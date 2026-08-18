@@ -5,6 +5,7 @@ import tempfile
 import unittest
 
 from tools import wp04_backfill_core as core
+from tools import wp04_provider_window as provider
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -63,12 +64,15 @@ class Wp04BackfillTests(unittest.TestCase):
         self.assertEqual(4, len(crypto))
         self.assertTrue(all(row["expected_1h_bars"] == 24 for row in crypto))
 
-    def test_plan_checksum_covers_files_and_scope(self):
+    def test_plan_checksum_covers_files_scope_and_provider_window(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             first = core.write_jsonl(
                 root / "prices.jsonl",
                 [{"raw_revision_id": "r1", "value": 1}],
+            )
+            window = provider.resolve_provider_window(
+                anchor_at=dt.datetime(2026, 8, 18, 12, tzinfo=UTC)
             )
             plan = core.finalize_plan(
                 {
@@ -78,14 +82,16 @@ class Wp04BackfillTests(unittest.TestCase):
                     "asset_set_version": "v1",
                     "asset_set_sha256": "b" * 64,
                     "assets": [{"ticker": "AAPL"}],
-                    "start_date": "2026-01-01",
-                    "end_date": "2026-01-02",
-                    "intraday_start_date": "2026-01-01",
-                    "hourly_start_date": "2026-01-01",
+                    "start_date": window["start_date"],
+                    "end_date": window["end_date"],
+                    "intraday_start_date": window["intraday_start_date"],
+                    "hourly_start_date": window["hourly_start_date"],
                     "files": {"market_price_raw": first},
                     "total_row_count": 1,
                     "max_rows": 10,
                     "provider_versions": {"YAHOO": "test"},
+                    "provider_window_policy": window,
+                    "provider_window_checksum": window["window_checksum"],
                     "production_change_allowed": False,
                 }
             )
@@ -95,6 +101,16 @@ class Wp04BackfillTests(unittest.TestCase):
             changed["assets"] = [{"ticker": "MSFT"}]
             with self.assertRaisesRegex(core.Wp04BackfillError, "checksum mismatch"):
                 core.verify_plan_checksum(changed, plan["plan_checksum"])
+            changed_window = dict(plan)
+            changed_window["provider_window_checksum"] = "f" * 64
+            with self.assertRaisesRegex(
+                core.Wp04BackfillError,
+                "provider_window_checksum",
+            ):
+                core.verify_plan_checksum(
+                    changed_window,
+                    plan["plan_checksum"],
+                )
 
     def test_entrypoint_has_no_deploy_or_broker_surface(self):
         source = ENTRYPOINT.read_text(encoding="utf-8").lower()
