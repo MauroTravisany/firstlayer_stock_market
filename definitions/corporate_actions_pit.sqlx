@@ -1,0 +1,32 @@
+config {
+  type: "operations",
+  hasOutput: true,
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "corporate_actions_pit",
+  description: "Append-only corporate-action revisions. Historical rows without verifiable publication timestamps remain fail-closed and ineligible for PIT replay.",
+  tags: ["audit-grade", "corporate-actions", "pit", "wp04"]
+}
+
+CREATE TABLE IF NOT EXISTS ${self()} (
+  action_id STRING NOT NULL,
+  ingestion_run_id STRING NOT NULL,
+  ticker STRING NOT NULL,
+  action_type STRING NOT NULL,
+  ex_date DATE NOT NULL,
+  record_date DATE,
+  pay_date DATE,
+  ratio FLOAT64,
+  cash_amount FLOAT64,
+  currency STRING,
+  provider STRING NOT NULL,
+  source_record_id STRING NOT NULL,
+  source_version STRING NOT NULL,
+  source_published_at TIMESTAMP,
+  available_at TIMESTAMP NOT NULL,
+  ingested_at TIMESTAMP NOT NULL,
+  revision INT64 NOT NULL,
+  backtest_eligible BOOL NOT NULL,
+  quality_status STRING NOT NULL
+)
+PARTITION BY ex_date
+CLUSTER BY ticker, action_type;
