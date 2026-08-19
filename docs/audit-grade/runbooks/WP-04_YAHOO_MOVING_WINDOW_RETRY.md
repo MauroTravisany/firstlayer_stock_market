@@ -26,11 +26,22 @@ proveedor, no contra el `END_DATE` histórico solicitado. Una fecha puede ser
 válida en relación con el final del backfill y quedar fuera de la ventana móvil
 cuando se ejecuta el plan días después.
 
-La política aprobada es:
+La política canónica y única es:
+
+```text
+wp04-yahoo-moving-window-v1
+```
+
+El identificador anterior queda retirado y no es válido para un plan nuevo:
 
 ```text
 wp04-yahoo-provider-window-v1
 ```
+
+Todo documento o plan que utilice el identificador retirado debe regenerarse
+desde el HEAD aprobado. No se permite editar manualmente el campo
+`policy_version` porque forma parte del `window_checksum` y del
+`plan_checksum`.
 
 - 15m: retención declarada de 60 días, lookback máximo conservador de 58 días;
 - 1h: retención declarada de 730 días, lookback máximo conservador de 728 días;
@@ -42,7 +53,7 @@ wp04-yahoo-provider-window-v1
 
 Todo checkout, candidate branch, compilation result, plan, JSONL, checksum o
 evidencia ligado a un SHA anterior es obsoleto. No reutilizar el plan que falló
-por `2026-06-16`.
+por `2026-06-16` ni un plan que declare la política retirada.
 
 Después de aprobar nuevamente el schema graph y de materializar vacías las tres
 tablas raw del shadow real, definir:
@@ -82,7 +93,7 @@ python tools/wp04_shadow_backfill_windowed.py \
 Los dos archivos deben declarar el mismo:
 
 ```text
-provider_window_policy.policy_version = wp04-yahoo-provider-window-v1
+provider_window_policy.policy_version = wp04-yahoo-moving-window-v1
 provider_window_checksum = provider_window_policy.window_checksum
 ```
 

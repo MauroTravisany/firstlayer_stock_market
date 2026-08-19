@@ -22,7 +22,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
-POLICY_VERSION = "wp04-yahoo-provider-window-v1"
+POLICY_VERSION = "wp04-yahoo-moving-window-v1"
+RETIRED_POLICY_VERSION = "wp04-yahoo-provider-window-v1"
 INTRADAY_RETENTION_DAYS = 60
 INTRADAY_SAFETY_BUFFER_DAYS = 2
 INTRADAY_SAFE_LOOKBACK_DAYS = (
@@ -177,8 +178,12 @@ def verify_provider_window(document: Mapping[str, Any]) -> str:
         raise ProviderWindowError("window_checksum must be SHA-256")
     if stable.get("operation") != "WP04_PROVIDER_WINDOW_RESOLUTION":
         raise ProviderWindowError("provider window operation is invalid")
-    if stable.get("policy_version") != POLICY_VERSION:
-        raise ProviderWindowError("provider window policy version is invalid")
+    actual_policy = str(stable.get("policy_version", ""))
+    if actual_policy != POLICY_VERSION:
+        raise ProviderWindowError(
+            "provider window policy version is invalid: "
+            f"expected {POLICY_VERSION}, actual {actual_policy or '<missing>'}"
+        )
     if stable.get("production_change_allowed") is not False:
         raise ProviderWindowError("provider window cannot allow production changes")
     actual = _sha256(stable)
