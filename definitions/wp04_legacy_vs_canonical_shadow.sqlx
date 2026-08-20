@@ -1,0 +1,97 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "wp04_legacy_vs_canonical_shadow",
+  description: "Diagnostic dual-run of legacy and WP-04 canonical price features. Never promotion eligible.",
+  tags: ["audit-grade", "comparison", "legacy", "shadow", "wp04"],
+  bigquery: {
+    partitionBy: "analysis_date",
+    clusterBy: ["comparison_status", "ticker"]
+  },
+  assertions: {
+    nonNull: ["analysis_date", "ticker", "comparison_status", "promotion_eligible", "production_change_allowed"],
+    uniqueKey: ["analysis_date", "ticker", "signal_hour"]
+  }
+}
+
+WITH legacy AS (
+  SELECT
+    analysis_date,
+    ticker,
+    signal_hour,
+    day_open,
+    day_high,
+    day_low,
+    day_close,
+    day_volume,
+    return_1d,
+    return_20d,
+    volatility_20d,
+    atr_14
+  FROM `${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.vars.operationalDataset}.trading_price_features`
+),
+canonical AS (
+  SELECT
+    analysis_date,
+    ticker,
+    signal_hour,
+    day_open,
+    day_high,
+    day_low,
+    day_close,
+    day_volume,
+    return_1d,
+    return_20d,
+    volatility_20d,
+    atr_14,
+    price_id,
+    data_snapshot_id,
+    quality_status,
+    selected_by_rule,
+    reconciliation_status,
+    price_available_at
+  FROM ${ref("trading_price_features_canonical_shadow")}
+  WHERE asset_type NOT IN ("CRYPTO", "FX")
+)
+
+SELECT
+  COALESCE(c.analysis_date, l.analysis_date) AS analysis_date,
+  COALESCE(c.ticker, l.ticker) AS ticker,
+  COALESCE(c.signal_hour, l.signal_hour) AS signal_hour,
+  l.day_open AS legacy_day_open,
+  c.day_open AS canonical_day_open,
+  l.day_close AS legacy_day_close,
+  c.day_close AS canonical_day_close,
+  l.day_volume AS legacy_day_volume,
+  c.day_volume AS canonical_day_volume,
+  l.return_1d AS legacy_return_1d,
+  c.return_1d AS canonical_return_1d,
+  l.return_20d AS legacy_return_20d,
+  c.return_20d AS canonical_return_20d,
+  l.volatility_20d AS legacy_volatility_20d,
+  c.volatility_20d AS canonical_volatility_20d,
+  l.atr_14 AS legacy_atr_14,
+  c.atr_14 AS canonical_atr_14,
+  c.price_id,
+  c.data_snapshot_id,
+  c.quality_status,
+  c.selected_by_rule,
+  c.reconciliation_status,
+  c.price_available_at,
+  CASE
+    WHEN l.ticker IS NULL THEN "CANONICAL_ONLY"
+    WHEN c.ticker IS NULL THEN "LEGACY_ONLY"
+    WHEN ABS(COALESCE(l.day_close, 0) - COALESCE(c.day_close, 0)) > 0.000001 THEN "RAW_CLOSE_CHANGED"
+    WHEN ABS(COALESCE(l.day_volume, 0) - COALESCE(c.day_volume, 0)) > 0.000001 THEN "VOLUME_CHANGED"
+    WHEN ABS(COALESCE(l.return_1d, 0) - COALESCE(c.return_1d, 0)) > 0.000001 THEN "ADJUSTED_RETURN_CHANGED"
+    WHEN ABS(COALESCE(l.volatility_20d, 0) - COALESCE(c.volatility_20d, 0)) > 0.000001 THEN "VOLATILITY_CHANGED"
+    ELSE "NO_MATERIAL_DIFFERENCE"
+  END AS comparison_status,
+  FALSE AS promotion_eligible,
+  FALSE AS production_change_allowed,
+  CURRENT_TIMESTAMP() AS compared_at
+FROM legacy l
+FULL OUTER JOIN canonical c
+  ON c.analysis_date = l.analysis_date
+ AND c.ticker = l.ticker
+ AND c.signal_hour = l.signal_hour

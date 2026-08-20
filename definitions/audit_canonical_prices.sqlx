@@ -1,0 +1,253 @@
+config {
+  type: "assertion",
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "audit_canonical_prices",
+  description: "Fail-closed WP-04 audit for availability, uniqueness, granularity, corporate actions, source reconciliation, FX and promotion safety.",
+  tags: ["audit-grade", "assertion", "prices", "wp04"],
+  dependencies: [
+    "market_price_raw",
+    "corporate_actions_pit",
+    "market_session_calendar",
+    "market_price_canonical",
+    "price_source_reconciliation",
+    "fx_rates_pit",
+    "trading_price_features_canonical_shadow",
+    "wp04_legacy_vs_canonical_shadow"
+  ]
+}
+
+WITH violations AS (
+  SELECT
+    "RAW_AVAILABLE_BEFORE_BAR_END" AS violation,
+    ticker,
+    bar_start AS evaluated_at,
+    available_at,
+    raw_revision_id AS record_id
+  FROM ${ref("market_price_raw")}
+  WHERE available_at < bar_end
+
+  UNION ALL
+
+  SELECT
+    "RAW_INVALID_OHLC",
+    ticker,
+    bar_start,
+    available_at,
+    raw_revision_id
+  FROM ${ref("market_price_raw")}
+  WHERE open <= 0
+     OR high <= 0
+     OR low <= 0
+     OR close <= 0
+     OR high < GREATEST(open, low, close)
+     OR low > LEAST(open, high, close)
+     OR volume < 0
+
+  UNION ALL
+
+  SELECT
+    "DUPLICATE_RAW_REVISION",
+    ANY_VALUE(ticker),
+    MIN(bar_start),
+    MIN(available_at),
+    raw_revision_id
+  FROM ${ref("market_price_raw")}
+  GROUP BY raw_revision_id
+  HAVING COUNT(*) > 1
+
+  UNION ALL
+
+  SELECT
+    "DUPLICATE_CORPORATE_ACTION",
+    ANY_VALUE(ticker),
+    TIMESTAMP(MIN(ex_date)),
+    MIN(available_at),
+    action_id
+  FROM ${ref("corporate_actions_pit")}
+  GROUP BY action_id
+  HAVING COUNT(*) > 1
+
+  UNION ALL
+
+  SELECT
+    "DUPLICATE_SESSION",
+    CAST(NULL AS STRING),
+    MIN(open_utc),
+    MIN(available_at),
+    CONCAT(exchange, "|", asset_type, "|", CAST(session_date AS STRING))
+  FROM ${ref("market_session_calendar")}
+  GROUP BY exchange, asset_type, session_date
+  HAVING COUNT(*) > 1
+
+  UNION ALL
+
+  SELECT
+    "DUPLICATE_CANONICAL_BAR",
+    ANY_VALUE(ticker),
+    MIN(bar_start),
+    MIN(available_at),
+    CONCAT(ticker, "|", CAST(bar_start AS STRING), "|", canonical_interval)
+  FROM ${ref("market_price_canonical")}
+  GROUP BY ticker, bar_start, canonical_interval
+  HAVING COUNT(*) > 1
+
+  UNION ALL
+
+  SELECT
+    "CANONICAL_AVAILABLE_BEFORE_BAR_END",
+    ticker,
+    bar_start,
+    available_at,
+    price_id
+  FROM ${ref("market_price_canonical")}
+  WHERE available_at < bar_end
+
+  UNION ALL
+
+  SELECT
+    "INTRADAY_SELECTED_WITH_INSUFFICIENT_COVERAGE",
+    ticker,
+    bar_start,
+    available_at,
+    price_id
+  FROM ${ref("market_price_canonical")}
+  WHERE selected_by_rule = "INTRADAY_COMPLETE"
+    AND coverage_ratio < CAST(${JSON.stringify(dataform.projectConfig.vars.minimumIntradayCoverage || "0.95")} AS FLOAT64)
+
+  UNION ALL
+
+  SELECT
+    "MIXED_OR_INVALID_SELECTION_RULE",
+    ticker,
+    bar_start,
+    available_at,
+    price_id
+  FROM ${ref("market_price_canonical")}
+  WHERE (selected_by_rule = "INTRADAY_COMPLETE" AND source_interval != "15m")
+     OR (selected_by_rule LIKE "DAILY_FALLBACK%" AND source_interval != "1d")
+     OR (
+       selected_by_rule = "CRYPTO_4H_COMPLETE"
+       AND (
+         source_interval != "1h"
+         OR ARRAY_LENGTH(source_revision_ids) != 4
+         OR canonical_interval != "4h"
+       )
+     )
+
+  UNION ALL
+
+  SELECT
+    "ELIGIBLE_ACTION_AVAILABLE_AFTER_CANONICAL",
+    p.ticker,
+    p.bar_start,
+    a.available_at,
+    p.price_id
+  FROM ${ref("market_price_canonical")} p
+  JOIN ${ref("corporate_actions_pit")} a
+    ON a.ticker = p.ticker
+   AND a.ex_date = p.session_date
+   AND a.action_id IN UNNEST(p.action_ids)
+  WHERE a.backtest_eligible
+    AND a.available_at > p.available_at
+
+  UNION ALL
+
+  SELECT
+    "MATERIAL_MISMATCH_NOT_BLOCKED",
+    ticker,
+    TIMESTAMP(session_date),
+    available_at,
+    reconciliation_id
+  FROM ${ref("price_source_reconciliation")}
+  WHERE status IN ("MATERIAL_MISMATCH", "STALE_SOURCE")
+    AND NOT blocks_quality
+
+  UNION ALL
+
+  SELECT
+    "RECONCILIATION_PRODUCTION_CHANGE_ALLOWED",
+    ticker,
+    TIMESTAMP(session_date),
+    available_at,
+    reconciliation_id
+  FROM ${ref("price_source_reconciliation")}
+  WHERE production_change_allowed
+
+  UNION ALL
+
+  SELECT
+    "FEATURE_USED_BEFORE_PRICE_AVAILABLE",
+    ticker,
+    signal_timestamp,
+    price_available_at,
+    price_id
+  FROM ${ref("trading_price_features_canonical_shadow")}
+  WHERE price_available_at > signal_timestamp
+
+  UNION ALL
+
+  SELECT
+    "FEATURE_CONSUMED_BLOCKED_PRICE",
+    f.ticker,
+    f.signal_timestamp,
+    p.available_at,
+    f.price_id
+  FROM ${ref("trading_price_features_canonical_shadow")} f
+  JOIN ${ref("market_price_canonical")} p
+    ON p.price_id = f.price_id
+  WHERE p.quality_status IN (
+    "MATERIAL_MISMATCH",
+    "STALE_SOURCE",
+    "SOURCE_MISSING"
+  )
+
+  UNION ALL
+
+  SELECT
+    "INVALID_USD_CLP_RATE",
+    CONCAT(base_currency, quote_currency),
+    TIMESTAMP(rate_date),
+    available_at,
+    fx_rate_id
+  FROM ${ref("fx_rates_pit")}
+  WHERE rate <= 0
+     OR base_currency != "USD"
+     OR quote_currency != "CLP"
+     OR production_change_allowed
+
+  UNION ALL
+
+  SELECT
+    "PRODUCTION_CHANGE_ALLOWED",
+    ticker,
+    bar_start,
+    available_at,
+    price_id
+  FROM ${ref("market_price_canonical")}
+  WHERE production_change_allowed
+
+  UNION ALL
+
+  SELECT
+    "FEATURE_PRODUCTION_CHANGE_ALLOWED",
+    ticker,
+    signal_timestamp,
+    price_available_at,
+    price_id
+  FROM ${ref("trading_price_features_canonical_shadow")}
+  WHERE production_change_allowed
+
+  UNION ALL
+
+  SELECT
+    "LEGACY_COMPARISON_PROMOTION_ELIGIBLE",
+    ticker,
+    TIMESTAMP(analysis_date),
+    price_available_at,
+    CONCAT(ticker, "|", CAST(analysis_date AS STRING), "|", CAST(signal_hour AS STRING))
+  FROM ${ref("wp04_legacy_vs_canonical_shadow")}
+  WHERE promotion_eligible OR production_change_allowed
+)
+
+SELECT *
+FROM violations
