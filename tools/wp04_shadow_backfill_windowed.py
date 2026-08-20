@@ -3,7 +3,9 @@
 This is the only authorized planning entrypoint for live WP-04 shadow
 validation. Yahoo is mandatory. The Stooq reconciliation source is configurable:
 optional mode records sanitized provider outages and continues single-source;
-required mode fails closed. Execution remains in
+required mode fails closed. The quarantine planner wraps
+:mod:`tools.wp04_resilient_planner` so malformed primary rows are recorded and
+excluded without repairing market data. Execution remains in
 :mod:`tools.wp04_shadow_backfill` and never refetches provider data.
 """
 
@@ -21,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tools import wp04_resilient_planner as resilient
+from tools import wp04_quarantine_planner as resilient
 from tools import wp04_shadow_backfill as backfill
 from tools.wp04_backfill_core import finalize_plan
 from tools.wp04_provider_window import (

@@ -69,6 +69,29 @@ def xnys_holidays(year: int) -> set[dt.date]:
     return holidays
 
 
+def fx_holidays(year: int) -> set[dt.date]:
+    """Return deterministic global FX closures used by the WP-04 calendar.
+
+    Spot FX is modeled as 24/5 but not as open on the two universally closed
+    year-end holidays. The following year's New Year's Day is included when its
+    observed date falls in ``year`` (for example 2021-12-31 for 2022-01-01).
+    The scope is deliberately narrow; venue- or currency-specific holidays are
+    not inferred without a separate versioned calendar source.
+    """
+
+    candidates = (
+        dt.date(year, 1, 1),
+        dt.date(year, 12, 25),
+        dt.date(year + 1, 1, 1),
+    )
+    return {
+        observed
+        for holiday in candidates
+        for observed in (_observed(holiday),)
+        if observed.year == year
+    }
+
+
 def _is_early_close(day: dt.date) -> bool:
     thanksgiving = _nth_weekday(day.year, 11, 3, 4)
     if day == thanksgiving + dt.timedelta(days=1):
@@ -101,7 +124,7 @@ def session_for_date(
             "UTC",
         )
     if asset_type == "FX" or exchange == "FX_24_5":
-        if day.weekday() >= 5:
+        if day.weekday() >= 5 or day in fx_holidays(day.year):
             return None
         open_utc = dt.datetime.combine(day, dt.time.min, tzinfo=UTC)
         return SessionSpec(
