@@ -1,0 +1,147 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "price_source_reconciliation",
+  description: "Daily Yahoo/Stooq reconciliation with configurable fail-closed material-mismatch policy.",
+  tags: ["audit-grade", "prices", "reconciliation", "shadow", "wp04"],
+  bigquery: {
+    partitionBy: "session_date",
+    clusterBy: ["status", "ticker"]
+  },
+  assertions: {
+    nonNull: ["reconciliation_id", "ticker", "session_date", "primary_provider", "status", "blocks_quality", "available_at", "ingested_at", "production_change_allowed"],
+    uniqueKey: ["ticker", "session_date"]
+  }
+}
+
+WITH latest_daily AS (
+  SELECT * EXCEPT (rn)
+  FROM (
+    SELECT
+      r.*,
+      IF(
+        r.exchange = "XNYS",
+        DATE(r.bar_start, "America/New_York"),
+        DATE(r.bar_start)
+      ) AS session_date,
+      ROW_NUMBER() OVER (
+        PARTITION BY
+          r.provider,
+          r.ticker,
+          IF(
+            r.exchange = "XNYS",
+            DATE(r.bar_start, "America/New_York"),
+            DATE(r.bar_start)
+          )
+        ORDER BY r.available_at DESC, r.ingested_at DESC, r.raw_revision_id DESC
+      ) AS rn
+    FROM ${ref("market_price_raw")} r
+    WHERE r.source_interval = "1d"
+      AND r.asset_type IN ("STOCK", "ETF")
+      AND r.quality_status = "RAW_VALIDATED"
+      AND r.available_at >= r.bar_end
+      AND r.provider IN ("YAHOO", "STOOQ")
+  )
+  WHERE rn = 1
+),
+paired AS (
+  SELECT
+    COALESCE(y.ticker, s.ticker) AS ticker,
+    COALESCE(y.session_date, s.session_date) AS session_date,
+    y.raw_revision_id AS yahoo_revision_id,
+    s.raw_revision_id AS stooq_revision_id,
+    COALESCE(y.adjusted_close, y.close) AS yahoo_adjusted_close,
+    COALESCE(s.adjusted_close, s.close) AS stooq_adjusted_close,
+    y.volume AS yahoo_volume,
+    s.volume AS stooq_volume,
+    y.available_at AS yahoo_available_at,
+    s.available_at AS stooq_available_at,
+    COALESCE(
+      GREATEST(y.ingested_at, s.ingested_at),
+      y.ingested_at,
+      s.ingested_at
+    ) AS ingested_at
+  FROM (
+    SELECT * FROM latest_daily WHERE provider = "YAHOO"
+  ) y
+  FULL OUTER JOIN (
+    SELECT * FROM latest_daily WHERE provider = "STOOQ"
+  ) s
+    ON s.ticker = y.ticker
+   AND s.session_date = y.session_date
+),
+measured AS (
+  SELECT
+    *,
+    SAFE_MULTIPLY(
+      SAFE_DIVIDE(
+        ABS(yahoo_adjusted_close - stooq_adjusted_close),
+        SAFE_DIVIDE(yahoo_adjusted_close + stooq_adjusted_close, 2)
+      ),
+      10000
+    ) AS close_diff_bps,
+    IF(
+      yahoo_volume IS NULL OR stooq_volume IS NULL,
+      NULL,
+      SAFE_DIVIDE(
+        ABS(yahoo_volume - stooq_volume),
+        GREATEST(yahoo_volume, stooq_volume, 1)
+      )
+    ) AS volume_diff_ratio,
+    COALESCE(
+      GREATEST(yahoo_available_at, stooq_available_at),
+      yahoo_available_at,
+      stooq_available_at
+    ) AS available_at
+  FROM paired
+),
+classified AS (
+  SELECT
+    *,
+    CASE
+      WHEN yahoo_revision_id IS NULL THEN "SOURCE_MISSING"
+      WHEN stooq_revision_id IS NULL THEN "SOURCE_MISSING"
+      WHEN ABS(TIMESTAMP_DIFF(yahoo_available_at, stooq_available_at, SECOND))
+        > CAST(${JSON.stringify(dataform.projectConfig.vars.priceSourceStaleSeconds || "86400")} AS INT64)
+        THEN "STALE_SOURCE"
+      WHEN close_diff_bps = 0 AND COALESCE(volume_diff_ratio, 0) = 0
+        THEN "MATCH"
+      WHEN close_diff_bps <= CAST(${JSON.stringify(dataform.projectConfig.vars.priceCloseToleranceBps || "10")} AS FLOAT64)
+       AND COALESCE(volume_diff_ratio, 0)
+        <= CAST(${JSON.stringify(dataform.projectConfig.vars.priceVolumeToleranceRatio || "0.10")} AS FLOAT64)
+        THEN "WITHIN_TOLERANCE"
+      ELSE "MATERIAL_MISMATCH"
+    END AS status
+  FROM measured
+)
+
+SELECT
+  TO_HEX(SHA256(CONCAT(
+    ticker,
+    "|",
+    CAST(session_date AS STRING),
+    "|",
+    COALESCE(yahoo_revision_id, "MISSING"),
+    "|",
+    COALESCE(stooq_revision_id, "MISSING")
+  ))) AS reconciliation_id,
+  ticker,
+  session_date,
+  "YAHOO" AS primary_provider,
+  IF(stooq_revision_id IS NULL, NULL, "STOOQ") AS secondary_provider,
+  yahoo_revision_id,
+  stooq_revision_id,
+  close_diff_bps,
+  volume_diff_ratio,
+  status,
+  CASE
+    WHEN yahoo_revision_id IS NULL THEN TRUE
+    WHEN status IN ("MATERIAL_MISMATCH", "STALE_SOURCE") THEN TRUE
+    WHEN status = "SOURCE_MISSING"
+      THEN ${dataform.projectConfig.vars.requireSecondaryPriceSource === "true" ? "TRUE" : "FALSE"}
+    ELSE FALSE
+  END AS blocks_quality,
+  available_at,
+  ingested_at,
+  FALSE AS production_change_allowed
+FROM classified

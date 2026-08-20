@@ -1,0 +1,31 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "trading_price_features_wp04_shadow",
+  description: "Feature-flagged WP-04 migration bridge. It remains shadow-only and never replaces the operational trading_price_features action inside this work package.",
+  tags: ["audit-grade", "feature-flag", "prices", "shadow", "wp04"],
+  bigquery: {
+    partitionBy: "analysis_date",
+    clusterBy: ["ticker", "signal_hour"]
+  },
+  assertions: {
+    nonNull: ["analysis_date", "ticker", "signal_hour"],
+    uniqueKey: ["analysis_date", "ticker", "signal_hour"]
+  },
+  dependencies: ["trading_price_features_canonical_shadow"]
+}
+
+${dataform.projectConfig.vars.useCanonicalPrices === "true" ? `
+SELECT
+  c.*,
+  "CANONICAL_WP04" AS selected_feature_source,
+  FALSE AS promotion_eligible
+FROM ${ref("trading_price_features_canonical_shadow")} c
+` : `
+SELECT
+  l.*,
+  "LEGACY_ROLLBACK" AS selected_feature_source,
+  FALSE AS promotion_eligible,
+  FALSE AS production_change_allowed
+FROM \`${dataform.projectConfig.defaultDatabase}.${dataform.projectConfig.vars.operationalDataset}.trading_price_features\` l
+`}

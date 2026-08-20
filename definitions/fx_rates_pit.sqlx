@@ -1,0 +1,40 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "fx_rates_pit",
+  description: "Historical USD/CLP rates derived from the canonical point-in-time FX price series.",
+  tags: ["audit-grade", "fx", "pit", "shadow", "wp04"],
+  bigquery: {
+    partitionBy: "rate_date",
+    clusterBy: ["base_currency", "quote_currency"]
+  },
+  assertions: {
+    nonNull: ["fx_rate_id", "rate_date", "base_currency", "quote_currency", "rate", "source_price_id", "available_at", "ingested_at", "quality_status", "data_snapshot_id", "production_change_allowed"],
+    uniqueKey: ["rate_date", "base_currency", "quote_currency"]
+  }
+}
+
+SELECT
+  TO_HEX(SHA256(CONCAT(price_id, "|USD|CLP"))) AS fx_rate_id,
+  session_date AS rate_date,
+  "USD" AS base_currency,
+  "CLP" AS quote_currency,
+  adjusted_close AS rate,
+  price_id AS source_price_id,
+  provider,
+  available_at,
+  ingested_at,
+  quality_status,
+  data_snapshot_id,
+  FALSE AS production_change_allowed
+FROM ${ref("market_price_canonical")}
+WHERE ticker = ${JSON.stringify(dataform.projectConfig.vars.usdClpTicker || "CLP=X")}
+  AND asset_type = "FX"
+  AND exchange = "FX_24_5"
+  AND canonical_interval = "1d"
+  AND adjusted_close > 0
+  AND quality_status IN (
+    "CANONICAL_RECONCILED",
+    "CANONICAL_DAILY_FALLBACK",
+    "CANONICAL_SINGLE_SOURCE"
+  )

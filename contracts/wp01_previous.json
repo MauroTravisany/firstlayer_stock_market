@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "release_id": "wp00-baseline",
+  "phase": "expand",
+  "destructive_changes": [],
+  "expanded_schema": {
+    "acciones_dataset.portfolio_daily_signal": [
+      "analysis_date",
+      "ticker"
+    ],
+    "acciones_dataset.trading_directional_signals": [
+      "analysis_date",
+      "ticker",
+      "paper_trade_id",
+      "direction"
+    ]
+  },
+  "consumer_contracts": {
+    "legacy": {
+      "acciones_dataset.portfolio_daily_signal": [
+        "analysis_date",
+        "ticker"
+      ],
+      "acciones_dataset.trading_directional_signals": [
+        "analysis_date",
+        "ticker",
+        "paper_trade_id",
+        "direction"
+      ]
+    },
+    "current": {
+      "acciones_dataset.portfolio_daily_signal": [
+        "analysis_date",
+        "ticker"
+      ],
+      "acciones_dataset.trading_directional_signals": [
+        "analysis_date",
+        "ticker",
+        "paper_trade_id",
+        "direction"
+      ]
+    }
+  }
+}

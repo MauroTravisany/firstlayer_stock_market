@@ -1,0 +1,26 @@
+config {
+  type: "operations",
+  database: dataform.projectConfig.defaultDatabase,
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "audit_experiment_artifacts",
+  hasOutput: true,
+  tags: ["audit-grade", "wp02", "registry"]
+}
+
+CREATE TABLE IF NOT EXISTS ${self()} (
+  experiment_id STRING NOT NULL,
+  run_id STRING NOT NULL,
+  artifact_id STRING NOT NULL,
+  candidate_id STRING,
+  artifact_type STRING NOT NULL,
+  uri STRING NOT NULL,
+  media_type STRING NOT NULL,
+  content_json STRING,
+  checksum STRING NOT NULL,
+  size_bytes INT64,
+  immutable BOOL NOT NULL,
+  created_at TIMESTAMP NOT NULL
+)
+PARTITION BY DATE(created_at)
+CLUSTER BY experiment_id, run_id, artifact_type
+OPTIONS(description = "Immutable checksummed experiment artifacts.");

@@ -1,5 +1,11 @@
 {
   "dependencies": {
-    "@dataform/core": "3.0.0"
+    "@dataform/core": "3.0.64"
+  },
+  "devDependencies": {
+    "@dataform/cli": "3.0.64"
+  },
+  "overrides": {
+    "vm2": "3.11.6"
   }
 }

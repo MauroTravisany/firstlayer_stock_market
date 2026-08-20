@@ -1,0 +1,228 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "trading_price_features_canonical_shadow",
+  description: "Shadow technical features derived from WP-04 canonical prices; execution levels remain raw while returns and moving statistics use adjusted close.",
+  tags: ["audit-grade", "features", "prices", "shadow", "wp04"],
+  bigquery: {
+    partitionBy: "analysis_date",
+    clusterBy: ["ticker", "signal_hour"]
+  },
+  assertions: {
+    nonNull: ["analysis_date", "ticker", "signal_hour", "signal_timestamp", "price_id", "data_snapshot_id", "price_available_at", "production_change_allowed"],
+    uniqueKey: ["analysis_date", "ticker", "signal_hour"]
+  }
+}
+
+WITH selected AS (
+  SELECT
+    IF(canonical_interval = "4h", DATE(bar_end), session_date) AS analysis_date,
+    ticker,
+    asset_type,
+    exchange,
+    canonical_interval,
+    IF(canonical_interval = "4h", TIME(bar_end), TIME "00:00:00") AS signal_hour,
+    available_at AS signal_timestamp,
+    raw_open AS day_open,
+    raw_high AS day_high,
+    raw_low AS day_low,
+    raw_close AS day_close,
+    adjusted_close,
+    raw_volume AS day_volume,
+    price_id,
+    data_snapshot_id,
+    quality_status,
+    selected_by_rule,
+    reconciliation_status,
+    available_at AS price_available_at,
+    ingested_at AS price_ingested_at
+  FROM ${ref("market_price_canonical")}
+  WHERE quality_status IN (
+    "CANONICAL_RECONCILED",
+    "CANONICAL_COVERAGE_ACCEPTED",
+    "CANONICAL_DAILY_FALLBACK",
+    "CANONICAL_SINGLE_SOURCE"
+  )
+    AND available_at >= bar_end
+),
+lagged AS (
+  SELECT
+    *,
+    LAG(adjusted_close, 1) OVER ticker_window AS adjusted_lag_1,
+    LAG(adjusted_close, 5) OVER ticker_window AS adjusted_lag_5,
+    LAG(adjusted_close, 6) OVER ticker_window AS adjusted_lag_6,
+    LAG(adjusted_close, 20) OVER ticker_window AS adjusted_lag_20,
+    LAG(adjusted_close, 30) OVER ticker_window AS adjusted_lag_30,
+    LAG(adjusted_close, 60) OVER ticker_window AS adjusted_lag_60,
+    LAG(adjusted_close, 120) OVER ticker_window AS adjusted_lag_120,
+    LAG(adjusted_close, 360) OVER ticker_window AS adjusted_lag_360,
+    LAG(day_close, 1) OVER ticker_window AS previous_raw_close
+  FROM selected
+  WINDOW ticker_window AS (
+    PARTITION BY ticker
+    ORDER BY signal_timestamp
+  )
+),
+returns AS (
+  SELECT
+    *,
+    IF(
+      canonical_interval = "4h",
+      SAFE_DIVIDE(adjusted_close, adjusted_lag_6) - 1,
+      SAFE_DIVIDE(adjusted_close, adjusted_lag_1) - 1
+    ) AS return_1d,
+    IF(
+      canonical_interval = "4h",
+      SAFE_DIVIDE(adjusted_close, adjusted_lag_30) - 1,
+      SAFE_DIVIDE(adjusted_close, adjusted_lag_5) - 1
+    ) AS return_5d,
+    IF(
+      canonical_interval = "4h",
+      SAFE_DIVIDE(adjusted_close, adjusted_lag_120) - 1,
+      SAFE_DIVIDE(adjusted_close, adjusted_lag_20) - 1
+    ) AS return_20d,
+    IF(
+      canonical_interval = "4h",
+      SAFE_DIVIDE(adjusted_close, adjusted_lag_360) - 1,
+      SAFE_DIVIDE(adjusted_close, adjusted_lag_60) - 1
+    ) AS return_60d,
+    GREATEST(
+      day_high - day_low,
+      ABS(day_high - previous_raw_close),
+      ABS(day_low - previous_raw_close)
+    ) AS true_range
+  FROM lagged
+),
+windows AS (
+  SELECT
+    *,
+    AVG(adjusted_close) OVER daily_10 AS daily_sma_10,
+    AVG(adjusted_close) OVER daily_20 AS daily_sma_20,
+    AVG(adjusted_close) OVER daily_50 AS daily_sma_50,
+    AVG(adjusted_close) OVER daily_200 AS daily_sma_200,
+    MAX(day_high) OVER daily_20_prev AS daily_previous_high_20d,
+    MIN(day_low) OVER daily_20_prev AS daily_previous_low_20d,
+    AVG(day_volume) OVER daily_20 AS daily_avg_volume_20d,
+    STDDEV_POP(return_1d) OVER daily_20 AS daily_volatility_20d,
+    AVG(true_range) OVER daily_14 AS daily_atr_14,
+    AVG(adjusted_close) OVER crypto_60 AS crypto_sma_10,
+    AVG(adjusted_close) OVER crypto_120 AS crypto_sma_20,
+    AVG(adjusted_close) OVER crypto_300 AS crypto_sma_50,
+    AVG(adjusted_close) OVER crypto_1200 AS crypto_sma_200,
+    MAX(day_high) OVER crypto_120_prev AS crypto_previous_high_20d,
+    MIN(day_low) OVER crypto_120_prev AS crypto_previous_low_20d,
+    AVG(day_volume) OVER crypto_120 AS crypto_avg_volume_20d,
+    STDDEV_POP(return_1d) OVER crypto_120 AS crypto_volatility_20d,
+    AVG(true_range) OVER crypto_84 AS crypto_atr_14
+  FROM returns
+  WINDOW
+    daily_10 AS (PARTITION BY ticker ORDER BY signal_timestamp ROWS BETWEEN 9 PRECEDING AND CURRENT ROW),
+    daily_14 AS (PARTITION BY ticker ORDER BY signal_timestamp ROWS BETWEEN 13 PRECEDING AND CURRENT ROW),
+    daily_20 AS (PARTITION BY ticker ORDER BY signal_timestamp ROWS BETWEEN 19 PRECEDING AND CURRENT ROW),
+    daily_50 AS (PARTITION BY ticker ORDER BY signal_timestamp ROWS BETWEEN 49 PRECEDING AND CURRENT ROW),
+    daily_200 AS (PARTITION BY ticker ORDER BY signal_timestamp ROWS BETWEEN 199 PRECEDING AND CURRENT ROW),
+    daily_20_prev AS (PARTITION BY ticker ORDER BY signal_timestamp ROWS BETWEEN 20 PRECEDING AND 1 PRECEDING),
+    crypto_60 AS (PARTITION BY ticker ORDER BY signal_timestamp ROWS BETWEEN 59 PRECEDING AND CURRENT ROW),
+    crypto_84 AS (PARTITION BY ticker ORDER BY signal_timestamp ROWS BETWEEN 83 PRECEDING AND CURRENT ROW),
+    crypto_120 AS (PARTITION BY ticker ORDER BY signal_timestamp ROWS BETWEEN 119 PRECEDING AND CURRENT ROW),
+    crypto_300 AS (PARTITION BY ticker ORDER BY signal_timestamp ROWS BETWEEN 299 PRECEDING AND CURRENT ROW),
+    crypto_1200 AS (PARTITION BY ticker ORDER BY signal_timestamp ROWS BETWEEN 1199 PRECEDING AND CURRENT ROW),
+    crypto_120_prev AS (PARTITION BY ticker ORDER BY signal_timestamp ROWS BETWEEN 120 PRECEDING AND 1 PRECEDING)
+),
+normalized AS (
+  SELECT
+    *,
+    IF(canonical_interval = "4h", crypto_sma_10, daily_sma_10) AS sma_10,
+    IF(canonical_interval = "4h", crypto_sma_20, daily_sma_20) AS sma_20,
+    IF(canonical_interval = "4h", crypto_sma_50, daily_sma_50) AS sma_50,
+    IF(canonical_interval = "4h", crypto_sma_200, daily_sma_200) AS sma_200,
+    IF(canonical_interval = "4h", crypto_previous_high_20d, daily_previous_high_20d) AS previous_high_20d,
+    IF(canonical_interval = "4h", crypto_previous_low_20d, daily_previous_low_20d) AS previous_low_20d,
+    IF(canonical_interval = "4h", crypto_avg_volume_20d, daily_avg_volume_20d) AS avg_volume_20d,
+    IF(canonical_interval = "4h", crypto_volatility_20d, daily_volatility_20d) AS volatility_20d,
+    IF(canonical_interval = "4h", crypto_atr_14, daily_atr_14) AS atr_14
+  FROM windows
+),
+crypto_context AS (
+  SELECT
+    analysis_date,
+    signal_hour,
+    MAX(IF(ticker = "BTC-USD", day_close, NULL)) AS btc_close,
+    MAX(IF(ticker = "ETH-USD", day_close, NULL)) AS eth_close,
+    MAX(IF(ticker = "BTC-USD", return_20d, NULL)) AS btc_return_20d,
+    MAX(IF(ticker = "BTC-USD", return_60d, NULL)) AS btc_return_60d,
+    MAX(IF(ticker = "ETH-USD", return_20d, NULL)) AS eth_return_20d,
+    MAX(IF(ticker = "ETH-USD", return_60d, NULL)) AS eth_return_60d,
+    SAFE_DIVIDE(
+      MAX(IF(ticker = "ETH-USD", day_close, NULL)),
+      MAX(IF(ticker = "BTC-USD", day_close, NULL))
+    ) AS eth_btc_ratio,
+    MAX(IF(ticker = "ETH-USD", return_60d, NULL))
+      - MAX(IF(ticker = "BTC-USD", return_60d, NULL)) AS eth_vs_btc_60d,
+    CASE
+      WHEN MAX(IF(ticker = "BTC-USD", return_60d, NULL)) > 0.08
+       AND MAX(IF(ticker = "ETH-USD", return_60d, NULL))
+        - MAX(IF(ticker = "BTC-USD", return_60d, NULL)) > 0.08
+        THEN "ALTCOIN_ROTATION"
+      WHEN MAX(IF(ticker = "BTC-USD", return_60d, NULL)) > 0.08
+        THEN "BTC_DOMINANTE"
+      WHEN MAX(IF(ticker = "BTC-USD", return_60d, NULL)) < -0.12
+       AND MAX(IF(ticker = "ETH-USD", return_60d, NULL)) < -0.12
+        THEN "CRYPTO_DEBIL"
+      ELSE "CRYPTO_NEUTRAL"
+    END AS crypto_regime
+  FROM normalized
+  WHERE asset_type = "CRYPTO"
+  GROUP BY analysis_date, signal_hour
+)
+
+SELECT
+  n.analysis_date,
+  n.ticker,
+  n.asset_type,
+  n.exchange,
+  n.signal_hour,
+  n.signal_timestamp,
+  n.day_open,
+  n.day_close,
+  n.day_low,
+  n.day_high,
+  n.day_volume,
+  n.adjusted_close,
+  n.previous_raw_close,
+  n.adjusted_lag_1 AS previous_adjusted_close,
+  n.return_1d,
+  n.return_5d,
+  n.return_20d,
+  n.return_60d,
+  n.true_range,
+  n.sma_10,
+  n.sma_20,
+  n.sma_50,
+  n.sma_200,
+  n.previous_high_20d,
+  n.previous_low_20d,
+  n.avg_volume_20d,
+  SAFE_DIVIDE(n.day_volume, n.avg_volume_20d) AS volume_vs_20d_avg,
+  n.volatility_20d,
+  n.atr_14,
+  SAFE_DIVIDE(n.atr_14, n.day_close) AS atr_pct,
+  c.btc_return_20d,
+  c.btc_return_60d,
+  c.eth_return_20d,
+  c.eth_return_60d,
+  c.eth_btc_ratio,
+  c.eth_vs_btc_60d,
+  c.crypto_regime,
+  n.price_id,
+  n.data_snapshot_id,
+  n.quality_status,
+  n.selected_by_rule,
+  n.reconciliation_status,
+  n.price_available_at,
+  n.price_ingested_at,
+  FALSE AS production_change_allowed
+FROM normalized n
+LEFT JOIN crypto_context c
+  ON c.analysis_date = n.analysis_date
+ AND c.signal_hour = n.signal_hour
