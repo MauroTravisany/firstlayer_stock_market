@@ -1,8 +1,10 @@
-"""Create a checksum-bound WP-04 plan using safe moving provider windows.
+"""Create a checksum-bound WP-04 plan using safe provider windows.
 
-This is the only authorized planning entrypoint for the live WP-04 shadow
-validation. Execution remains in :mod:`tools.wp04_shadow_backfill` and never
-refetches provider data.
+This is the only authorized planning entrypoint for live WP-04 shadow
+validation. Yahoo is mandatory. The Stooq reconciliation source is configurable:
+optional mode records sanitized provider outages and continues single-source;
+required mode fails closed. Execution remains in
+:mod:`tools.wp04_shadow_backfill` and never refetches provider data.
 """
 
 from __future__ import annotations
@@ -10,6 +12,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -18,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from tools import wp04_resilient_planner as resilient
 from tools import wp04_shadow_backfill as backfill
 from tools.wp04_backfill_core import finalize_plan
 from tools.wp04_provider_window import (
@@ -50,10 +54,12 @@ def build_windowed_plan(
     max_rows: int,
     work_dir: Path,
     timeout_seconds: int,
+    require_secondary_source: bool = False,
+    stooq_api_key: str | None = None,
     anchor_at: dt.datetime | None = None,
-    planner: Callable[..., dict[str, Any]] = backfill.build_plan,
+    planner: Callable[..., dict[str, Any]] = resilient.build_plan,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Resolve safe dates, fetch once, and bind policy to plan checksum."""
+    """Resolve safe dates, fetch once, and bind all policy to the plan."""
 
     window = resolve_provider_window(
         anchor_at=anchor_at,
@@ -75,6 +81,8 @@ def build_windowed_plan(
         max_rows=max_rows,
         work_dir=work_dir,
         timeout_seconds=timeout_seconds,
+        require_secondary_source=require_secondary_source,
+        stooq_api_key=stooq_api_key,
     )
     result = finalize_plan(
         {
@@ -124,11 +132,26 @@ def main() -> int:
     parser.add_argument("--max-rows", type=int, default=100_000)
     parser.add_argument("--work-dir", type=Path, required=True)
     parser.add_argument("--timeout-seconds", type=int, default=30)
+    parser.add_argument(
+        "--require-secondary-source",
+        action="store_true",
+        help="Fail planning when Stooq is unavailable instead of recording a warning.",
+    )
+    parser.add_argument(
+        "--stooq-api-key-env",
+        default="STOOQ_API_KEY",
+        help="Environment-variable name containing an optional Stooq API key.",
+    )
     parser.add_argument("--window-output", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
         git_sha = backfill.verify_clean_checkout(args.expected_git_sha)
+        stooq_api_key = (
+            os.environ.get(args.stooq_api_key_env)
+            if args.stooq_api_key_env
+            else None
+        )
         plan, window = build_windowed_plan(
             git_sha=git_sha,
             asset_set_path=args.asset_set,
@@ -140,6 +163,8 @@ def main() -> int:
             max_rows=args.max_rows,
             work_dir=args.work_dir,
             timeout_seconds=args.timeout_seconds,
+            require_secondary_source=args.require_secondary_source,
+            stooq_api_key=stooq_api_key,
         )
         write_document(window, args.window_output)
         _write_plan(plan, args.output)
