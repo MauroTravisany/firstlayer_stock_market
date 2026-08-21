@@ -1,19 +1,19 @@
-contract_version: 1.0.0
+contract_version: 1.1.0
 data_contract_version: audit-contracts-v1
 criticality: P0
 environments: [research, shadow]
 point_in_time:
   eligibility: NOT_BACKTEST_ELIGIBLE
-  reason: Raw provider revisions are immutable evidence; consumers must use market_price_canonical after interval, session, reconciliation and corporate-action gates.
+  reason: Raw provider revisions are immutable evidence; tradable bars require market_price_canonical, while official scalar FX references require fx_rates_pit.
 table:
   name: market_price_raw
-  description: Append-only provider price revisions with explicit interval, timezone, availability and ingestion lineage.
-  granularity: One immutable row per provider price revision.
+  description: Append-only provider price and official reference-rate revisions with explicit interval, timezone, availability and ingestion lineage.
+  granularity: One immutable row per provider price or reference-rate revision.
   logical_primary_key: [raw_revision_id]
   append_only: true
   partition_by: DATE(bar_start)
   cluster_by: [ticker, provider, source_interval]
-  corporate_actions_policy: RAW_UNADJUSTED_OHLC_WITH_PROVIDER_ADJUSTED_CLOSE_PRESERVED
+  corporate_actions_policy: RAW_UNADJUSTED_OHLC_WITH_PROVIDER_ADJUSTED_CLOSE_PRESERVED; OFFICIAL_REFERENCE_RATES_HAVE_NULL_OHLC
 temporal:
   event_time: bar_end
   available_at: available_at
@@ -21,54 +21,56 @@ temporal:
   timezone: UTC
   point_in_time_policy: available_at must be greater than or equal to bar_end; bar timestamps never substitute for source availability.
 source:
-  system: Yahoo Finance primary and Stooq reconciliation source
+  system: Yahoo Finance primary tradable bars, Stooq optional reconciliation, and Banco Central de Chile BDE official USD/CLP reference rates
   version_field: raw_revision_id
   original_timezone: source_timezone
 deduplication:
-  rule: raw_record_id identifies the provider ticker interval and bar; raw_revision_id additionally hashes content and availability. Existing revisions are never updated.
+  rule: raw_record_id identifies provider symbol interval and bar; raw_revision_id additionally hashes content and availability. Existing revisions are never updated.
 retention:
-  policy: Retain every observed revision indefinitely for replay and source reconciliation.
+  policy: Retain every observed revision indefinitely for replay, reconciliation and FX lineage.
 columns:
 - {name: raw_revision_id, type: STRING, mode: REQUIRED, description: Content-addressed immutable revision identity.}
-- {name: raw_record_id, type: STRING, mode: REQUIRED, description: Stable logical provider bar identity.}
+- {name: raw_record_id, type: STRING, mode: REQUIRED, description: Stable logical provider observation identity.}
 - {name: ingestion_run_id, type: STRING, mode: REQUIRED, description: UUID of the ingestion run.}
 - {name: provider, type: STRING, mode: REQUIRED, description: Provider identifier.}
-- {name: provider_symbol, type: STRING, mode: REQUIRED, description: Provider-native symbol.}
-- {name: ticker, type: STRING, mode: REQUIRED, description: Canonical ticker.}
+- {name: provider_symbol, type: STRING, mode: REQUIRED, description: Provider-native symbol or official series code.}
+- {name: ticker, type: STRING, mode: REQUIRED, description: Canonical ticker or compatibility alias.}
 - {name: asset_type, type: STRING, mode: REQUIRED, description: STOCK ETF CRYPTO or FX.}
 - {name: exchange, type: STRING, mode: REQUIRED, description: Canonical exchange or 24-hour market.}
 - {name: source_interval, type: STRING, mode: REQUIRED, description: Provider interval such as 15m 1h or 1d.}
 - {name: source_timezone, type: STRING, mode: REQUIRED, description: Provider source timezone.}
-- {name: bar_start, type: TIMESTAMP, mode: REQUIRED, description: UTC bar start.}
-- {name: bar_end, type: TIMESTAMP, mode: REQUIRED, description: UTC bar end.}
-- {name: open, type: FLOAT64, mode: NULLABLE, description: Raw execution open.}
-- {name: high, type: FLOAT64, mode: NULLABLE, description: Raw execution high.}
-- {name: low, type: FLOAT64, mode: NULLABLE, description: Raw execution low.}
-- {name: close, type: FLOAT64, mode: NULLABLE, description: Raw execution close.}
-- {name: adjusted_close, type: FLOAT64, mode: NULLABLE, description: Provider adjusted close retained for return lineage.}
-- {name: volume, type: FLOAT64, mode: NULLABLE, description: Provider volume.}
+- {name: bar_start, type: TIMESTAMP, mode: REQUIRED, description: UTC observation period start.}
+- {name: bar_end, type: TIMESTAMP, mode: REQUIRED, description: UTC observation period end.}
+- {name: open, type: FLOAT64, mode: NULLABLE, description: Raw execution open; null for scalar official reference rates.}
+- {name: high, type: FLOAT64, mode: NULLABLE, description: Raw execution high; null for scalar official reference rates.}
+- {name: low, type: FLOAT64, mode: NULLABLE, description: Raw execution low; null for scalar official reference rates.}
+- {name: close, type: FLOAT64, mode: NULLABLE, description: Raw execution close; null for scalar official reference rates.}
+- {name: adjusted_close, type: FLOAT64, mode: NULLABLE, description: Provider adjusted close or official scalar USD/CLP rate.}
+- {name: volume, type: FLOAT64, mode: NULLABLE, description: Provider volume; null for scalar official reference rates.}
 - {name: currency, type: STRING, mode: REQUIRED, description: Quote currency.}
 - {name: source_record_id, type: STRING, mode: REQUIRED, description: Provider or deterministic source record identity.}
 - {name: source_version, type: STRING, mode: REQUIRED, description: Provider adapter version.}
-- {name: payload_hash, type: STRING, mode: REQUIRED, description: SHA-256 of canonical provider payload.}
+- {name: payload_hash, type: STRING, mode: REQUIRED, description: SHA-256 of canonical public provider payload.}
 - {name: available_at, type: TIMESTAMP, mode: REQUIRED, description: First verified usable time.}
 - {name: ingested_at, type: TIMESTAMP, mode: REQUIRED, description: UTC ingestion time.}
-- {name: quality_status, type: STRING, mode: REQUIRED, description: Raw validation status.}
+- {name: quality_status, type: STRING, mode: REQUIRED, description: Raw validation or official reference-rate status.}
 assertions:
   not_null: [raw_revision_id, raw_record_id, ingestion_run_id, provider, provider_symbol, ticker, asset_type, exchange, source_interval, source_timezone, bar_start, bar_end, currency, source_record_id, source_version, payload_hash, available_at, ingested_at, quality_status]
   unique:
   - [raw_revision_id]
   accepted_values:
-    provider: [YAHOO, STOOQ]
+    provider: [YAHOO, STOOQ, BCCH_BDE]
     asset_type: [STOCK, ETF, CRYPTO, FX]
     source_interval: [15m, 1h, 1d]
-    quality_status: [RAW_VALIDATED]
+    quality_status: [RAW_VALIDATED, RAW_REFERENCE_RATE_VALIDATED]
 implementation:
   mode: DATAFORM_CREATE
   dataform_definition: dataform/definitions/market_price_raw.sqlx
 producers:
 - cloud-functions/daily_stocks/custom_function/wp04_ingestion.py
 - cloud-functions/daily_stocks/custom_function/wp04_bq_operations.py
+- tools/wp04_bcch_fx_source.py
 consumers:
 - price_source_reconciliation
 - market_price_canonical
+- fx_rates_pit

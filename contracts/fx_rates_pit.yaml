@@ -1,14 +1,14 @@
-contract_version: 1.0.0
+contract_version: 1.1.0
 data_contract_version: audit-contracts-v1
 criticality: P0
 environments: [research, shadow]
 point_in_time:
   eligibility: BACKTEST_ELIGIBLE
-  reason: Each FX rate derives from a canonical FX bar with explicit availability and immutable price lineage.
+  reason: Each rate is an immutable official Banco Central de Chile BDE observation with conservative next-local-day availability.
   event_time_is_publication_time: true
 table:
   name: fx_rates_pit
-  description: Historical USD to CLP rates derived from canonical FX observations.
+  description: Historical official USD to CLP observed-dollar reference rates.
   granularity: One rate per date base currency and quote currency.
   logical_primary_key: [fx_rate_id]
   append_only: false
@@ -20,27 +20,27 @@ temporal:
   available_at: available_at
   ingested_at: ingested_at
   timezone: UTC
-  point_in_time_policy: Rate availability equals the underlying canonical FX price availability and never uses a current fixed conversion.
+  point_in_time_policy: BDE exposes a rate date but not an exact publication timestamp; availability is conservatively delayed until the next America/Santiago local midnight.
 source:
-  system: market_price_canonical FX_24_5 series
+  system: Banco Central de Chile BDE series F073.TCO.PRE.Z.D
   version_field: source_price_id
-  original_timezone: UTC
+  original_timezone: America/Santiago
 deduplication:
-  rule: fx_rate_id is content-addressed from source price and currency pair; date pair is unique in the shadow materialization.
+  rule: latest immutable BCCH raw revision per rate date is selected; date and currency pair remain unique.
 retention:
-  policy: Preserve rates with source_price_id and data_snapshot_id for PnL replay.
+  policy: Preserve rate lineage through raw revision identity and data snapshot ID for PnL replay.
 columns:
 - {name: fx_rate_id, type: STRING, mode: REQUIRED, description: Content-addressed FX rate identity.}
-- {name: rate_date, type: DATE, mode: REQUIRED, description: UTC FX rate date.}
+- {name: rate_date, type: DATE, mode: REQUIRED, description: Banco Central observed-dollar date.}
 - {name: base_currency, type: STRING, mode: REQUIRED, description: Base currency.}
 - {name: quote_currency, type: STRING, mode: REQUIRED, description: Quote currency.}
-- {name: rate, type: FLOAT64, mode: REQUIRED, description: Positive quote units per base unit.}
-- {name: source_price_id, type: STRING, mode: REQUIRED, description: Canonical FX price identity.}
-- {name: provider, type: STRING, mode: REQUIRED, description: Selected provider.}
-- {name: available_at, type: TIMESTAMP, mode: REQUIRED, description: First usable time.}
+- {name: rate, type: FLOAT64, mode: REQUIRED, description: Positive Chilean pesos per US dollar.}
+- {name: source_price_id, type: STRING, mode: REQUIRED, description: Immutable BCCH raw revision identity retained for compatibility.}
+- {name: provider, type: STRING, mode: REQUIRED, description: Official provider identifier.}
+- {name: available_at, type: TIMESTAMP, mode: REQUIRED, description: Conservative first usable time.}
 - {name: ingested_at, type: TIMESTAMP, mode: REQUIRED, description: UTC ingestion time.}
-- {name: quality_status, type: STRING, mode: REQUIRED, description: Canonical FX quality state.}
-- {name: data_snapshot_id, type: STRING, mode: REQUIRED, description: Canonical price snapshot identity.}
+- {name: quality_status, type: STRING, mode: REQUIRED, description: Official reference-rate quality state.}
+- {name: data_snapshot_id, type: STRING, mode: REQUIRED, description: Content-addressed rate snapshot identity.}
 - {name: production_change_allowed, type: BOOL, mode: REQUIRED, description: Always false in WP-04.}
 assertions:
   not_null: [fx_rate_id, rate_date, base_currency, quote_currency, rate, source_price_id, provider, available_at, ingested_at, quality_status, data_snapshot_id, production_change_allowed]
@@ -50,15 +50,18 @@ assertions:
   accepted_values:
     base_currency: [USD]
     quote_currency: [CLP]
-    quality_status: [CANONICAL_RECONCILED, CANONICAL_DAILY_FALLBACK, CANONICAL_SINGLE_SOURCE]
+    provider: [BCCH_BDE]
+    quality_status: [OFFICIAL_REFERENCE_RATE]
     production_change_allowed: [false]
 implementation:
   mode: CODE_SCHEMA_REFERENCE
   source_files:
   - dataform/definitions/fx_rates_pit.sqlx
+  - tools/wp04_bcch_fx_source.py
   allow_additional_columns: false
 producers:
-- market_price_canonical
+- market_price_raw
+- tools/wp04_shadow_backfill_windowed.py
 consumers:
 - future WP-05 PnL conversion
 - audit_canonical_prices

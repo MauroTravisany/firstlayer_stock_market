@@ -1,69 +1,13 @@
 {
-  "asset_set_version": "wp04-shadow-assets-2026-08-v1",
+  "asset_set_version": "wp04-shadow-assets-2026-08-v2",
   "assets": [
-    {
-      "ticker": "AAPL",
-      "asset_type": "STOCK",
-      "exchange": "XNYS",
-      "currency": "USD",
-      "yahoo_symbol": "AAPL",
-      "stooq_symbol": "aapl.us"
-    },
-    {
-      "ticker": "MSFT",
-      "asset_type": "STOCK",
-      "exchange": "XNYS",
-      "currency": "USD",
-      "yahoo_symbol": "MSFT",
-      "stooq_symbol": "msft.us"
-    },
-    {
-      "ticker": "NVDA",
-      "asset_type": "STOCK",
-      "exchange": "XNYS",
-      "currency": "USD",
-      "yahoo_symbol": "NVDA",
-      "stooq_symbol": "nvda.us"
-    },
-    {
-      "ticker": "META",
-      "asset_type": "STOCK",
-      "exchange": "XNYS",
-      "currency": "USD",
-      "yahoo_symbol": "META",
-      "stooq_symbol": "meta.us"
-    },
-    {
-      "ticker": "AMZN",
-      "asset_type": "STOCK",
-      "exchange": "XNYS",
-      "currency": "USD",
-      "yahoo_symbol": "AMZN",
-      "stooq_symbol": "amzn.us"
-    },
-    {
-      "ticker": "BTC-USD",
-      "asset_type": "CRYPTO",
-      "exchange": "CRYPTO_24_7",
-      "currency": "USD",
-      "yahoo_symbol": "BTC-USD",
-      "stooq_symbol": null
-    },
-    {
-      "ticker": "ETH-USD",
-      "asset_type": "CRYPTO",
-      "exchange": "CRYPTO_24_7",
-      "currency": "USD",
-      "yahoo_symbol": "ETH-USD",
-      "stooq_symbol": null
-    },
-    {
-      "ticker": "CLP=X",
-      "asset_type": "FX",
-      "exchange": "FX_24_5",
-      "currency": "CLP",
-      "yahoo_symbol": "CLP=X",
-      "stooq_symbol": null
-    }
+    {"ticker":"AAPL","asset_type":"STOCK","exchange":"XNYS","currency":"USD","primary_source":"YAHOO","yahoo_symbol":"AAPL","stooq_symbol":"aapl.us"},
+    {"ticker":"MSFT","asset_type":"STOCK","exchange":"XNYS","currency":"USD","primary_source":"YAHOO","yahoo_symbol":"MSFT","stooq_symbol":"msft.us"},
+    {"ticker":"NVDA","asset_type":"STOCK","exchange":"XNYS","currency":"USD","primary_source":"YAHOO","yahoo_symbol":"NVDA","stooq_symbol":"nvda.us"},
+    {"ticker":"META","asset_type":"STOCK","exchange":"XNYS","currency":"USD","primary_source":"YAHOO","yahoo_symbol":"META","stooq_symbol":"meta.us"},
+    {"ticker":"AMZN","asset_type":"STOCK","exchange":"XNYS","currency":"USD","primary_source":"YAHOO","yahoo_symbol":"AMZN","stooq_symbol":"amzn.us"},
+    {"ticker":"BTC-USD","asset_type":"CRYPTO","exchange":"CRYPTO_24_7","currency":"USD","primary_source":"YAHOO","yahoo_symbol":"BTC-USD","stooq_symbol":null},
+    {"ticker":"ETH-USD","asset_type":"CRYPTO","exchange":"CRYPTO_24_7","currency":"USD","primary_source":"YAHOO","yahoo_symbol":"ETH-USD","stooq_symbol":null},
+    {"ticker":"CLP=X","asset_type":"FX","exchange":"FX_24_5","currency":"CLP","primary_source":"BCCH_BDE","yahoo_symbol":null,"stooq_symbol":null,"bcch_series_id":"F073.TCO.PRE.Z.D","base_currency":"USD","quote_currency":"CLP"}
   ]
 }
