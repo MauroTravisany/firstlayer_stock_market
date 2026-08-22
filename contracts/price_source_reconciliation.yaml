@@ -1,0 +1,65 @@
+contract_version: 1.0.0
+data_contract_version: audit-contracts-v1
+criticality: P0
+environments: [research, shadow]
+point_in_time:
+  eligibility: REGISTRY_ONLY
+  reason: Reconciliation is a quality gate over provider observations and is not itself a tradable market observation.
+table:
+  name: price_source_reconciliation
+  description: Yahoo and Stooq daily price reconciliation with material-mismatch blocking.
+  granularity: One reconciliation result per ticker and session date.
+  logical_primary_key: [reconciliation_id]
+  append_only: false
+  partition_by: session_date
+  cluster_by: [status, ticker]
+  corporate_actions_policy: COMPARE_ADJUSTED_DAILY_CLOSE_AFTER_PROVIDER_NORMALIZATION
+temporal:
+  event_time: available_at
+  available_at: available_at
+  ingested_at: ingested_at
+  timezone: UTC
+  point_in_time_policy: A reconciliation result is usable only after all represented provider observations are available.
+source:
+  system: market_price_raw provider comparison
+  version_field: reconciliation_id
+  original_timezone: UTC
+deduplication:
+  rule: Latest eligible revision per provider ticker and session is compared; ticker and session date remain unique in the materialized shadow result.
+retention:
+  policy: Preserve results as evidence with the associated compiled SQL and data snapshot.
+columns:
+- {name: reconciliation_id, type: STRING, mode: REQUIRED, description: Content-addressed comparison identity.}
+- {name: ticker, type: STRING, mode: REQUIRED, description: Canonical ticker.}
+- {name: session_date, type: DATE, mode: REQUIRED, description: Session date.}
+- {name: primary_provider, type: STRING, mode: REQUIRED, description: Primary provider.}
+- {name: secondary_provider, type: STRING, mode: NULLABLE, description: Secondary provider when present.}
+- {name: yahoo_revision_id, type: STRING, mode: NULLABLE, description: Yahoo raw revision identity.}
+- {name: stooq_revision_id, type: STRING, mode: NULLABLE, description: Stooq raw revision identity.}
+- {name: close_diff_bps, type: FLOAT64, mode: NULLABLE, description: Adjusted-close difference in basis points.}
+- {name: volume_diff_ratio, type: FLOAT64, mode: NULLABLE, description: Relative provider volume difference.}
+- {name: status, type: STRING, mode: REQUIRED, description: Reconciliation state.}
+- {name: blocks_quality, type: BOOL, mode: REQUIRED, description: True when canonical quality must fail closed.}
+- {name: available_at, type: TIMESTAMP, mode: REQUIRED, description: Latest represented provider availability.}
+- {name: ingested_at, type: TIMESTAMP, mode: REQUIRED, description: Latest represented provider ingestion time.}
+- {name: production_change_allowed, type: BOOL, mode: REQUIRED, description: Always false in WP-04.}
+assertions:
+  not_null: [reconciliation_id, ticker, session_date, primary_provider, status, blocks_quality, available_at, ingested_at, production_change_allowed]
+  unique:
+  - [reconciliation_id]
+  - [ticker, session_date]
+  accepted_values:
+    primary_provider: [YAHOO]
+    status: [MATCH, WITHIN_TOLERANCE, MATERIAL_MISMATCH, SOURCE_MISSING, STALE_SOURCE]
+    blocks_quality: [true, false]
+    production_change_allowed: [false]
+implementation:
+  mode: CODE_SCHEMA_REFERENCE
+  source_files:
+  - dataform/definitions/price_source_reconciliation.sqlx
+  allow_additional_columns: false
+producers:
+- market_price_raw
+consumers:
+- market_price_canonical
+- audit_canonical_prices

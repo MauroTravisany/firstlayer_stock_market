@@ -1,0 +1,63 @@
+contract_version: 1.0.0
+data_contract_version: audit-contracts-v1
+criticality: P0
+environments: [research, shadow]
+point_in_time:
+  eligibility: REGISTRY_ONLY
+  reason: Session rows define deterministic exchange structure and are not market observations.
+table:
+  name: market_session_calendar
+  description: Versioned XNYS, FX 24 by 5 and crypto 24 by 7 session registry.
+  granularity: One row per exchange asset type and session date.
+  logical_primary_key: [session_id]
+  append_only: true
+  partition_by: session_date
+  cluster_by: [exchange, asset_type]
+  corporate_actions_policy: NOT_APPLICABLE
+temporal:
+  event_time: available_at
+  available_at: available_at
+  ingested_at: ingested_at
+  timezone: UTC
+  point_in_time_policy: Calendar version and hash identify the exact deterministic session rules used by a snapshot.
+source:
+  system: packages.market_data.calendar
+  version_field: calendar_hash
+  original_timezone: UTC
+deduplication:
+  rule: session_id is unique for exchange asset type date and calendar version; changed rules create a new calendar hash.
+retention:
+  policy: Retain calendar versions used by published data snapshots indefinitely.
+columns:
+- {name: session_id, type: STRING, mode: REQUIRED, description: Content-addressed session identity.}
+- {name: exchange, type: STRING, mode: REQUIRED, description: XNYS FX_24_5 or CRYPTO_24_7.}
+- {name: asset_type, type: STRING, mode: REQUIRED, description: STOCK ETF FX or CRYPTO.}
+- {name: session_date, type: DATE, mode: REQUIRED, description: Canonical session date.}
+- {name: open_utc, type: TIMESTAMP, mode: REQUIRED, description: UTC session open.}
+- {name: close_utc, type: TIMESTAMP, mode: REQUIRED, description: UTC session close.}
+- {name: session_status, type: STRING, mode: REQUIRED, description: OPEN or EARLY_CLOSE.}
+- {name: timezone, type: STRING, mode: REQUIRED, description: Original session timezone.}
+- {name: expected_15m_bars, type: INT64, mode: REQUIRED, description: Expected 15-minute bar count.}
+- {name: expected_1h_bars, type: INT64, mode: REQUIRED, description: Expected hourly bar count.}
+- {name: calendar_version, type: STRING, mode: REQUIRED, description: Reviewed calendar implementation version.}
+- {name: calendar_hash, type: STRING, mode: REQUIRED, description: SHA-256 of canonical session content.}
+- {name: available_at, type: TIMESTAMP, mode: REQUIRED, description: Registry publication timestamp.}
+- {name: ingested_at, type: TIMESTAMP, mode: REQUIRED, description: Registry ingestion timestamp.}
+assertions:
+  not_null: [session_id, exchange, asset_type, session_date, open_utc, close_utc, session_status, timezone, expected_15m_bars, expected_1h_bars, calendar_version, calendar_hash, available_at, ingested_at]
+  unique:
+  - [session_id]
+  - [exchange, asset_type, session_date]
+  accepted_values:
+    exchange: [XNYS, FX_24_5, CRYPTO_24_7]
+    asset_type: [STOCK, ETF, FX, CRYPTO]
+    session_status: [OPEN, EARLY_CLOSE]
+implementation:
+  mode: DATAFORM_CREATE
+  dataform_definition: dataform/definitions/market_session_calendar.sqlx
+producers:
+- packages/market_data/calendar.py
+- tools/wp04_shadow_backfill.py
+consumers:
+- market_price_canonical
+- audit_canonical_prices

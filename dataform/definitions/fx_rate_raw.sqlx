@@ -1,0 +1,39 @@
+config {
+  type: "operations",
+  hasOutput: true,
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "fx_rate_raw",
+  description: "Append-only official Banco Central de Chile USD/CLP revisions with publication lineage.",
+  tags: ["audit-grade", "fx", "raw", "shadow", "wp04"]
+}
+
+CREATE TABLE IF NOT EXISTS ${self()} (
+  fx_rate_revision_id STRING NOT NULL,
+  fx_rate_record_id STRING NOT NULL,
+  ingestion_run_id STRING NOT NULL,
+  provider STRING NOT NULL,
+  series_id STRING NOT NULL,
+  rate_date DATE NOT NULL,
+  source_reference_date DATE NOT NULL,
+  base_currency STRING NOT NULL,
+  quote_currency STRING NOT NULL,
+  rate FLOAT64 NOT NULL,
+  status_code STRING NOT NULL,
+  source_record_id STRING NOT NULL,
+  source_version STRING NOT NULL,
+  source_timezone STRING NOT NULL,
+  source_published_at TIMESTAMP NOT NULL,
+  availability_policy STRING NOT NULL,
+  payload_hash STRING NOT NULL,
+  first_observed_at TIMESTAMP NOT NULL,
+  publication_evidence_uri STRING,
+  publication_evidence_sha256 STRING,
+  publication_evidence_at TIMESTAMP,
+  available_at TIMESTAMP NOT NULL,
+  ingested_at TIMESTAMP NOT NULL,
+  quality_status STRING NOT NULL,
+  backtest_eligible BOOL NOT NULL,
+  production_change_allowed BOOL NOT NULL
+)
+PARTITION BY rate_date
+CLUSTER BY provider, series_id;

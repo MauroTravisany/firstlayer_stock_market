@@ -1,0 +1,55 @@
+config {
+  type: "table",
+  schema: dataform.projectConfig.vars.auditDataset,
+  name: "fx_rates_pit",
+  description: "Versioned USD/CLP revisions for deterministic as-of selection; current BDE snapshots are not historical-vintage eligible.",
+  tags: ["audit-grade", "fx", "pit", "shadow", "wp04"],
+  bigquery: { partitionBy: "rate_date", clusterBy: ["base_currency", "quote_currency"] },
+  assertions: {
+    nonNull: ["fx_rate_id", "rate_date", "base_currency", "quote_currency", "rate", "source_rate_revision_id", "provider", "series_id", "source_version", "source_published_at", "first_observed_at", "availability_policy", "available_at", "ingested_at", "quality_status", "backtest_eligible", "data_snapshot_id", "production_change_allowed"],
+    uniqueKey: ["source_rate_revision_id"]
+  }
+}
+
+SELECT
+  TO_HEX(SHA256(CONCAT(fx_rate_revision_id, "|USD|CLP"))) AS fx_rate_id,
+  rate_date,
+  base_currency,
+  quote_currency,
+  rate,
+  fx_rate_revision_id AS source_rate_revision_id,
+  provider,
+  series_id,
+  source_version,
+  source_published_at,
+  first_observed_at,
+  publication_evidence_uri,
+  publication_evidence_sha256,
+  publication_evidence_at,
+  availability_policy,
+  available_at,
+  ingested_at,
+  quality_status,
+  backtest_eligible,
+  TO_HEX(SHA256(CONCAT(fx_rate_revision_id, "|", CAST(available_at AS STRING), "|USD|CLP"))) AS data_snapshot_id,
+  FALSE AS production_change_allowed
+FROM ${ref("fx_rate_raw")}
+WHERE provider = "BCCH_BDE"
+  AND series_id = "F073.TCO.PRE.Z.D"
+  AND base_currency = "USD"
+  AND quote_currency = "CLP"
+  AND status_code = "OK"
+  AND rate > 0
+  AND source_version = "bcch-bde-rest-v1"
+  AND source_timezone = "America/Santiago"
+  AND quality_status = "CURRENT_SNAPSHOT_NO_VINTAGE"
+  AND availability_policy = "wp04-bcch-vintage-availability-v2"
+  AND source_reference_date < rate_date
+  AND source_published_at < TIMESTAMP(rate_date, source_timezone)
+  AND first_observed_at = ingested_at
+  AND available_at = first_observed_at
+  AND publication_evidence_uri IS NULL
+  AND publication_evidence_sha256 IS NULL
+  AND publication_evidence_at IS NULL
+  AND NOT backtest_eligible
+  AND NOT production_change_allowed

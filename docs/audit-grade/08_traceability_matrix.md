@@ -57,13 +57,13 @@ Una fila solo pasa a `PASS` con enlace a código, prueba ejecutada y evidencia r
 
 | ID | Requisito/invariante | Riesgo actual | WP | Evidencia requerida | Estado inicial |
 |---|---|---|---|---|---|
-| PX-01 | `source_interval` persistido | 1d/15m/4h no distinguibles | WP-04 | contract + rows | MISSING |
-| PX-02 | No mezclar daily e intradía | Volumen/precios pueden duplicarse | WP-04 | golden duplicate fixture | MISSING |
-| PX-03 | Raw para ejecución, adjusted para retornos | `auto_adjust=False` sin adjusted model | WP-04 | split/dividend tests | MISSING |
-| PX-04 | Corporate actions PIT | No existe contrato completo | WP-04 | action table + reconciliation | MISSING |
-| PX-05 | Calendario por exchange/DST | Sesiones inferidas por filas | WP-04/05 | holiday/DST tests | MISSING |
-| PX-06 | Segunda fuente/reconciliación | Dependencia concentrada en Yahoo | WP-04 | mismatch report | MISSING |
-| PX-07 | FX histórico para PnL CLP | USD/CLP fijo | WP-04/05 | FX PIT fixture | MISSING |
+| PX-01 | `source_interval` persistido | Implementado en contratos y código; falta evidencia live shadow | WP-04 | contract + rows | IMPLEMENTED_UNVERIFIED |
+| PX-02 | No mezclar daily e intradía | Selección canónica implementada; falta evidencia live shadow | WP-04 | golden duplicate fixture | IMPLEMENTED_UNVERIFIED |
+| PX-03 | Raw para ejecución, adjusted para retornos | Separación implementada sin reparar OHLC; falta evidencia live | WP-04 | split/dividend tests | IMPLEMENTED_UNVERIFIED |
+| PX-04 | Corporate actions PIT | Contrato fail-closed implementado; cobertura histórica verificable sigue limitada | WP-04 | action table + reconciliation | IMPLEMENTED_UNVERIFIED |
+| PX-05 | Calendario por exchange/DST | Calendarios y fecha daily local implementados; falta materialización live | WP-04/05 | holiday/DST tests | IMPLEMENTED_UNVERIFIED |
+| PX-06 | Segunda fuente/reconciliación | Stooq configurable y mismatch gates implementados; falta reporte live | WP-04 | mismatch report | IMPLEMENTED_UNVERIFIED |
+| PX-07 | FX histórico para PnL CLP | `fx_rate_raw` oficial BCCh preserva revisiones desde un `first_observed_at` capturado tras recibir y validar el payload, separado del inicio `generated_at`; `fx_rates_pit` exige selección as-of y snapshots sin vintage no son backtest-eligible; falta backfill/audit live | WP-04/05 | Regresión T0/T1/T2 + FX revision/as-of fixture | IMPLEMENTED_UNVERIFIED |
 
 ## 3. Backtesting
 

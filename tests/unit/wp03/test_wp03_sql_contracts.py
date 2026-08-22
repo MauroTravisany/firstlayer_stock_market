@@ -63,6 +63,26 @@ class Wp03SqlContractTests(unittest.TestCase):
                 sql = self.read(f"{source}.sqlx")
                 self.assertIn('schema: "acciones_dataset"', sql)
 
+        # WP-04 keeps the operational action unchanged and introduces a
+        # separate shadow-only migration bridge. The feature flag defaults to
+        # legacy rollback and can never redirect WP-03 inputs implicitly.
+        self.assertEqual(
+            "false", str(settings["vars"]["useCanonicalPrices"]).lower()
+        )
+        bridge = self.read("trading_price_features_wp04_shadow.sqlx")
+        self.assertIn("useCanonicalPrices", bridge)
+        self.assertIn(
+            "dataform.projectConfig.vars.operationalDataset", bridge
+        )
+        self.assertIn(
+            "schema: dataform.projectConfig.vars.auditDataset", bridge
+        )
+        self.assertIn("LEGACY_ROLLBACK", bridge)
+        self.assertIn("CANONICAL_WP04", bridge)
+        self.assertIn(
+            "trading_price_features_canonical_shadow", bridge
+        )
+
         earnings = self.read("earnings_events_pit.sqlx")
         operational_calendar = (
             "`${dataform.projectConfig.defaultDatabase}."
