@@ -16,7 +16,10 @@ class Wp04ProviderWindowRunbookTests(unittest.TestCase):
     def test_retry_runbook_uses_checksum_bound_windowed_planner(self):
         source = RUNBOOK.read_text(encoding="utf-8")
         self.assertIn("wp04-yahoo-moving-window-v1", source)
-        self.assertIn("tools/wp04_shadow_backfill_windowed.py", source)
+        self.assertIn(
+            "tools/wp04_shadow_backfill_windowed_official_fx.py", source
+        )
+        self.assertIn("tools/wp04_shadow_backfill_official_fx.py", source)
         self.assertIn("--intraday-lookback-days 45", source)
         self.assertIn("--hourly-lookback-days 365", source)
         self.assertIn("provider_window_checksum", source)

@@ -74,11 +74,15 @@ class Wp04EvidenceTests(unittest.TestCase):
                 "duplicate_revision_count": 0,
                 "invalid_rate_count": 0,
                 "invalid_source_count": 0,
+                "missing_first_observed_count": 0,
+                "retroactive_availability_count": 0,
                 "availability_mismatch_count": 0,
                 "reference_date_invalid_count": 0,
                 "publication_not_prior_count": 0,
                 "available_after_ingestion_count": 0,
                 "policy_invalid_count": 0,
+                "snapshot_presented_as_vintage_count": 0,
+                "eligible_without_publication_evidence_count": 0,
                 "production_change_violation_count": 0,
             },
             "fx_summary": {
@@ -86,6 +90,7 @@ class Wp04EvidenceTests(unittest.TestCase):
                 "duplicate_rate_id_count": 0,
                 "duplicate_rate_key_count": 0,
                 "invalid_rate_count": 0,
+                "revision_used_before_observation_count": 0,
                 "production_change_violation_count": 0,
             },
             "bridge_summary": {
@@ -131,10 +136,16 @@ class Wp04EvidenceTests(unittest.TestCase):
             "duplicate_revision_count": "OFFICIAL_FX_DUPLICATE_REVISION",
             "invalid_rate_count": "OFFICIAL_FX_INVALID_RATE",
             "availability_mismatch_count": "OFFICIAL_FX_AVAILABILITY_MISMATCH",
+            "missing_first_observed_count": "OFFICIAL_FX_FIRST_OBSERVED_MISSING",
+            "retroactive_availability_count": "OFFICIAL_FX_RETROACTIVE_AVAILABILITY",
             "reference_date_invalid_count": "OFFICIAL_FX_REFERENCE_DATE_INVALID",
             "publication_not_prior_count": "OFFICIAL_FX_PUBLICATION_NOT_PRIOR",
             "available_after_ingestion_count": "OFFICIAL_FX_AVAILABLE_AFTER_INGESTION",
             "policy_invalid_count": "OFFICIAL_FX_POLICY_INVALID",
+            "snapshot_presented_as_vintage_count": "OFFICIAL_FX_SNAPSHOT_AS_VINTAGE",
+            "eligible_without_publication_evidence_count": (
+                "OFFICIAL_FX_ELIGIBLE_WITHOUT_PUBLICATION_EVIDENCE"
+            ),
             "production_change_violation_count": "OFFICIAL_FX_PRODUCTION_CHANGE",
         }
         for field, expected in mappings.items():
@@ -143,6 +154,15 @@ class Wp04EvidenceTests(unittest.TestCase):
                 rows["official_fx_raw_summary"][field] = 1
                 result = self.evaluate(rows)
                 self.assertIn(expected, {row["code"] for row in result["problems"]})
+
+    def test_revision_used_before_observation_fails_closed(self):
+        rows = self.valid_results()
+        rows["fx_summary"]["revision_used_before_observation_count"] = 1
+        result = self.evaluate(rows)
+        self.assertIn(
+            "OFFICIAL_FX_REVISION_USED_BEFORE_OBSERVATION",
+            {row["code"] for row in result["problems"]},
+        )
 
     def test_yahoo_fx_rows_are_diagnostic_only(self):
         rows = self.valid_results()

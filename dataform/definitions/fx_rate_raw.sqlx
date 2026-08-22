@@ -25,9 +25,14 @@ CREATE TABLE IF NOT EXISTS ${self()} (
   source_published_at TIMESTAMP NOT NULL,
   availability_policy STRING NOT NULL,
   payload_hash STRING NOT NULL,
+  first_observed_at TIMESTAMP NOT NULL,
+  publication_evidence_uri STRING,
+  publication_evidence_sha256 STRING,
+  publication_evidence_at TIMESTAMP,
   available_at TIMESTAMP NOT NULL,
   ingested_at TIMESTAMP NOT NULL,
   quality_status STRING NOT NULL,
+  backtest_eligible BOOL NOT NULL,
   production_change_allowed BOOL NOT NULL
 )
 PARTITION BY rate_date

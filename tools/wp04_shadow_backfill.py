@@ -1,9 +1,10 @@
-"""Plan or execute a bounded, append-only WP-04 shadow backfill.
+"""Retired three-table WP-04 planner/executor for pre-official-FX asset sets.
 
 Planning fetches provider data and writes content-addressed JSONL files under a
 caller-selected temporary directory. Execution never refetches data: it accepts
 only the exact reviewed plan checksum and verifies every file before inserting
-unseen revision IDs into the three WP-04 raw shadow tables.
+unseen revision IDs. Asset-set v2 fails closed before provider or BigQuery
+access; use the official-FX entrypoints for current WP-04 validation.
 """
 
 from __future__ import annotations
@@ -160,6 +161,37 @@ def _select_assets(
     return tuple(dict(mapping[ticker]) for ticker in requested)
 
 
+def reject_retired_official_fx_asset_set(asset_set_path: Path) -> None:
+    """Fail before provider access when the retired planner sees asset-set v2."""
+    _version, assets, _checksum = load_asset_set(asset_set_path)
+    if any(
+        row.get("primary_provider") == "BCCH_BDE"
+        or row.get("primary_source") == "BCCH_BDE"
+        or row.get("yahoo_role") == "DIAGNOSTIC_ONLY"
+        for row in assets
+    ):
+        raise Wp04BackfillError(
+            "retired planner cannot process official-FX asset sets; use "
+            "tools/wp04_shadow_backfill_windowed_official_fx.py"
+        )
+
+
+def reject_retired_official_fx_plan(plan: Mapping[str, Any]) -> None:
+    """Fail before BigQuery access when the retired executor sees asset-set v2."""
+    assets = plan.get("assets") or []
+    if any(
+        row.get("primary_provider") == "BCCH_BDE"
+        or row.get("primary_source") == "BCCH_BDE"
+        or row.get("yahoo_role") == "DIAGNOSTIC_ONLY"
+        for row in assets
+        if isinstance(row, Mapping)
+    ):
+        raise Wp04BackfillError(
+            "retired executor cannot process official-FX plans; use "
+            "tools/wp04_shadow_backfill_official_fx.py"
+        )
+
+
 def _history(
     ticker,
     *,
@@ -196,6 +228,7 @@ def build_plan(
     work_dir: Path,
     timeout_seconds: int,
 ) -> dict[str, Any]:
+    reject_retired_official_fx_asset_set(asset_set_path)
     validate_date_ranges(
         start_date=start_date,
         end_date=end_date,
@@ -467,6 +500,7 @@ def execute_plan(
 ) -> dict[str, Any]:
     if "shadow" not in dataset_id.lower():
         raise Wp04BackfillError("dataset_id must contain shadow")
+    reject_retired_official_fx_plan(plan)
     verify_plan_files(plan)
     bigquery, bq_module = _load_bigquery_modules()
     client = bigquery.Client(project=project_id, location=location)

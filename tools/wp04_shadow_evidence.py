@@ -168,7 +168,8 @@ def build_queries(project: str, dataset: str) -> dict[str, str]:
               OR base_currency != 'USD'
               OR quote_currency != 'CLP'
               OR status_code != 'OK'
-              OR quality_status != 'OFFICIAL_PUBLISHED_RATE'
+              OR quality_status != 'CURRENT_SNAPSHOT_NO_VINTAGE'
+              OR backtest_eligible
             ) AS invalid_rate_count,
             COUNTIF(
               provider != 'BCCH_BDE'
@@ -176,19 +177,37 @@ def build_queries(project: str, dataset: str) -> dict[str, str]:
               OR source_version != 'bcch-bde-rest-v1'
               OR source_timezone != 'America/Santiago'
             ) AS invalid_source_count,
-            COUNTIF(available_at != source_published_at)
+            COUNTIF(first_observed_at IS NULL)
+              AS missing_first_observed_count,
+            COUNTIF(available_at < first_observed_at)
+              AS retroactive_availability_count,
+            COUNTIF(available_at != first_observed_at)
               AS availability_mismatch_count,
             COUNTIF(source_reference_date >= rate_date)
               AS reference_date_invalid_count,
             COUNTIF(
               source_published_at >= TIMESTAMP(rate_date, source_timezone)
             ) AS publication_not_prior_count,
-            COUNTIF(available_at > ingested_at)
+            COUNTIF(first_observed_at != ingested_at OR available_at > ingested_at)
               AS available_after_ingestion_count,
             COUNTIF(
               availability_policy !=
-                'bcch-previous-banking-day-1730-america-santiago-v1'
+                'wp04-bcch-vintage-availability-v2'
             ) AS policy_invalid_count,
+            COUNTIF(
+              backtest_eligible
+              OR publication_evidence_uri IS NOT NULL
+              OR publication_evidence_sha256 IS NOT NULL
+              OR publication_evidence_at IS NOT NULL
+            ) AS snapshot_presented_as_vintage_count,
+            COUNTIF(
+              backtest_eligible
+              AND (
+                publication_evidence_uri IS NULL
+                OR publication_evidence_sha256 IS NULL
+                OR publication_evidence_at IS NULL
+              )
+            ) AS eligible_without_publication_evidence_count,
             COUNTIF(production_change_allowed)
               AS production_change_violation_count
           FROM {fx_raw_table}
@@ -203,9 +222,9 @@ def build_queries(project: str, dataset: str) -> dict[str, str]:
             (
               SELECT COUNT(*)
               FROM (
-                SELECT rate_date, base_currency, quote_currency
+                SELECT source_rate_revision_id
                 FROM {fx_table}
-                GROUP BY rate_date, base_currency, quote_currency
+                GROUP BY source_rate_revision_id
                 HAVING COUNT(*) > 1
               )
             ) AS duplicate_rate_key_count,
@@ -216,12 +235,20 @@ def build_queries(project: str, dataset: str) -> dict[str, str]:
               OR provider != 'BCCH_BDE'
               OR series_id != 'F073.TCO.PRE.Z.D'
               OR source_version != 'bcch-bde-rest-v1'
-              OR quality_status != 'OFFICIAL_PUBLISHED_RATE'
+              OR quality_status != 'CURRENT_SNAPSHOT_NO_VINTAGE'
               OR availability_policy !=
-                'bcch-previous-banking-day-1730-america-santiago-v1'
-              OR available_at != source_published_at
+                'wp04-bcch-vintage-availability-v2'
+              OR first_observed_at IS NULL
+              OR available_at != first_observed_at
+              OR first_observed_at != ingested_at
+              OR backtest_eligible
+              OR publication_evidence_uri IS NOT NULL
+              OR publication_evidence_sha256 IS NOT NULL
+              OR publication_evidence_at IS NOT NULL
               OR available_at > ingested_at
             ) AS invalid_rate_count,
+            COUNTIF(available_at < first_observed_at)
+              AS revision_used_before_observation_count,
             COUNTIF(production_change_allowed)
               AS production_change_violation_count
           FROM {fx_table}
@@ -288,15 +315,34 @@ def evaluate(
         ("invalid_rate_count", "OFFICIAL_FX_INVALID_RATE"),
         ("invalid_source_count", "OFFICIAL_FX_INVALID_RATE"),
         ("availability_mismatch_count", "OFFICIAL_FX_AVAILABILITY_MISMATCH"),
+        ("missing_first_observed_count", "OFFICIAL_FX_FIRST_OBSERVED_MISSING"),
+        ("retroactive_availability_count", "OFFICIAL_FX_RETROACTIVE_AVAILABILITY"),
         ("reference_date_invalid_count", "OFFICIAL_FX_REFERENCE_DATE_INVALID"),
         ("publication_not_prior_count", "OFFICIAL_FX_PUBLICATION_NOT_PRIOR"),
         ("available_after_ingestion_count", "OFFICIAL_FX_AVAILABLE_AFTER_INGESTION"),
         ("policy_invalid_count", "OFFICIAL_FX_POLICY_INVALID"),
+        ("snapshot_presented_as_vintage_count", "OFFICIAL_FX_SNAPSHOT_AS_VINTAGE"),
+        (
+            "eligible_without_publication_evidence_count",
+            "OFFICIAL_FX_ELIGIBLE_WITHOUT_PUBLICATION_EVIDENCE",
+        ),
         ("production_change_violation_count", "OFFICIAL_FX_PRODUCTION_CHANGE"),
     ):
         count = _count(official, key)
         if count:
             problems.append({"code": code, "count": count})
+
+    fx_summary = results.get("fx_summary", {})
+    revision_before_observation = _count(
+        fx_summary, "revision_used_before_observation_count"
+    )
+    if revision_before_observation:
+        problems.append(
+            {
+                "code": "OFFICIAL_FX_REVISION_USED_BEFORE_OBSERVATION",
+                "count": revision_before_observation,
+            }
+        )
 
     result.update(
         {

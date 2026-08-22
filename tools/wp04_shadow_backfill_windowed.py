@@ -1,9 +1,6 @@
-"""Create a checksum-bound WP-04 plan using safe provider windows.
+"""Retired WP-04 planner retained only to fail closed for asset-set v2.
 
-This is the only authorized planning entrypoint for live WP-04 shadow
-validation. Yahoo is mandatory for tradable series, Banco Central de Chile BDE
-is mandatory for USD/CLP, and Stooq reconciliation is configurable. The
-quarantine planner delegates network access to wp04_resilient_planner.
+Use tools/wp04_shadow_backfill_windowed_official_fx.py.
 """
 
 from __future__ import annotations
@@ -32,6 +29,8 @@ def _date(value: str) -> dt.date:
         raise argparse.ArgumentTypeError("date must be YYYY-MM-DD") from exc
 
 def build_windowed_plan(*, git_sha: str, asset_set_path: Path, tickers: str | None, daily_start_date: dt.date, end_lag_days: int, intraday_lookback_days: int, hourly_lookback_days: int, max_rows: int, work_dir: Path, timeout_seconds: int, require_secondary_source: bool = False, stooq_api_key: str | None = None, bcch_api_token: str | None = None, anchor_at: dt.datetime | None = None, planner: Callable[..., dict[str, Any]] = resilient.build_plan) -> tuple[dict[str, Any], dict[str, Any]]:
+    if asset_set_path.exists():
+        backfill.reject_retired_official_fx_asset_set(asset_set_path)
     window = resolve_provider_window(anchor_at=anchor_at, daily_start_date=daily_start_date, end_lag_days=end_lag_days, intraday_lookback_days=intraday_lookback_days, hourly_lookback_days=hourly_lookback_days)
     plan = planner(git_sha=git_sha, asset_set_path=asset_set_path, tickers=tickers, start_date=dt.date.fromisoformat(window["start_date"]), end_date=dt.date.fromisoformat(window["end_date"]), intraday_start_date=dt.date.fromisoformat(window["intraday_start_date"]), hourly_start_date=dt.date.fromisoformat(window["hourly_start_date"]), max_rows=max_rows, work_dir=work_dir, timeout_seconds=timeout_seconds, require_secondary_source=require_secondary_source, stooq_api_key=stooq_api_key, bcch_api_token=bcch_api_token)
     return finalize_plan({**plan, "provider_window_policy": window, "provider_window_checksum": window["window_checksum"]}), window

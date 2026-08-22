@@ -14,14 +14,15 @@ import requests
 from packages.common.hashing import sha256_json
 
 
-POLICY_VERSION = "wp04-bcch-observed-dollar-v1"
-AVAILABILITY_POLICY = "bcch-previous-banking-day-1730-america-santiago-v1"
+SOURCE_POLICY_VERSION = "wp04-bcch-observed-dollar-v1"
+POLICY_VERSION = "wp04-bcch-vintage-availability-v2"
+AVAILABILITY_POLICY = POLICY_VERSION
 SOURCE_VERSION = "bcch-bde-rest-v1"
 PROVIDER = "BCCH_BDE"
 SERIES_ID = "F073.TCO.PRE.Z.D"
 ENDPOINT = "https://si3.bcentral.cl/SieteRestWS/SieteRestWS.ashx"
 SOURCE_TIMEZONE = "America/Santiago"
-QUALITY_STATUS = "OFFICIAL_PUBLISHED_RATE"
+QUALITY_STATUS = "CURRENT_SNAPSHOT_NO_VINTAGE"
 QUERY_LOOKBACK_DAYS = 32
 UTC = dt.timezone.utc
 SANTIAGO = ZoneInfo(SOURCE_TIMEZONE)
@@ -76,8 +77,8 @@ def _parse_rate(value: Any) -> float:
 def _response_json(response: Any) -> Mapping[str, Any]:
     try:
         document = response.json()
-    except (TypeError, ValueError) as exc:
-        raise OfficialFxSourceError("INVALID_JSON_RESPONSE", "BCCh returned invalid JSON") from exc
+    except (TypeError, ValueError):
+        raise OfficialFxSourceError("INVALID_JSON_RESPONSE", "BCCh returned invalid JSON") from None
     if not isinstance(document, Mapping):
         raise OfficialFxSourceError(
             "INVALID_RESPONSE_SHAPE", "BCCh response root must be an object"
@@ -88,6 +89,62 @@ def _response_json(response: Any) -> Mapping[str, Any]:
 def _published_at(reference_date: dt.date) -> dt.datetime:
     local = dt.datetime.combine(reference_date, dt.time(17, 30), tzinfo=SANTIAGO)
     return local.astimezone(UTC)
+
+
+def _as_date(value: Any, field: str) -> dt.date:
+    if isinstance(value, dt.datetime):
+        return value.date()
+    if isinstance(value, dt.date):
+        return value
+    try:
+        return dt.date.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        raise OfficialFxSourceError("INVALID_ROW", f"fx_rate_raw {field} is invalid") from None
+
+
+def _as_datetime(value: Any, field: str) -> dt.datetime:
+    if isinstance(value, dt.datetime):
+        parsed = value
+    else:
+        try:
+            parsed = dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            raise OfficialFxSourceError(
+                "INVALID_ROW", f"fx_rate_raw {field} is invalid"
+            ) from None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise OfficialFxSourceError("INVALID_ROW", f"fx_rate_raw {field} must be timezone-aware")
+    return parsed.astimezone(UTC)
+
+
+def _identities(
+    *,
+    rate_date: dt.date,
+    source_reference_date: dt.date,
+    rate: float,
+    source_published_at: dt.datetime,
+) -> tuple[str, str, str]:
+    payload_hash = sha256_json(
+        {
+            "provider": PROVIDER,
+            "series_id": SERIES_ID,
+            "rate_date": rate_date,
+            "source_reference_date": source_reference_date,
+            "rate": rate,
+            "status_code": "OK",
+        }
+    )
+    record_identity = {"provider": PROVIDER, "series_id": SERIES_ID, "rate_date": rate_date}
+    revision_identity = {
+        **record_identity,
+        "payload_hash": payload_hash,
+        "source_published_at": source_published_at,
+    }
+    return (
+        payload_hash,
+        "fx_rate_" + sha256_json(record_identity),
+        "fx_rate_revision_" + sha256_json(revision_identity),
+    )
 
 
 def _raw_row(
@@ -110,24 +167,16 @@ def _raw_row(
             "AVAILABLE_AFTER_INGESTION", "BCCh observation availability cannot follow ingestion"
         )
     source_record_id = f"{SERIES_ID}:{rate_date.isoformat()}"
-    payload = {
-        "provider": PROVIDER,
-        "series_id": SERIES_ID,
-        "rate_date": rate_date,
-        "source_reference_date": source_reference_date,
-        "rate": rate,
-        "status_code": "OK",
-    }
-    payload_hash = sha256_json(payload)
-    record_identity = {"provider": PROVIDER, "series_id": SERIES_ID, "rate_date": rate_date}
-    revision_identity = {
-        **record_identity,
-        "payload_hash": payload_hash,
-        "source_published_at": source_published_at,
-    }
+    payload_hash, record_id, revision_id = _identities(
+        rate_date=rate_date,
+        source_reference_date=source_reference_date,
+        rate=rate,
+        source_published_at=source_published_at,
+    )
+    first_observed_at = ingested_at
     return {
-        "fx_rate_revision_id": "fx_rate_revision_" + sha256_json(revision_identity),
-        "fx_rate_record_id": "fx_rate_" + sha256_json(record_identity),
+        "fx_rate_revision_id": revision_id,
+        "fx_rate_record_id": record_id,
         "ingestion_run_id": ingestion_run_id,
         "provider": PROVIDER,
         "series_id": SERIES_ID,
@@ -143,11 +192,229 @@ def _raw_row(
         "source_published_at": source_published_at,
         "availability_policy": AVAILABILITY_POLICY,
         "payload_hash": payload_hash,
-        "available_at": source_published_at,
+        "first_observed_at": first_observed_at,
+        "publication_evidence_uri": None,
+        "publication_evidence_sha256": None,
+        "publication_evidence_at": None,
+        "available_at": first_observed_at,
         "ingested_at": ingested_at,
         "quality_status": QUALITY_STATUS,
+        "backtest_eligible": False,
         "production_change_allowed": False,
     }
+
+
+def validate_official_fx_row(
+    row: Mapping[str, Any],
+    *,
+    expected_ingestion_run_id: str | None = None,
+    expected_observed_at: Any | None = None,
+) -> None:
+    """Recompute every security-relevant field in one current-snapshot row."""
+
+    required = {
+        "fx_rate_revision_id", "fx_rate_record_id", "ingestion_run_id", "provider",
+        "series_id", "rate_date", "source_reference_date", "base_currency",
+        "quote_currency", "rate", "status_code", "source_record_id", "source_version",
+        "source_timezone", "source_published_at", "availability_policy", "payload_hash",
+        "first_observed_at", "publication_evidence_uri", "publication_evidence_sha256",
+        "publication_evidence_at", "available_at", "ingested_at", "quality_status",
+        "backtest_eligible", "production_change_allowed",
+    }
+    if set(row) != required:
+        raise OfficialFxSourceError("INVALID_ROW", "fx_rate_raw columns do not match contract")
+    constants = {
+        "provider": PROVIDER,
+        "series_id": SERIES_ID,
+        "base_currency": "USD",
+        "quote_currency": "CLP",
+        "status_code": "OK",
+        "source_version": SOURCE_VERSION,
+        "source_timezone": SOURCE_TIMEZONE,
+        "availability_policy": AVAILABILITY_POLICY,
+        "quality_status": QUALITY_STATUS,
+        "backtest_eligible": False,
+        "production_change_allowed": False,
+    }
+    if any(row.get(key) != value for key, value in constants.items()):
+        raise OfficialFxSourceError("INVALID_ROW", "fx_rate_raw constant field is invalid")
+    if any(row.get(key) is not None for key in (
+        "publication_evidence_uri", "publication_evidence_sha256", "publication_evidence_at"
+    )):
+        raise OfficialFxSourceError(
+            "INVALID_ROW", "current API snapshot cannot claim publication vintage evidence"
+        )
+    if isinstance(row["rate"], bool):
+        raise OfficialFxSourceError("INVALID_ROW", "fx_rate_raw rate is invalid")
+    try:
+        rate = float(row["rate"])
+    except (TypeError, ValueError):
+        raise OfficialFxSourceError("INVALID_ROW", "fx_rate_raw rate is invalid") from None
+    if not math.isfinite(rate) or rate <= 0:
+        raise OfficialFxSourceError("INVALID_ROW", "fx_rate_raw rate must be finite and positive")
+    rate_date = _as_date(row["rate_date"], "rate_date")
+    reference_date = _as_date(row["source_reference_date"], "source_reference_date")
+    published = _as_datetime(row["source_published_at"], "source_published_at")
+    first_observed = _as_datetime(row["first_observed_at"], "first_observed_at")
+    available = _as_datetime(row["available_at"], "available_at")
+    ingested = _as_datetime(row["ingested_at"], "ingested_at")
+    expected_published = _published_at(reference_date)
+    if reference_date >= rate_date or published != expected_published:
+        raise OfficialFxSourceError("INVALID_ROW", "fx_rate_raw publication lineage is invalid")
+    if published >= dt.datetime.combine(rate_date, dt.time.min, tzinfo=SANTIAGO).astimezone(UTC):
+        raise OfficialFxSourceError("INVALID_ROW", "fx_rate_raw publication is not prior")
+    if published > first_observed:
+        raise OfficialFxSourceError(
+            "INVALID_ROW", "fx_rate_raw publication follows first observation"
+        )
+    if first_observed != ingested or available != first_observed:
+        raise OfficialFxSourceError("INVALID_ROW", "fx_rate_raw vintage availability order is invalid")
+    payload_hash, record_id, revision_id = _identities(
+        rate_date=rate_date,
+        source_reference_date=reference_date,
+        rate=rate,
+        source_published_at=published,
+    )
+    expected = {
+        "payload_hash": payload_hash,
+        "fx_rate_record_id": record_id,
+        "fx_rate_revision_id": revision_id,
+        "source_record_id": f"{SERIES_ID}:{rate_date.isoformat()}",
+    }
+    if any(row.get(key) != value for key, value in expected.items()):
+        raise OfficialFxSourceError("INVALID_ROW", "fx_rate_raw content identity is invalid")
+    ingestion_run_id = str(row.get("ingestion_run_id") or "").strip()
+    if not ingestion_run_id:
+        raise OfficialFxSourceError("INVALID_ROW", "fx_rate_raw ingestion_run_id is missing")
+    if (
+        expected_ingestion_run_id is not None
+        and ingestion_run_id != str(expected_ingestion_run_id).strip()
+    ):
+        raise OfficialFxSourceError(
+            "INVALID_ROW", "fx_rate_raw ingestion_run_id does not match source status"
+        )
+    if (
+        expected_observed_at is not None
+        and ingested != _as_datetime(expected_observed_at, "observed_at")
+    ):
+        raise OfficialFxSourceError(
+            "INVALID_ROW", "fx_rate_raw ingestion time does not match source status"
+        )
+
+
+def official_source_policy() -> dict[str, Any]:
+    return {
+        "policy_version": POLICY_VERSION,
+        "source_policy_version": SOURCE_POLICY_VERSION,
+        "provider": PROVIDER,
+        "series_id": SERIES_ID,
+        "source_version": SOURCE_VERSION,
+        "required": True,
+        "source_role": "OFFICIAL_SCALAR_RATE",
+        "yahoo_fx_role": "DIAGNOSTIC_ONLY",
+        "availability_policy": AVAILABILITY_POLICY,
+        "vintage_evidence_mode": "CURRENT_SNAPSHOT_NO_ARCHIVE",
+        "production_change_allowed": False,
+    }
+
+
+def build_status_document(
+    *, query_start_date: dt.date, start_date: dt.date, end_date: dt.date,
+    ingestion_run_id: str, accepted_row_count: int, skipped_status_counts: Mapping[str, int],
+    observed_at: dt.datetime,
+) -> dict[str, Any]:
+    document = {
+        "policy_version": POLICY_VERSION,
+        "provider": PROVIDER,
+        "series_id": SERIES_ID,
+        "query_start_date": query_start_date,
+        "start_date": start_date,
+        "end_date": end_date,
+        "ingestion_run_id": ingestion_run_id,
+        "required": True,
+        "authentication_mode": "API_KEY",
+        "accepted_row_count": int(accepted_row_count),
+        "skipped_status_counts": dict(sorted(skipped_status_counts.items())),
+        "source_version": SOURCE_VERSION,
+        "availability_policy": AVAILABILITY_POLICY,
+        "observed_at": observed_at.astimezone(UTC),
+        "production_change_allowed": False,
+    }
+    return {
+        "status_id": "official_fx_status_" + sha256_json(document),
+        **document,
+    }
+
+
+def validate_official_fx_status(status: Mapping[str, Any], *, row_count: int) -> None:
+    expected_keys = {
+        "status_id", "policy_version", "provider", "series_id", "query_start_date",
+        "start_date", "end_date", "ingestion_run_id", "required", "authentication_mode",
+        "accepted_row_count", "skipped_status_counts", "source_version",
+        "availability_policy", "observed_at", "production_change_allowed",
+    }
+    if set(status) != expected_keys:
+        raise OfficialFxSourceError("INVALID_STATUS", "official FX status columns are invalid")
+    constants = {
+        "policy_version": POLICY_VERSION, "provider": PROVIDER, "series_id": SERIES_ID,
+        "required": True, "authentication_mode": "API_KEY", "source_version": SOURCE_VERSION,
+        "availability_policy": AVAILABILITY_POLICY, "production_change_allowed": False,
+    }
+    if any(status.get(key) != value for key, value in constants.items()):
+        raise OfficialFxSourceError("INVALID_STATUS", "official FX status contract is invalid")
+    accepted = status.get("accepted_row_count")
+    if isinstance(accepted, bool) or not isinstance(accepted, int) or accepted != row_count:
+        raise OfficialFxSourceError("INVALID_STATUS", "official FX status row count is invalid")
+    skipped = status.get("skipped_status_counts")
+    if not isinstance(skipped, Mapping) or any(
+        not isinstance(key, str)
+        or not key.strip()
+        or key != key.strip().upper()
+        or isinstance(value, bool)
+        or not isinstance(value, int)
+        or value < 0
+        for key, value in skipped.items()
+    ):
+        raise OfficialFxSourceError(
+            "INVALID_STATUS", "official FX skipped status counts are invalid"
+        )
+    query_start = _as_date(status["query_start_date"], "query_start_date")
+    start = _as_date(status["start_date"], "start_date")
+    end = _as_date(status["end_date"], "end_date")
+    observed = _as_datetime(status["observed_at"], "observed_at")
+    if (
+        query_start != start - dt.timedelta(days=QUERY_LOOKBACK_DAYS)
+        or start > end
+        or not str(status.get("ingestion_run_id") or "").strip()
+    ):
+        raise OfficialFxSourceError("INVALID_STATUS", "official FX status range is invalid")
+    rebuilt = build_status_document(
+        query_start_date=query_start, start_date=start, end_date=end,
+        ingestion_run_id=str(status["ingestion_run_id"]),
+        accepted_row_count=row_count,
+        skipped_status_counts=skipped,
+        observed_at=observed,
+    )
+    if status.get("status_id") != rebuilt["status_id"]:
+        raise OfficialFxSourceError("INVALID_STATUS", "official FX status identity is invalid")
+
+
+def select_revision_as_of(
+    rows: list[Mapping[str, Any]], signal_timestamp: dt.datetime
+) -> Mapping[str, Any] | None:
+    """Select the deterministic revision visible at a signal timestamp."""
+    signal = _as_datetime(signal_timestamp, "signal_timestamp")
+    eligible = [row for row in rows if _as_datetime(row["available_at"], "available_at") <= signal]
+    if not eligible:
+        return None
+    return max(
+        eligible,
+        key=lambda row: (
+            _as_datetime(row["available_at"], "available_at"),
+            _as_datetime(row["ingested_at"], "ingested_at"),
+            str(row["fx_rate_revision_id"]),
+        ),
+    )
 
 
 def fetch_bcch_observed_dollar(
@@ -186,8 +453,8 @@ def fetch_bcch_observed_dollar(
             timeout=int(timeout_seconds),
             headers={"Accept": "application/json", "User-Agent": "FirstLayerStockMarket-WP04/4.0"},
         )
-    except requests.RequestException as exc:
-        raise OfficialFxSourceError("NETWORK_ERROR", "BCCh request failed") from exc
+    except requests.RequestException:
+        raise OfficialFxSourceError("NETWORK_ERROR", "BCCh request failed") from None
 
     status_code = int(getattr(response, "status_code", 0) or 0)
     if status_code in {401, 403}:
@@ -267,25 +534,13 @@ def fetch_bcch_observed_dollar(
             "DUPLICATE_REVISION_ID", "BCCh normalization produced duplicate revision IDs"
         )
 
-    status_identity = {
-        "policy_version": POLICY_VERSION,
-        "provider": PROVIDER,
-        "series_id": SERIES_ID,
-        "query_start_date": query_start,
-        "start_date": start_date,
-        "end_date": end_date,
-        "ingestion_run_id": ingestion_run_id,
-    }
-    status = {
-        "status_id": "official_fx_status_" + sha256_json(status_identity),
-        **status_identity,
-        "required": True,
-        "authentication_mode": "API_KEY",
-        "accepted_row_count": len(rows),
-        "skipped_status_counts": dict(sorted(skipped.items())),
-        "source_version": SOURCE_VERSION,
-        "availability_policy": AVAILABILITY_POLICY,
-        "observed_at": ingested_at.astimezone(UTC),
-        "production_change_allowed": False,
-    }
+    status = build_status_document(
+        query_start_date=query_start,
+        start_date=start_date,
+        end_date=end_date,
+        ingestion_run_id=ingestion_run_id,
+        accepted_row_count=len(rows),
+        skipped_status_counts=skipped,
+        observed_at=ingested_at,
+    )
     return rows, status

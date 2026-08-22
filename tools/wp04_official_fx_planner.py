@@ -26,6 +26,7 @@ from tools.wp04_fx_source import (
     SOURCE_VERSION,
     OfficialFxSourceError,
     fetch_bcch_observed_dollar,
+    official_source_policy,
 )
 
 
@@ -100,7 +101,7 @@ def build_plan(
     except OfficialFxSourceError as exc:
         raise Wp04BackfillError(
             f"official FX source unavailable: {exc.reason_code}"
-        ) from exc
+        ) from None
 
     files = dict(plan["files"])
     files.pop("fx_reference_status", None)
@@ -135,17 +136,7 @@ def build_plan(
             "OFFICIAL_FX_AVAILABILITY_POLICY": AVAILABILITY_POLICY,
         }
     )
-    official_policy = {
-        "policy_version": POLICY_VERSION,
-        "provider": PROVIDER,
-        "series_id": SERIES_ID,
-        "source_version": SOURCE_VERSION,
-        "required": True,
-        "source_role": "OFFICIAL_SCALAR_RATE",
-        "yahoo_fx_role": "DIAGNOSTIC_ONLY",
-        "availability_policy": AVAILABILITY_POLICY,
-        "production_change_allowed": False,
-    }
+    official_policy = official_source_policy()
     asset_results = list(plan.get("asset_results") or [])
     asset_results.append(
         {

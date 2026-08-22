@@ -30,7 +30,7 @@ momento de ejecución y luego llama al planner append-only ya revisado.
 ```bash
 mkdir -p /tmp/wp04-shadow-evidence/backfill
 
-python tools/wp04_shadow_backfill_windowed.py \
+python tools/wp04_shadow_backfill_windowed_official_fx.py \
   --expected-git-sha "$FINAL_SHA" \
   --asset-set config/wp04_shadow_assets.v1.json \
   --daily-start-date 2024-01-01 \
@@ -41,12 +41,13 @@ python tools/wp04_shadow_backfill_windowed.py \
   --work-dir /tmp/wp04-shadow-evidence/backfill \
   --window-output \
     /tmp/wp04-shadow-evidence/wp04_provider_window.json \
+  --bcch-api-token-env BCCH_API_TOKEN \
   --output \
     /tmp/wp04-shadow-evidence/wp04_shadow_backfill_plan.json
 ```
 
-No ejecutar el modo de planificación de `wp04_shadow_backfill.py` con fechas
-copiadas de un intento anterior.
+No ejecutar los entrypoints retirados `wp04_shadow_backfill.py` o
+`wp04_shadow_backfill_windowed.py` con asset-set v2.
 
 ## Gates
 
@@ -69,8 +70,8 @@ provider_window_checksum =
 ```
 
 El `plan_checksum` existente continúa ligando las fechas efectivas, assets,
-archivos JSONL y scope de escritura. La ejecución y el replay siguen usando
-`tools/wp04_shadow_backfill.py --execute` con ese checksum exacto.
+archivos JSONL y scope de escritura. La ejecución y el replay usan
+`tools/wp04_shadow_backfill_official_fx.py --execute` con ese checksum exacto.
 
 ## Evidencia
 

@@ -15,12 +15,12 @@ wp04-primary-row-quarantine-v1
 El planificador autorizado continúa siendo:
 
 ```text
-tools/wp04_shadow_backfill_windowed.py
+tools/wp04_shadow_backfill_windowed_official_fx.py
 ```
 
-Ese entrypoint utiliza `tools/wp04_quarantine_planner.py`, que envuelve el
-planificador resiliente ya revisado y liga la evidencia de cuarentena al
-`plan_checksum`.
+Ese entrypoint utiliza la cuarentena Yahoo solo para los siete activos de
+mercado no FX y liga la evidencia al `plan_checksum`. Yahoo `CLP=X` permanece
+`DIAGNOSTIC_ONLY`; la tasa elegible se obtiene de BCCh.
 
 ## Causa raíz cubierta
 
@@ -166,7 +166,7 @@ Después de la cuarentena debe seguir existiendo cobertura primaria:
 
 - Yahoo `1d` y `15m` para AAPL, MSFT, NVDA, META y AMZN;
 - Yahoo `1h` para BTC-USD y ETH-USD;
-- Yahoo `1d` para CLP=X;
+- BCCh `F073.TCO.PRE.Z.D` para USD/CLP en `fx_rate_raw`;
 - calendarios XNYS, CRYPTO_24_7 y FX_24_5.
 
 Una fila de Año Nuevo rechazada no reemplaza esta cobertura ni la amplía.
@@ -196,7 +196,7 @@ primary_source_rejections.sha256 = SHA-256 válido
 production_change_allowed = false
 ```
 
-La ejecución usa únicamente las tres tablas raw autorizadas. Los archivos de
+La ejecución usa únicamente las cuatro tablas raw autorizadas. Los archivos de
 status y rechazo son evidencia checksum-bound; no son tablas de mercado y no se
 insertan en BigQuery.
 

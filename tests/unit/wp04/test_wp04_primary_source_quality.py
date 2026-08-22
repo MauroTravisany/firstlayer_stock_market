@@ -196,10 +196,10 @@ class Wp04PrimarySourceEntrypointTests(unittest.TestCase):
     def test_authorized_planner_uses_quarantine_facade(self):
         root = Path(__file__).resolve().parents[3]
         source = (
-            root / "tools" / "wp04_shadow_backfill_windowed.py"
+            root / "tools" / "wp04_shadow_backfill_windowed_official_fx.py"
         ).read_text(encoding="utf-8")
-        self.assertIn("wp04_quarantine_planner", source)
-        self.assertIn("wp04_resilient_planner", source)
+        self.assertIn("wp04_official_fx_planner", source)
+        self.assertNotIn("wp04_resilient_planner", source)
 
 
 if __name__ == "__main__":

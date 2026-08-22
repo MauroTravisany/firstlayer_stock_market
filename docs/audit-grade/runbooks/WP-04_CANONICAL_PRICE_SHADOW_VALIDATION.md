@@ -1,101 +1,38 @@
-# WP-04 — Validación shadow de precios canónicos
+# WP-04 - Canonical price shadow validation
 
-> **Official FX override:** para cualquier cierre posterior a la remediación
-> BCCh, [`WP-04_OFFICIAL_FX_SOURCE.md`](WP-04_OFFICIAL_FX_SOURCE.md) tiene
-> precedencia. El planner/executor autorizados son los entrypoints
-> `*_official_fx.py`; Yahoo `CLP=X` no es una fuente elegible.
+This runbook is the only operational authority for WP-04 live shadow work.
+It requires separate authorization; the code remediation that introduced it
+does not authorize GCP writes.
 
-## 1. Objetivo
+## Safety precheck
 
-Demostrar en BigQuery, sin modificar producción, que WP-04 construye una serie
-de precios reproducible y point-in-time con:
+Before any write, verify the exact PR SHA and successful CI, draft/no-merge
+state, disabled deploy workflow, paused Strategy Brain, `BACKTEST_ONLY`,
+`SHADOW_ONLY`, Alpaca Paper, and unchanged Dataform production. Stop on any
+discrepancy.
 
-- revisiones raw append-only;
-- intervalos, timezone, exchange, run ID y payload hash explícitos;
-- sesiones XNYS, FX 24/5 y cripto 24/7;
-- exactamente una granularidad por barra canónica;
-- OHLC raw para ejecución y adjusted close para retornos;
-- corporate actions históricas sin timestamp verificable retenidas fail-closed;
-- reconciliación Yahoo/Stooq;
-- USD/CLP histórico;
-- features, dual-run y assertion exclusivamente shadow.
-
-Este runbook no autoriza producción, Paper Champion ni dinero real.
-
-## 2. Identidad inmutable
-
-Antes de cualquier operación, registrar:
-
-```text
-FINAL_SHA=<SHA aprobado por ChatGPT>
-CI_RUN_ID=<CI exitoso del mismo SHA>
-PROJECT_ID=stocks-437902
-LOCATION=us-east1
-OPERATIONAL_DATASET=acciones_dataset
-ASSET_SET=config/wp04_shadow_assets.v1.json
-```
-
-El checkout debe estar detached, exactamente en `FINAL_SHA` y limpio. Todo
-plan, checksum, candidate branch, compilation result o evidencia de otro SHA es
-obsoleto.
-
-## 3. Estado de seguridad obligatorio
-
-Verificar read-only:
-
-- PR WP-04 abierto y draft;
-- CI del SHA exacto en `success`;
-- deploy Cloud Run deshabilitado;
-- Strategy Brain generate/review `PAUSED`;
-- Strategy Brain `BACKTEST_ONLY`;
-- champion/challenger `SHADOW_ONLY`;
-- Alpaca Paper;
-- ningún workflow productivo en ejecución.
-
-Detenerse ante cualquier discrepancia.
-
-## 4. Datasets aislados
-
-Crear dos datasets nuevos con sufijo UTC.
-
-Schema-check:
+Use only new isolated datasets in `us-east1`:
 
 ```text
 acciones_dataset_shadow_wp04_schema_<UTC>
-location=us-east1
-environment=shadow
-work_package=wp04
-purpose=compiled_sql_validation
-```
+  environment=shadow
+  work_package=wp04
+  purpose=compiled_sql_validation
 
-Shadow real:
-
-```text
 acciones_dataset_shadow_wp04_<UTC>
-location=us-east1
-environment=shadow
-work_package=wp04
-purpose=canonical_price_validation
+  environment=shadow
+  work_package=wp04
+  purpose=canonical_price_validation
 ```
 
-No borrar ni reutilizar datasets cuyo lineage sea incierto. Ambos deben estar
-vacíos antes de comenzar.
+Never write to `acciones_dataset`, move `dataform-production`, update a
+production release/workflow config, deploy, apply Terraform, mutate Scheduler,
+IAM or Secret Manager, or call a broker.
 
-## 5. Candidate branch Dataform
+## Dataform snapshot and schema graph
 
-El repositorio Dataform conectado espera `dataform/` como raíz. Crear una
-candidate branch temporal cuyo árbol sea exactamente:
-
-```text
-$FINAL_SHA:dataform
-```
-
-No mover `dataform-production`, no actualizar release config production y no
-reutilizar una candidate branch anterior.
-
-## 6. Compilation result de schema-check
-
-Crear una compilation result nueva con:
+Create a fresh candidate branch whose root is exactly `$FINAL_SHA:dataform`.
+Compile with:
 
 ```text
 defaultDatabase = stocks-437902
@@ -112,92 +49,33 @@ vars.requireSecondaryPriceSource = "false"
 vars.priceCloseToleranceBps = "10"
 vars.priceVolumeToleranceRatio = "0.10"
 vars.priceSourceStaleSeconds = "86400"
-vars.usdClpTicker = "CLP=X"
 vars.priceModelVersion = "wp04-canonical-prices-v1"
 ```
 
-La única dependencia operacional autorizada es
-`acciones_dataset.trading_price_features`, read-only, para el dual-run y el
-rollback bridge. Todos los outputs y assertions WP-04 deben apuntar al dataset
-schema-check.
-
-## 7. Exportar actions completas
-
-Consultar paginadamente todas las `CompilationResultActions`, conservando:
-
-- action type;
-- target y canonical target;
-- dependencies y parent action;
-- file path;
-- SQL compilado íntegro.
-
-Guardar fuera del checkout:
+The required graph is exactly:
 
 ```text
-/tmp/wp04-shadow-evidence/wp04_schema_compilation_actions.json
-```
-
-El conjunto requerido es:
-
-```text
-3 operations
+11 required actions
+4 operations
 6 relations
-1 required assertion
+1 assertion
+
+market_price_raw                              operations
+corporate_actions_pit                         operations
+market_session_calendar                       operations
+fx_rate_raw                                   operations
+price_source_reconciliation                   relation
+market_price_canonical                        relation
+fx_rates_pit                                  relation
+trading_price_features_canonical_shadow       relation
+trading_price_features_wp04_shadow            relation
+wp04_legacy_vs_canonical_shadow                relation
+audit_canonical_prices                        assertion
 ```
 
-Acciones requeridas:
-
-```text
-market_price_raw
-corporate_actions_pit
-market_session_calendar
-fx_rate_raw
-price_source_reconciliation
-market_price_canonical
-fx_rates_pit
-trading_price_features_canonical_shadow
-trading_price_features_wp04_shadow
-wp04_legacy_vs_canonical_shadow
-audit_canonical_prices
-```
-
-## 8. Schema graph preventivo
-
-Plan:
-
-```bash
-python tools/wp04_compiled_sql_schema_check.py \
-  --actions-json /tmp/wp04-shadow-evidence/wp04_schema_compilation_actions.json \
-  --expected-git-sha "$FINAL_SHA" \
-  --compilation-result "$SCHEMA_COMPILATION_RESULT" \
-  --project-id "$PROJECT_ID" \
-  --operational-dataset "$OPERATIONAL_DATASET" \
-  --validation-dataset "$SCHEMA_DATASET" \
-  --location "$LOCATION" \
-  --environment shadow \
-  --output /tmp/wp04-shadow-evidence/wp04_schema_graph_plan.json
-```
-
-Revisar todos los targets, layers, SQL hashes y dependencias. Extraer el
-`plan_checksum` y ejecutar:
-
-```bash
-python tools/wp04_compiled_sql_schema_check.py \
-  --actions-json /tmp/wp04-shadow-evidence/wp04_schema_compilation_actions.json \
-  --expected-git-sha "$FINAL_SHA" \
-  --compilation-result "$SCHEMA_COMPILATION_RESULT" \
-  --project-id "$PROJECT_ID" \
-  --operational-dataset "$OPERATIONAL_DATASET" \
-  --validation-dataset "$SCHEMA_DATASET" \
-  --location "$LOCATION" \
-  --environment shadow \
-  --execute \
-  --expected-plan-checksum "$WP04_SCHEMA_PLAN_CHECKSUM" \
-  --acknowledge-validation-write WP04_SCHEMA_VALIDATION_WRITE \
-  --output /tmp/wp04-shadow-evidence/wp04_schema_graph_result.json
-```
-
-Gate obligatorio:
+Export every paginated compilation action and run
+`tools/wp04_compiled_sql_schema_check.py` in plan and acknowledged execution
+mode. Continue only on:
 
 ```text
 status = ALL_COMPILED_ACTIONS_SCHEMA_GRAPH_PASS
@@ -211,23 +89,12 @@ validation_dataset_only = true
 production_change_allowed = false
 ```
 
-No continuar ante un solo FAIL o BLOCKED.
+Create the real-shadow compilation from the same source snapshot by changing
+only `vars.auditDataset` and `assertionSchema` to the real shadow dataset.
 
-## 9. Compilation result del shadow real
+## Empty raw tables
 
-Crear una segunda compilation result desde el mismo snapshot. Cambiar únicamente:
-
-```text
-vars.auditDataset = <REAL_SHADOW_DATASET>
-assertionSchema = <REAL_SHADOW_DATASET>
-```
-
-Mantener `vars.useCanonicalPrices="true"`. Comparar ambas compilation results y
-demostrar que la única diferencia de destino es schema-check -> shadow real.
-
-## 10. Materializar contratos raw vacíos
-
-Ejecutar individualmente, sin dependencias transitivas:
+Materialize individually, with no transitive dependencies:
 
 ```text
 market_price_raw
@@ -236,76 +103,87 @@ market_session_calendar
 fx_rate_raw
 ```
 
-Verificar que las tres tablas existen exclusivamente en el shadow real y sus
-schemas coinciden con los contratos machine-readable.
+All four tables must be empty, schema-exact, and located only in the new real
+shadow dataset.
 
-## 11. Plan acotado de backfill
+## Official moving-window plan
 
-Usar el último día completo anterior a la validación. Para la validación de
-agosto de 2026, el scope aprobado es:
+`BCCH_API_TOKEN` must exist only in the private process environment. Never
+print, persist, log, or commit it. Stooq remains optional unless separately
+authorized.
 
-```text
-START_DATE=2024-01-01
-END_DATE=2026-08-13
-INTRADAY_START_DATE=2026-06-16
-HOURLY_START_DATE=2025-01-01
-MAX_ROWS=100000
-```
-
-Incluye cinco acciones estadounidenses, BTC, ETH y USD/CLP, definidos en el
-asset set versionado.
+The only authorized planner command is:
 
 ```bash
-mkdir -p /tmp/wp04-shadow-evidence/backfill
-
-python tools/wp04_shadow_backfill.py \
+python tools/wp04_shadow_backfill_windowed_official_fx.py \
   --expected-git-sha "$FINAL_SHA" \
-  --asset-set "$ASSET_SET" \
-  --start-date "$START_DATE" \
-  --end-date "$END_DATE" \
-  --intraday-start-date "$INTRADAY_START_DATE" \
-  --hourly-start-date "$HOURLY_START_DATE" \
-  --max-rows "$MAX_ROWS" \
+  --asset-set config/wp04_shadow_assets.v1.json \
+  --daily-start-date 2024-01-01 \
+  --end-lag-days 2 \
+  --intraday-lookback-days 45 \
+  --hourly-lookback-days 365 \
+  --max-rows 100000 \
   --work-dir /tmp/wp04-shadow-evidence/backfill \
+  --window-output /tmp/wp04-shadow-evidence/wp04_provider_window.json \
   --output /tmp/wp04-shadow-evidence/wp04_shadow_backfill_plan.json
 ```
 
-Revisar:
+Do not use fixed effective intraday/hourly dates. The command must produce one
+checksum-bound moving-window document and one plan from the same anchor.
 
-- SHA y asset-set checksum;
-- assets exactos;
-- fechas y límites;
-- Yahoo daily/15m/1h;
-- Stooq daily para las cinco acciones;
-- calendarios XNYS/FX/cripto;
-- checksums y conteos de los tres JSONL;
-- `production_change_allowed=false`.
+Review all file hashes and identities, plus:
 
-## 12. Ejecución append-only e idempotencia
+```text
+official_fx_source_policy.policy_version = wp04-bcch-vintage-availability-v2
+official_fx_source_policy.provider = BCCH_BDE
+official_fx_source_policy.series_id = F073.TCO.PRE.Z.D
+official_fx_source_policy.yahoo_fx_role = DIAGNOSTIC_ONLY
+official_fx_source_status.required = true
+official_fx_source_status.authentication_mode = API_KEY
+fx_rate_raw quality_status = CURRENT_SNAPSHOT_NO_VINTAGE
+fx_rate_raw first_observed_at = available_at = ingested_at
+fx_rate_raw backtest_eligible = false
+production_change_allowed = false
+```
 
-Primera ejecución:
+Yahoo `CLP=X` must not occur in `market_price_raw` or the mandatory Yahoo
+series list. The current BDE snapshot is not historical-vintage evidence.
+
+## Append-only execution and replay
+
+The only authorized execution command is:
 
 ```bash
-python tools/wp04_shadow_backfill.py \
+python tools/wp04_shadow_backfill_official_fx.py \
   --expected-git-sha "$FINAL_SHA" \
   --execute \
   --plan-file /tmp/wp04-shadow-evidence/wp04_shadow_backfill_plan.json \
   --expected-plan-checksum "$WP04_PLAN_CHECKSUM" \
   --acknowledge-shadow-write WP04_SHADOW_WRITE \
-  --project-id "$PROJECT_ID" \
+  --project-id stocks-437902 \
   --dataset-id "$REAL_SHADOW_DATASET" \
-  --location "$LOCATION" \
+  --location us-east1 \
   --environment shadow \
   --output /tmp/wp04-shadow-evidence/wp04_shadow_backfill_execution.json
 ```
 
-Repetir exactamente con el mismo plan y guardar como
-`wp04_shadow_backfill_idempotence.json`. La segunda ejecución debe insertar cero
-revisiones y cero sesiones nuevas.
+The executor must validate every row and `official_fx_source_status` before
+creating a BigQuery client or staging table. It writes exactly four tables via
+insert-only `MERGE`:
 
-## 13. Materialización ordenada
+```text
+market_price_raw -> raw_revision_id
+corporate_actions_pit -> action_id
+market_session_calendar -> session_id
+fx_rate_raw -> fx_rate_revision_id
+```
 
-Ejecutar individualmente, con `transitiveDependenciesIncluded=false`:
+Repeat the same official executor command with the same plan, files, hashes,
+SHA and dataset. The replay must insert zero rows into all four tables.
+
+## Ordered materialization and evidence
+
+Run individually with `transitiveDependenciesIncluded=false`:
 
 ```text
 price_source_reconciliation
@@ -317,71 +195,14 @@ wp04_legacy_vs_canonical_shadow
 audit_canonical_prices
 ```
 
-Registrar invocation ID, target, state y destination. No ejecutar
-`trading_price_features` operacional como target.
+`fx_rates_pit` preserves all observed revisions. Any consumer must select
+deterministically as-of with `available_at <= signal_timestamp`; a global
+latest revision per rate date is forbidden.
 
-## 14. Evidencia final
+Capture final read-only evidence with `tools/wp04_shadow_evidence.py`. Require
+zero audit violations and hard gates, including no retroactive FX revision,
+missing `first_observed_at`, snapshot-as-vintage claim, duplicate revision,
+invalid source/rate/policy, or production-change flag.
 
-```bash
-python tools/wp04_shadow_evidence.py \
-  --project-id "$PROJECT_ID" \
-  --dataset-id "$REAL_SHADOW_DATASET" \
-  --location "$LOCATION" \
-  --environment shadow \
-  --git-sha "$FINAL_SHA" \
-  --ci-run-id "$CI_RUN_ID" \
-  --output /tmp/wp04-shadow-evidence/wp04_shadow_evidence.json
-```
-
-Exigir:
-
-```text
-evaluation.status = PASS
-hard_gate_count = 0
-audit_canonical_prices.violation_count = 0
-raw duplicate revisions = 0
-canonical duplicate keys = 0
-available_before_bar_end = 0
-mixed daily/intraday selection = 0
-invalid crypto 4h buckets = 0
-unblocked material reconciliation problems = 0
-blocked price consumption = 0
-invalid USD/CLP rates = 0
-bridge legacy source count = 0
-promotion violations = 0
-production-change violations = 0
-```
-
-Los historical corporate actions de Yahoo sin publication timestamp deben
-seguir marcados `UNVERIFIED_AVAILABLE_AT`; no relajar ese gate para fabricar
-cobertura PIT.
-
-## 15. No mutación
-
-Repetir inventarios before/after y demostrar:
-
-- cero escrituras en `acciones_dataset` atribuibles a WP-04;
-- Dataform production y `dataform-production` sin cambios;
-- Cloud Run y schedulers sin cambios;
-- sin Terraform apply, IAM, Secret Manager o broker;
-- Strategy Brain permanece pausado y BACKTEST_ONLY;
-- todas las escrituras WP-04 se limitaron a los dos datasets shadow.
-
-## 16. Evidencia a comprometer
-
-Después de ejecutar todas las herramientas que requieren checkout limpio,
-volver a la rama WP-04 y comprometer únicamente artefactos sanitizados:
-
-```text
-docs/audit-grade/evidence/wp04_schema_graph_plan.json
-docs/audit-grade/evidence/wp04_schema_graph_result.json
-docs/audit-grade/evidence/wp04_shadow_backfill_plan.json
-docs/audit-grade/evidence/wp04_shadow_backfill_execution.json
-docs/audit-grade/evidence/wp04_shadow_backfill_idempotence.json
-docs/audit-grade/evidence/wp04_shadow_evidence.json
-docs/audit-grade/evidence/WP-04.md
-docs/audit-grade/08_traceability_matrix.md
-```
-
-No comprometer tokens, cookies, credenciales, payloads completos de proveedor ni
-información privada. Mantener la PR como draft y no cerrar Issue #39.
+Repeat sanitized before/after inventories and prove all writes were confined
+to the two new shadow datasets. Keep PR #70 draft and Issue #39 open.

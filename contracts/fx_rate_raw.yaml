@@ -1,14 +1,14 @@
-contract_version: 1.0.0
+contract_version: 2.0.0
 data_contract_version: audit-contracts-v1
 criticality: P0
 environments: [research, shadow]
 point_in_time:
   eligibility: NOT_BACKTEST_ELIGIBLE
-  reason: Raw official observations retain every immutable revision; consumers must use fx_rates_pit after publication and deduplication gates.
+  reason: The current BDE API snapshot has no per-payload historical vintage ledger; each revision becomes visible only when FirstLayer first observes it.
 table:
   name: fx_rate_raw
-  description: Append-only official Banco Central de Chile observed-dollar revisions with publication lineage.
-  granularity: One immutable revision per provider series and rate date.
+  description: Append-only official Banco Central de Chile observed-dollar revisions with first-observation lineage.
+  granularity: One immutable payload revision per provider series and rate date.
   logical_primary_key: [fx_rate_revision_id]
   append_only: true
   partition_by: rate_date
@@ -19,22 +19,22 @@ temporal:
   available_at: available_at
   ingested_at: ingested_at
   timezone: UTC
-  point_in_time_policy: The previous banking-day observation becomes available at the official 17:30 America/Santiago publication time and never before ingestion.
+  point_in_time_policy: source_published_at is economic metadata; a current-snapshot revision is quantitatively visible only from first_observed_at, which equals available_at and ingested_at.
 source:
   system: Banco Central de Chile BDE REST API series F073.TCO.PRE.Z.D
   version_field: fx_rate_revision_id
   original_timezone: America/Santiago
 deduplication:
-  rule: fx_rate_record_id identifies provider series and rate date; fx_rate_revision_id additionally hashes payload and publication time. Existing revisions are never updated.
+  rule: fx_rate_record_id identifies provider series and rate date; fx_rate_revision_id additionally hashes payload and economic publication metadata. Reobserving the same payload preserves its original stored revision.
 retention:
-  policy: Retain every official revision indefinitely for replay and publication-lineage audit.
+  policy: Retain every revision observed by FirstLayer indefinitely; do not infer unobserved historical vintages.
 columns:
 - {name: fx_rate_revision_id, type: STRING, mode: REQUIRED, description: Content-addressed immutable revision identity.}
 - {name: fx_rate_record_id, type: STRING, mode: REQUIRED, description: Stable provider series and rate-date identity.}
-- {name: ingestion_run_id, type: STRING, mode: REQUIRED, description: UUID of the ingestion run.}
+- {name: ingestion_run_id, type: STRING, mode: REQUIRED, description: UUID of the first observation run.}
 - {name: provider, type: STRING, mode: REQUIRED, description: Official provider identifier.}
 - {name: series_id, type: STRING, mode: REQUIRED, description: Official BDE series identifier.}
-- {name: rate_date, type: DATE, mode: REQUIRED, description: Date on which the rate may be used.}
+- {name: rate_date, type: DATE, mode: REQUIRED, description: Economic date on which the rate applies.}
 - {name: source_reference_date, type: DATE, mode: REQUIRED, description: Earlier banking day represented by the observation.}
 - {name: base_currency, type: STRING, mode: REQUIRED, description: Base currency.}
 - {name: quote_currency, type: STRING, mode: REQUIRED, description: Quote currency.}
@@ -43,15 +43,20 @@ columns:
 - {name: source_record_id, type: STRING, mode: REQUIRED, description: Provider series and rate-date record identity.}
 - {name: source_version, type: STRING, mode: REQUIRED, description: Official source adapter version.}
 - {name: source_timezone, type: STRING, mode: REQUIRED, description: Official publication timezone.}
-- {name: source_published_at, type: TIMESTAMP, mode: REQUIRED, description: Conservative official publication timestamp.}
-- {name: availability_policy, type: STRING, mode: REQUIRED, description: Exact publication availability policy.}
+- {name: source_published_at, type: TIMESTAMP, mode: REQUIRED, description: Economic/legal publication schedule metadata; not proof of payload vintage.}
+- {name: availability_policy, type: STRING, mode: REQUIRED, description: Exact revision-vintage availability policy.}
 - {name: payload_hash, type: STRING, mode: REQUIRED, description: SHA-256 of the canonical public observation.}
-- {name: available_at, type: TIMESTAMP, mode: REQUIRED, description: First verified usable time.}
-- {name: ingested_at, type: TIMESTAMP, mode: REQUIRED, description: UTC ingestion time.}
-- {name: quality_status, type: STRING, mode: REQUIRED, description: Official published-rate quality state.}
+- {name: first_observed_at, type: TIMESTAMP, mode: REQUIRED, description: First time FirstLayer observed this exact revision payload.}
+- {name: publication_evidence_uri, type: STRING, mode: NULLABLE, description: Archived official vintage reference; null for current snapshots.}
+- {name: publication_evidence_sha256, type: STRING, mode: NULLABLE, description: Archived vintage checksum; null for current snapshots.}
+- {name: publication_evidence_at, type: TIMESTAMP, mode: NULLABLE, description: Verifiable archive timestamp; null for current snapshots.}
+- {name: available_at, type: TIMESTAMP, mode: REQUIRED, description: First quantitative visibility time for this exact revision.}
+- {name: ingested_at, type: TIMESTAMP, mode: REQUIRED, description: UTC first-ingestion time.}
+- {name: quality_status, type: STRING, mode: REQUIRED, description: Current-snapshot/no-vintage quality state.}
+- {name: backtest_eligible, type: BOOL, mode: REQUIRED, description: False without exact archived publication evidence.}
 - {name: production_change_allowed, type: BOOL, mode: REQUIRED, description: Always false in WP-04 shadow validation.}
 assertions:
-  not_null: [fx_rate_revision_id, fx_rate_record_id, ingestion_run_id, provider, series_id, rate_date, source_reference_date, base_currency, quote_currency, rate, status_code, source_record_id, source_version, source_timezone, source_published_at, availability_policy, payload_hash, available_at, ingested_at, quality_status, production_change_allowed]
+  not_null: [fx_rate_revision_id, fx_rate_record_id, ingestion_run_id, provider, series_id, rate_date, source_reference_date, base_currency, quote_currency, rate, status_code, source_record_id, source_version, source_timezone, source_published_at, availability_policy, payload_hash, first_observed_at, available_at, ingested_at, quality_status, backtest_eligible, production_change_allowed]
   unique:
   - [fx_rate_revision_id]
   accepted_values:
@@ -62,8 +67,9 @@ assertions:
     status_code: [OK]
     source_version: [bcch-bde-rest-v1]
     source_timezone: [America/Santiago]
-    availability_policy: [bcch-previous-banking-day-1730-america-santiago-v1]
-    quality_status: [OFFICIAL_PUBLISHED_RATE]
+    availability_policy: [wp04-bcch-vintage-availability-v2]
+    quality_status: [CURRENT_SNAPSHOT_NO_VINTAGE]
+    backtest_eligible: [false]
     production_change_allowed: [false]
 implementation:
   mode: DATAFORM_CREATE

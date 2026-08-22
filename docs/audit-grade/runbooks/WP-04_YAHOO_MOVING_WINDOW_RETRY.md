@@ -11,13 +11,13 @@ runbook principal continúan vigentes.
 El planificador autorizado es:
 
 ```text
-tools/wp04_shadow_backfill_windowed.py
+tools/wp04_shadow_backfill_windowed_official_fx.py
 ```
 
-El modo de planificación directo de `tools/wp04_shadow_backfill.py` no está
-autorizado para la validación live. Ese entrypoint se conserva para ejecutar un
-plan ya revisado; la ejecución rechaza cualquier plan que no contenga una
-política de proveedor válida y ligada al checksum.
+Los entrypoints `tools/wp04_shadow_backfill.py` y
+`tools/wp04_shadow_backfill_windowed.py` están retirados para asset-set v2 y
+fallan cerrados. La ejecución autorizada es
+`tools/wp04_shadow_backfill_official_fx.py`.
 
 ## Causa raíz
 
@@ -55,8 +55,8 @@ Todo checkout, candidate branch, compilation result, plan, JSONL, checksum o
 evidencia ligado a un SHA anterior es obsoleto. No reutilizar el plan que falló
 por `2026-06-16` ni un plan que declare la política retirada.
 
-Después de aprobar nuevamente el schema graph y de materializar vacías las tres
-tablas raw del shadow real, definir:
+Después de aprobar nuevamente el schema graph y de materializar vacías las
+cuatro tablas raw del shadow real, definir:
 
 ```bash
 FINAL_SHA=<SHA_APROBADO>
@@ -73,7 +73,7 @@ Crear un plan actual y acotado:
 rm -rf "$WP04_EVIDENCE_TMP/backfill"
 mkdir -p "$WP04_EVIDENCE_TMP/backfill"
 
-python tools/wp04_shadow_backfill_windowed.py \
+python tools/wp04_shadow_backfill_windowed_official_fx.py \
   --expected-git-sha "$FINAL_SHA" \
   --asset-set "$ASSET_SET" \
   --daily-start-date 2024-01-01 \
@@ -84,6 +84,7 @@ python tools/wp04_shadow_backfill_windowed.py \
   --work-dir "$WP04_EVIDENCE_TMP/backfill" \
   --window-output \
     "$WP04_EVIDENCE_TMP/wp04_provider_window.json" \
+  --bcch-api-token-env BCCH_API_TOKEN \
   --output \
     "$WP04_EVIDENCE_TMP/wp04_shadow_backfill_plan.json"
 ```
@@ -138,9 +139,10 @@ alteración debe invalidar la ejecución.
 
 Revisar además:
 
-- ocho activos exactos del asset set versionado;
+- siete activos de mercado no FX del asset set versionado;
 - Yahoo daily/15m/1h y Stooq daily según tipo de activo;
-- checksums e identity-set hashes de los tres JSONL;
+- BCCh `F073.TCO.PRE.Z.D` como única tasa USD/CLP elegible;
+- checksums e identity-set hashes de los cuatro JSONL raw;
 - `total_row_count <= 100000`;
 - ninguna ruta o destino operacional.
 
@@ -150,7 +152,7 @@ Extraer el nuevo `plan_checksum` y ejecutar con el entrypoint de escritura
 shadow:
 
 ```bash
-python tools/wp04_shadow_backfill.py \
+python tools/wp04_shadow_backfill_official_fx.py \
   --expected-git-sha "$FINAL_SHA" \
   --execute \
   --plan-file \
@@ -180,6 +182,7 @@ El replay debe insertar cero filas en:
 market_price_raw
 corporate_actions_pit
 market_session_calendar
+fx_rate_raw
 ```
 
 ## Continuación

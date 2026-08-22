@@ -1,16 +1,16 @@
-contract_version: 2.0.0
+contract_version: 3.0.0
 data_contract_version: audit-contracts-v1
 criticality: P0
 environments: [research, shadow]
 point_in_time:
-  eligibility: BACKTEST_ELIGIBLE
-  reason: Each rate is selected from immutable official Banco Central de Chile revisions with explicit prior-banking-day publication lineage.
-  event_time_is_publication_time: true
+  eligibility: NOT_BACKTEST_ELIGIBLE
+  reason: Current BDE snapshots lack archived payload-vintage proof. The table preserves revision visibility for deterministic as-of selection but cannot backdate eligibility.
+  event_time_is_publication_time: false
 table:
   name: fx_rates_pit
-  description: Canonical point-in-time USD/CLP observed-dollar rates derived exclusively from fx_rate_raw.
-  granularity: One latest eligible official rate per date and currency pair.
-  logical_primary_key: [fx_rate_id]
+  description: Versioned USD/CLP revisions derived exclusively from fx_rate_raw for as-of consumers.
+  granularity: One row per immutable official source revision; multiple revisions may exist for one rate date.
+  logical_primary_key: [source_rate_revision_id]
   append_only: false
   partition_by: rate_date
   cluster_by: [base_currency, quote_currency]
@@ -20,18 +20,18 @@ temporal:
   available_at: available_at
   ingested_at: ingested_at
   timezone: UTC
-  point_in_time_policy: Only observations published before rate_date and available no later than ingestion are eligible.
+  point_in_time_policy: Consumers must select the maximum available_at and revision ID satisfying available_at <= signal_timestamp; no global latest-by-date selection is valid.
 source:
   system: fx_rate_raw official Banco Central de Chile BDE series F073.TCO.PRE.Z.D
   version_field: source_rate_revision_id
   original_timezone: America/Santiago
 deduplication:
-  rule: Deterministically select the latest eligible immutable revision by ingestion time, availability time and revision ID for each provider series and rate date.
+  rule: Preserve every distinct source revision. Reobserving the same payload has the same source_rate_revision_id; corrected payloads remain separate and become visible only from first_observed_at.
 retention:
-  policy: Preserve source revision and publication lineage for every canonical rate.
+  policy: Preserve all observed revisions and their first-observation lineage for deterministic as-of replay.
 columns:
-- {name: fx_rate_id, type: STRING, mode: REQUIRED, description: Content-addressed canonical FX identity.}
-- {name: rate_date, type: DATE, mode: REQUIRED, description: Date on which the rate may be used.}
+- {name: fx_rate_id, type: STRING, mode: REQUIRED, description: Content-addressed canonical revision identity.}
+- {name: rate_date, type: DATE, mode: REQUIRED, description: Economic date on which the rate applies.}
 - {name: base_currency, type: STRING, mode: REQUIRED, description: Base currency.}
 - {name: quote_currency, type: STRING, mode: REQUIRED, description: Quote currency.}
 - {name: rate, type: FLOAT64, mode: REQUIRED, description: Positive Chilean pesos per US dollar.}
@@ -39,26 +39,32 @@ columns:
 - {name: provider, type: STRING, mode: REQUIRED, description: Official provider identifier.}
 - {name: series_id, type: STRING, mode: REQUIRED, description: Official BDE series identifier.}
 - {name: source_version, type: STRING, mode: REQUIRED, description: Official source adapter version.}
-- {name: source_published_at, type: TIMESTAMP, mode: REQUIRED, description: Official publication timestamp.}
-- {name: availability_policy, type: STRING, mode: REQUIRED, description: Exact publication availability policy.}
-- {name: available_at, type: TIMESTAMP, mode: REQUIRED, description: First verified usable time.}
-- {name: ingested_at, type: TIMESTAMP, mode: REQUIRED, description: UTC ingestion time.}
-- {name: quality_status, type: STRING, mode: REQUIRED, description: Official published-rate quality state.}
-- {name: data_snapshot_id, type: STRING, mode: REQUIRED, description: Content-addressed canonical snapshot identity.}
+- {name: source_published_at, type: TIMESTAMP, mode: REQUIRED, description: Economic publication schedule metadata.}
+- {name: first_observed_at, type: TIMESTAMP, mode: REQUIRED, description: First observation of this exact payload by FirstLayer.}
+- {name: publication_evidence_uri, type: STRING, mode: NULLABLE, description: Archived vintage reference; null for current snapshots.}
+- {name: publication_evidence_sha256, type: STRING, mode: NULLABLE, description: Archived vintage checksum; null for current snapshots.}
+- {name: publication_evidence_at, type: TIMESTAMP, mode: NULLABLE, description: Archived vintage timestamp; null for current snapshots.}
+- {name: availability_policy, type: STRING, mode: REQUIRED, description: Exact revision-vintage availability policy.}
+- {name: available_at, type: TIMESTAMP, mode: REQUIRED, description: First time this exact revision may be selected as-of.}
+- {name: ingested_at, type: TIMESTAMP, mode: REQUIRED, description: UTC first-ingestion time.}
+- {name: quality_status, type: STRING, mode: REQUIRED, description: Current-snapshot/no-vintage quality state.}
+- {name: backtest_eligible, type: BOOL, mode: REQUIRED, description: False without exact archived publication evidence.}
+- {name: data_snapshot_id, type: STRING, mode: REQUIRED, description: Content-addressed revision snapshot identity.}
 - {name: production_change_allowed, type: BOOL, mode: REQUIRED, description: Always false in WP-04 shadow validation.}
 assertions:
-  not_null: [fx_rate_id, rate_date, base_currency, quote_currency, rate, source_rate_revision_id, provider, series_id, source_version, source_published_at, availability_policy, available_at, ingested_at, quality_status, data_snapshot_id, production_change_allowed]
+  not_null: [fx_rate_id, rate_date, base_currency, quote_currency, rate, source_rate_revision_id, provider, series_id, source_version, source_published_at, first_observed_at, availability_policy, available_at, ingested_at, quality_status, backtest_eligible, data_snapshot_id, production_change_allowed]
   unique:
   - [fx_rate_id]
-  - [rate_date, base_currency, quote_currency]
+  - [source_rate_revision_id]
   accepted_values:
     base_currency: [USD]
     quote_currency: [CLP]
     provider: [BCCH_BDE]
     series_id: [F073.TCO.PRE.Z.D]
     source_version: [bcch-bde-rest-v1]
-    availability_policy: [bcch-previous-banking-day-1730-america-santiago-v1]
-    quality_status: [OFFICIAL_PUBLISHED_RATE]
+    availability_policy: [wp04-bcch-vintage-availability-v2]
+    quality_status: [CURRENT_SNAPSHOT_NO_VINTAGE]
+    backtest_eligible: [false]
     production_change_allowed: [false]
 implementation:
   mode: CODE_SCHEMA_REFERENCE
@@ -68,5 +74,5 @@ implementation:
 producers:
 - fx_rate_raw
 consumers:
-- future WP-05 PnL conversion
+- future WP-05 as-of PnL conversion
 - audit_canonical_prices

@@ -54,7 +54,7 @@ NO_DATA
 Usar exclusivamente:
 
 ```text
-tools/wp04_shadow_backfill_windowed.py
+tools/wp04_shadow_backfill_windowed_official_fx.py
 ```
 
 En modo opcional —el modo aprobado para este shadow— **no** pasar:
@@ -75,7 +75,7 @@ el plan, logs sanitizados o evidencia.
 Ejemplo:
 
 ```bash
-python tools/wp04_shadow_backfill_windowed.py \
+python tools/wp04_shadow_backfill_windowed_official_fx.py \
   --expected-git-sha "$FINAL_SHA" \
   --asset-set config/wp04_shadow_assets.v1.json \
   --daily-start-date 2024-01-01 \
@@ -85,6 +85,7 @@ python tools/wp04_shadow_backfill_windowed.py \
   --max-rows 100000 \
   --work-dir "$WP04_EVIDENCE_TMP/backfill" \
   --window-output "$WP04_EVIDENCE_TMP/wp04_provider_window.json" \
+  --bcch-api-token-env BCCH_API_TOKEN \
   --output "$WP04_EVIDENCE_TMP/wp04_shadow_backfill_plan.json"
 ```
 
@@ -155,7 +156,7 @@ Aun cuando Stooq esté no disponible, el plan debe contener:
 
 - Yahoo 1d y 15m para AAPL, MSFT, NVDA, META y AMZN;
 - Yahoo 1h para BTC-USD y ETH-USD;
-- Yahoo 1d para CLP=X;
+- BCCh `F073.TCO.PRE.Z.D` para USD/CLP;
 - calendarios XNYS, CRYPTO_24_7 y FX_24_5.
 
 No exigir filas Stooq cuando todas sus filas de estado demuestren de forma

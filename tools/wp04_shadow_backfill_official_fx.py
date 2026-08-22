@@ -22,6 +22,10 @@ from tools.wp04_fx_source import (
     PROVIDER,
     SERIES_ID,
     SOURCE_VERSION,
+    OfficialFxSourceError,
+    official_source_policy,
+    validate_official_fx_row,
+    validate_official_fx_status,
 )
 
 
@@ -50,26 +54,21 @@ FX_RATE_SCHEMA_SPEC = (
     ("source_published_at", "TIMESTAMP", "REQUIRED"),
     ("availability_policy", "STRING", "REQUIRED"),
     ("payload_hash", "STRING", "REQUIRED"),
+    ("first_observed_at", "TIMESTAMP", "REQUIRED"),
+    ("publication_evidence_uri", "STRING", "NULLABLE"),
+    ("publication_evidence_sha256", "STRING", "NULLABLE"),
+    ("publication_evidence_at", "TIMESTAMP", "NULLABLE"),
     ("available_at", "TIMESTAMP", "REQUIRED"),
     ("ingested_at", "TIMESTAMP", "REQUIRED"),
     ("quality_status", "STRING", "REQUIRED"),
+    ("backtest_eligible", "BOOL", "REQUIRED"),
     ("production_change_allowed", "BOOL", "REQUIRED"),
 )
 
 
 def verify_official_plan(plan: Mapping[str, Any]) -> None:
     policy = plan.get("official_fx_source_policy")
-    expected = {
-        "policy_version": POLICY_VERSION,
-        "provider": PROVIDER,
-        "series_id": SERIES_ID,
-        "source_version": SOURCE_VERSION,
-        "required": True,
-        "source_role": "OFFICIAL_SCALAR_RATE",
-        "yahoo_fx_role": "DIAGNOSTIC_ONLY",
-        "availability_policy": AVAILABILITY_POLICY,
-        "production_change_allowed": False,
-    }
+    expected = official_source_policy()
     if policy != expected:
         raise Wp04BackfillError("plan official_fx_source_policy is missing or invalid")
     versions = plan.get("provider_versions") or {}
@@ -95,14 +94,24 @@ def verify_official_plan(plan: Mapping[str, Any]) -> None:
     fx_rows = read_jsonl(Path(files["fx_rate_raw"]["path"]))
     if not fx_rows:
         raise Wp04BackfillError("fx_rate_raw plan file is empty")
-    for row in fx_rows:
-        if (
-            row.get("provider") != PROVIDER
-            or row.get("series_id") != SERIES_ID
-            or row.get("availability_policy") != AVAILABILITY_POLICY
-            or row.get("production_change_allowed") is not False
-        ):
-            raise Wp04BackfillError("fx_rate_raw contains an invalid official row")
+    try:
+        status_rows = read_jsonl(Path(files["official_fx_source_status"]["path"]))
+        if len(status_rows) != 1:
+            raise OfficialFxSourceError(
+                "INVALID_STATUS", "official FX status must contain exactly one row"
+            )
+        status = status_rows[0]
+        validate_official_fx_status(status, row_count=len(fx_rows))
+        for row in fx_rows:
+            validate_official_fx_row(
+                row,
+                expected_ingestion_run_id=status["ingestion_run_id"],
+                expected_observed_at=status["observed_at"],
+            )
+    except OfficialFxSourceError as exc:
+        raise Wp04BackfillError(
+            f"fx_rate_raw or official_fx_source_status failed validation: {exc.reason_code}"
+        ) from None
 
 
 def execute_plan(

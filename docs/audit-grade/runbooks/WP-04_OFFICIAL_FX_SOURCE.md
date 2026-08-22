@@ -8,9 +8,10 @@ eligible USD/CLP source:
 ```text
 provider = BCCH_BDE
 series_id = F073.TCO.PRE.Z.D
-policy_version = wp04-bcch-observed-dollar-v1
+source_policy_version = wp04-bcch-observed-dollar-v1
+policy_version = wp04-bcch-vintage-availability-v2
 source_version = bcch-bde-rest-v1
-availability_policy = bcch-previous-banking-day-1730-america-santiago-v1
+availability_policy = wp04-bcch-vintage-availability-v2
 ```
 
 Yahoo `CLP=X` is `DIAGNOSTIC_ONLY`. It is not downloaded by the official
@@ -53,16 +54,17 @@ evidence. Secret Manager is outside this code remediation.
 ## Point-In-Time Availability
 
 Each `rate_date` uses the prior successful banking-day observation as
-`source_reference_date`. The conservative publication timestamp is 17:30 in
-`America/Santiago` on that prior banking day, converted to UTC with the actual
-Chile DST offset. Therefore:
+`source_reference_date`. `source_published_at` retains the 17:30
+`America/Santiago` economic/legal schedule, but it is not evidence that the
+payload observed today existed historically. For the current snapshot API:
 
 ```text
 source_reference_date < rate_date
 source_published_at < TIMESTAMP(rate_date, source_timezone)
-available_at = source_published_at
-available_at <= ingested_at
-quality_status = OFFICIAL_PUBLISHED_RATE
+first_observed_at = ingested_at
+available_at = first_observed_at
+quality_status = CURRENT_SNAPSHOT_NO_VINTAGE
+backtest_eligible = false
 production_change_allowed = false
 ```
 
@@ -78,16 +80,19 @@ series, and rate date. `fx_rate_revision_id` additionally binds the payload
 hash and publication timestamp. The executor uses insert-only `MERGE` keyed by
 `fx_rate_revision_id`, so an exact replay inserts zero rows.
 
-`fx_rates_pit` reads only `fx_rate_raw` and deterministically selects the latest
-eligible revision by `ingested_at`, `available_at`, and
-`fx_rate_revision_id`. It has no dependency on market OHLC,
+`fx_rates_pit` reads only `fx_rate_raw` and preserves every distinct observed
+revision. A consumer must select the deterministic maximum revision satisfying
+`available_at <= signal_timestamp`; selecting one global latest revision per
+rate date is forbidden. It has no dependency on market OHLC,
 `market_price_canonical`, Yahoo `CLP=X`, `adjusted_close`, or
 `vars.usdClpTicker`.
 
-The BDE API does not expose a complete historical revision ledger. WP-04
-preserves every revision observed by FirstLayer after ingestion, but cannot
-reconstruct provider revisions that were never observed. This limitation must
-remain explicit in live evidence.
+The BDE API does not expose a complete historical revision ledger or archived
+checksum/URI/timestamp for each payload. WP-04 preserves every revision
+observed by FirstLayer after ingestion, but cannot reconstruct provider
+revisions that were never observed. A future archive-backed row may become
+eligible only under a separately reviewed policy with verifiable URI,
+checksum, and timestamp evidence.
 
 ## Production Prohibitions
 

@@ -10,7 +10,14 @@ from tools import wp04_official_fx_planner as planner
 from tools import wp04_shadow_backfill_official_fx as executor
 from tools import wp04_shadow_backfill_windowed_official_fx as windowed
 from tools.wp04_backfill_core import finalize_plan, write_jsonl
-from tools.wp04_fx_source import AVAILABILITY_POLICY, POLICY_VERSION, SOURCE_VERSION, _raw_row
+from tools.wp04_fx_source import (
+    AVAILABILITY_POLICY,
+    POLICY_VERSION,
+    SOURCE_VERSION,
+    _raw_row,
+    build_status_document,
+    official_source_policy,
+)
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -80,7 +87,7 @@ class Wp04OfficialFxPlannerTests(unittest.TestCase):
                     "series_id": "F073.TCO.PRE.Z.D",
                     "required": True,
                     "authentication_mode": "API_KEY",
-                    "query_start_date": dt.date(2023, 12, 1),
+                    "query_start_date": dt.date(2023, 11, 30),
                     "start_date": kwargs["start_date"],
                     "end_date": kwargs["end_date"],
                     "accepted_row_count": 1,
@@ -198,7 +205,18 @@ class Wp04OfficialFxExecutorTests(unittest.TestCase):
                 ],
             ),
             "official_fx_source_status": write_jsonl(
-                root / "status.jsonl", [{"status_id": "status"}]
+                root / "status.jsonl",
+                [
+                    build_status_document(
+                        query_start_date=dt.date(2023, 11, 30),
+                        start_date=dt.date(2024, 1, 1),
+                        end_date=dt.date(2024, 1, 3),
+                        ingestion_run_id="run",
+                        accepted_row_count=1,
+                        skipped_status_counts={},
+                        observed_at=dt.datetime(2024, 1, 4, tzinfo=UTC),
+                    )
+                ],
             ),
         }
         return {
@@ -208,17 +226,7 @@ class Wp04OfficialFxExecutorTests(unittest.TestCase):
                 "OFFICIAL_FX_POLICY": POLICY_VERSION,
                 "OFFICIAL_FX_AVAILABILITY_POLICY": AVAILABILITY_POLICY,
             },
-            "official_fx_source_policy": {
-                "policy_version": POLICY_VERSION,
-                "provider": "BCCH_BDE",
-                "series_id": "F073.TCO.PRE.Z.D",
-                "source_version": SOURCE_VERSION,
-                "required": True,
-                "source_role": "OFFICIAL_SCALAR_RATE",
-                "yahoo_fx_role": "DIAGNOSTIC_ONLY",
-                "availability_policy": AVAILABILITY_POLICY,
-                "production_change_allowed": False,
-            },
+            "official_fx_source_policy": official_source_policy(),
         }
 
     def test_official_plan_requires_four_executable_files_and_rejects_fx_bars(self):
