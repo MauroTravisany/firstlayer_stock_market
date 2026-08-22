@@ -1,28 +1,11 @@
-"""Provider-local date facade for mandatory Yahoo row quarantine.
-
-The reviewed quarantine implementation is retained in
-:mod:`tools.wp04_primary_source_quality_core`. Daily bars use the provider-local
-calendar label before UTC conversion. No OHLC values or thresholds are changed.
-"""
+"""Stable facade for mandatory Yahoo row quarantine."""
 
 from __future__ import annotations
 
-import datetime as dt
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from tools import wp04_primary_source_quality_core as _core
 
-def _session_day(timestamp: dt.datetime, *, exchange: str, asset_type: str, source_timezone: str) -> dt.date:
-    if timestamp.tzinfo is None or timestamp.utcoffset() is None:
-        timestamp = timestamp.replace(tzinfo=ZoneInfo(source_timezone))
-    if exchange.upper() == "XNYS" or asset_type.upper() in {"STOCK", "ETF"}:
-        return timestamp.astimezone(_core.NY).date()
-    if asset_type.upper() == "FX" or exchange.upper() == "FX_24_5":
-        return timestamp.date()
-    return timestamp.astimezone(_core.UTC).date()
-
-_core._session_day = _session_day
 POLICY_VERSION = _core.POLICY_VERSION
 PROVIDER = _core.PROVIDER
 MIN_VALID_ROW_RATIO = _core.MIN_VALID_ROW_RATIO

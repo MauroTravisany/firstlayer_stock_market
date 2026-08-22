@@ -11,13 +11,14 @@ EXPECTED_WP04_CONTRACTS = {
     "market_session_calendar",
     "price_source_reconciliation",
     "market_price_canonical",
+    "fx_rate_raw",
     "fx_rates_pit",
 }
 EXPECTED_CONTRACT_SET_HASH = (
-    "954796de8bd7a40d71a25aee822535bf8cf9b58bdddbb284fb3d47049ad63dd2"
+    "ed803b540f7e6440f498ba7882a3da42d5785fdd8cd377a1a0a9506fc6ad29f6"
 )
 EXPECTED_SCHEMA_SNAPSHOT_HASH = (
-    "febd3ec35f65d9fd761831bbb88ee1ef1d90c1b3db8ad5dd79b78111a2630413"
+    "ceb97061136c33afe7462d7c21038c633c82e82fc82ffb8adb988fc476aeea9d"
 )
 
 

@@ -85,7 +85,7 @@ def valid_actions():
                     "price_source_reconciliation",
                 ],
             ),
-            relation("fx_rates_pit", ["market_price_canonical"]),
+            relation("fx_rates_pit", ["fx_rate_raw"]),
             relation(
                 "trading_price_features_canonical_shadow",
                 ["market_price_canonical"],
@@ -106,6 +106,7 @@ def valid_actions():
                     "market_session_calendar",
                     "price_source_reconciliation",
                     "market_price_canonical",
+                    "fx_rate_raw",
                     "fx_rates_pit",
                     "trading_price_features_canonical_shadow",
                     "wp04_legacy_vs_canonical_shadow",
@@ -139,10 +140,14 @@ class Wp04SchemaCheckTests(unittest.TestCase):
 
     def test_plan_preserves_native_action_types_and_checksum(self):
         plan, required, generated = self.build()
-        self.assertEqual(10, plan["required_action_count"])
+        self.assertEqual(11, plan["required_action_count"])
         self.assertEqual(
-            {"operations": 3, "relation": 6, "assertion": 1},
+            {"operations": 4, "relation": 6, "assertion": 1},
             plan["required_action_type_counts"],
+        )
+        self.assertEqual(
+            "wp04-native-action-types-official-fx-v2",
+            plan["schema_action_policy_version"],
         )
         self.assertEqual("assertion", plan["required_action_types"]["audit_canonical_prices"])
         self.assertEqual(1, plan["required_assertion_count"])

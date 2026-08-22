@@ -58,8 +58,20 @@ def _optional_policy_identity(plan: Mapping[str, Any], name: str) -> dict[str, A
     return {name: dict(value)}
 
 def plan_identity(plan: Mapping[str, Any]) -> dict[str, Any]:
-    result = {**_core.plan_identity(plan), **_provider_window_identity(plan, required=False), **_optional_policy_identity(plan, "primary_source_policy"), **_optional_policy_identity(plan, "fx_reference_policy")}
-    for key in ("secondary_source_required", "secondary_source_available_count", "secondary_source_unavailable_count"):
+    result = {
+        **_core.plan_identity(plan),
+        **_provider_window_identity(plan, required=False),
+        **_optional_policy_identity(plan, "primary_source_policy"),
+        **_optional_policy_identity(plan, "official_fx_source_policy"),
+    }
+    for key in (
+        "asset_results",
+        "ingestion_run_id",
+        "generated_at",
+        "secondary_source_required",
+        "secondary_source_available_count",
+        "secondary_source_unavailable_count",
+    ):
         if key in plan:
             result[key] = plan[key]
     return result

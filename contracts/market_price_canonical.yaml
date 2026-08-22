@@ -84,5 +84,4 @@ producers:
 - price_source_reconciliation
 consumers:
 - trading_price_features_canonical_shadow
-- fx_rates_pit
 - audit_canonical_prices

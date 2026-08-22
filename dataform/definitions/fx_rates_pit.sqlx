@@ -2,56 +2,59 @@ config {
   type: "table",
   schema: dataform.projectConfig.vars.auditDataset,
   name: "fx_rates_pit",
-  description: "Historical USD/CLP observed-dollar reference rates sourced directly from the official Banco Central de Chile BDE series.",
+  description: "Canonical point-in-time USD/CLP rates derived only from official Banco Central de Chile revisions.",
   tags: ["audit-grade", "fx", "pit", "shadow", "wp04"],
   bigquery: { partitionBy: "rate_date", clusterBy: ["base_currency", "quote_currency"] },
   assertions: {
-    nonNull: ["fx_rate_id", "rate_date", "base_currency", "quote_currency", "rate", "source_price_id", "provider", "available_at", "ingested_at", "quality_status", "data_snapshot_id", "production_change_allowed"],
+    nonNull: ["fx_rate_id", "rate_date", "base_currency", "quote_currency", "rate", "source_rate_revision_id", "provider", "series_id", "source_version", "source_published_at", "availability_policy", "available_at", "ingested_at", "quality_status", "data_snapshot_id", "production_change_allowed"],
     uniqueKey: ["rate_date", "base_currency", "quote_currency"]
   }
 }
 
-WITH latest_reference_revision AS (
-  SELECT * EXCEPT (rn)
+WITH latest_official_revision AS (
+  SELECT * EXCEPT (revision_rank)
   FROM (
     SELECT
       r.*,
-      DATE(r.bar_start, r.source_timezone) AS rate_date,
       ROW_NUMBER() OVER (
-        PARTITION BY DATE(r.bar_start, r.source_timezone)
-        ORDER BY r.available_at DESC, r.ingested_at DESC, r.raw_revision_id DESC
-      ) AS rn
-    FROM ${ref("market_price_raw")} r
+        PARTITION BY r.provider, r.series_id, r.rate_date
+        ORDER BY r.ingested_at DESC, r.available_at DESC, r.fx_rate_revision_id DESC
+      ) AS revision_rank
+    FROM ${ref("fx_rate_raw")} r
     WHERE r.provider = "BCCH_BDE"
-      AND r.provider_symbol = "F073.TCO.PRE.Z.D"
-      AND r.ticker = ${JSON.stringify(dataform.projectConfig.vars.usdClpTicker || "CLP=X")}
-      AND r.asset_type = "FX"
-      AND r.exchange = "FX_24_5"
-      AND r.source_interval = "1d"
+      AND r.series_id = "F073.TCO.PRE.Z.D"
+      AND r.base_currency = "USD"
+      AND r.quote_currency = "CLP"
+      AND r.status_code = "OK"
+      AND r.rate > 0
+      AND r.source_version = "bcch-bde-rest-v1"
       AND r.source_timezone = "America/Santiago"
-      AND r.quality_status = "RAW_REFERENCE_RATE_VALIDATED"
-      AND r.open IS NULL
-      AND r.high IS NULL
-      AND r.low IS NULL
-      AND r.close IS NULL
-      AND r.volume IS NULL
-      AND r.adjusted_close > 0
-      AND r.available_at >= r.bar_end
+      AND r.quality_status = "OFFICIAL_PUBLISHED_RATE"
+      AND r.availability_policy = "bcch-previous-banking-day-1730-america-santiago-v1"
+      AND r.source_reference_date < r.rate_date
+      AND r.source_published_at < TIMESTAMP(r.rate_date, r.source_timezone)
+      AND r.available_at = r.source_published_at
+      AND r.available_at <= r.ingested_at
+      AND NOT r.production_change_allowed
   )
-  WHERE rn = 1
+  WHERE revision_rank = 1
 )
 
 SELECT
-  TO_HEX(SHA256(CONCAT(raw_revision_id, "|USD|CLP"))) AS fx_rate_id,
+  TO_HEX(SHA256(CONCAT(fx_rate_revision_id, "|USD|CLP"))) AS fx_rate_id,
   rate_date,
-  "USD" AS base_currency,
-  "CLP" AS quote_currency,
-  adjusted_close AS rate,
-  raw_revision_id AS source_price_id,
+  base_currency,
+  quote_currency,
+  rate,
+  fx_rate_revision_id AS source_rate_revision_id,
   provider,
+  series_id,
+  source_version,
+  source_published_at,
+  availability_policy,
   available_at,
   ingested_at,
-  "OFFICIAL_REFERENCE_RATE" AS quality_status,
-  TO_HEX(SHA256(CONCAT(raw_revision_id, "|", CAST(rate_date AS STRING), "|USD|CLP"))) AS data_snapshot_id,
+  quality_status,
+  TO_HEX(SHA256(CONCAT(fx_rate_revision_id, "|", CAST(rate_date AS STRING), "|USD|CLP"))) AS data_snapshot_id,
   FALSE AS production_change_allowed
-FROM latest_reference_revision
+FROM latest_official_revision

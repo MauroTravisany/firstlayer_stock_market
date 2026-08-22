@@ -1,5 +1,10 @@
 # WP-04 — Validación shadow de precios canónicos
 
+> **Official FX override:** para cualquier cierre posterior a la remediación
+> BCCh, [`WP-04_OFFICIAL_FX_SOURCE.md`](WP-04_OFFICIAL_FX_SOURCE.md) tiene
+> precedencia. El planner/executor autorizados son los entrypoints
+> `*_official_fx.py`; Yahoo `CLP=X` no es una fuente elegible.
+
 ## 1. Objetivo
 
 Demostrar en BigQuery, sin modificar producción, que WP-04 construye una serie
@@ -146,6 +151,7 @@ Acciones requeridas:
 market_price_raw
 corporate_actions_pit
 market_session_calendar
+fx_rate_raw
 price_source_reconciliation
 market_price_canonical
 fx_rates_pit
@@ -195,8 +201,8 @@ Gate obligatorio:
 
 ```text
 status = ALL_COMPILED_ACTIONS_SCHEMA_GRAPH_PASS
-required_action_count = 10
-operations = 3
+required_action_count = 11
+operations = 4
 relations = 6
 assertions = 1
 failed_action_count = 0
@@ -227,6 +233,7 @@ Ejecutar individualmente, sin dependencias transitivas:
 market_price_raw
 corporate_actions_pit
 market_session_calendar
+fx_rate_raw
 ```
 
 Verificar que las tres tablas existen exclusivamente en el shadow real y sus

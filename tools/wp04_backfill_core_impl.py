@@ -68,18 +68,22 @@ def load_asset_set(path: Path) -> tuple[str, tuple[dict[str, Any], ...], str]:
         asset_type = str(row.get("asset_type") or "").strip().upper()
         exchange = str(row.get("exchange") or "").strip().upper()
         currency = str(row.get("currency") or "").strip().upper()
-        primary_source = str(row.get("primary_source") or "YAHOO").strip().upper()
+        primary_provider = str(
+            row.get("primary_provider") or row.get("primary_source") or "YAHOO"
+        ).strip().upper()
+        primary_source = str(
+            row.get("primary_source") or primary_provider
+        ).strip().upper()
+        if primary_provider != primary_source:
+            raise Wp04BackfillError(
+                f"asset row {index} has mismatched primary provider aliases"
+            )
         yahoo_symbol = _optional_text(row.get("yahoo_symbol"))
+        yahoo_role = str(row.get("yahoo_role") or "PRIMARY").strip().upper()
         stooq_symbol = _optional_text(row.get("stooq_symbol"))
         if stooq_symbol is not None:
             stooq_symbol = stooq_symbol.lower()
         bcch_series_id = _optional_text(row.get("bcch_series_id"))
-        base_currency = _optional_text(row.get("base_currency"))
-        quote_currency = _optional_text(row.get("quote_currency"))
-        if base_currency is not None:
-            base_currency = base_currency.upper()
-        if quote_currency is not None:
-            quote_currency = quote_currency.upper()
         if not ticker or ticker in tickers:
             raise Wp04BackfillError(f"asset row {index} has missing or duplicate ticker")
         if asset_type not in ASSET_TYPES:
@@ -89,18 +93,25 @@ def load_asset_set(path: Path) -> tuple[str, tuple[dict[str, Any], ...], str]:
         if not exchange or not currency:
             raise Wp04BackfillError(f"asset row {index} is incomplete")
         if primary_source == "YAHOO":
-            if not yahoo_symbol:
+            if not yahoo_symbol or yahoo_role != "PRIMARY":
                 raise Wp04BackfillError(f"asset row {index} requires yahoo_symbol")
-            if bcch_series_id or base_currency or quote_currency:
+            if bcch_series_id:
                 raise Wp04BackfillError(f"asset row {index} cannot mix Yahoo and BCCH fields")
-        elif asset_type != "FX" or exchange != "FX_24_5" or currency != "CLP" or yahoo_symbol or not bcch_series_id or base_currency != "USD" or quote_currency != "CLP":
+        elif (
+            asset_type != "FX"
+            or exchange != "FX_24_5"
+            or currency != "CLP"
+            or yahoo_symbol != "CLP=X"
+            or yahoo_role != "DIAGNOSTIC_ONLY"
+            or bcch_series_id != "F073.TCO.PRE.Z.D"
+        ):
             raise Wp04BackfillError(f"asset row {index} has invalid BCCH_BDE FX configuration")
         if asset_type in {"STOCK", "ETF"} and not stooq_symbol:
             raise Wp04BackfillError(f"asset row {index} requires stooq_symbol for source reconciliation")
         if asset_type not in {"STOCK", "ETF"} and stooq_symbol:
             raise Wp04BackfillError(f"asset row {index} must not configure Stooq for {asset_type}")
         tickers.add(ticker)
-        normalized.append({"ticker": ticker, "asset_type": asset_type, "exchange": exchange, "currency": currency, "primary_source": primary_source, "yahoo_symbol": yahoo_symbol, "stooq_symbol": stooq_symbol, "bcch_series_id": bcch_series_id, "base_currency": base_currency, "quote_currency": quote_currency})
+        normalized.append({"ticker": ticker, "asset_type": asset_type, "exchange": exchange, "currency": currency, "primary_provider": primary_provider, "primary_source": primary_source, "yahoo_symbol": yahoo_symbol, "yahoo_role": yahoo_role, "stooq_symbol": stooq_symbol, "bcch_series_id": bcch_series_id})
     return version, tuple(normalized), sha256_bytes(raw)
 
 def validate_date_ranges(*, start_date: dt.date, end_date: dt.date, intraday_start_date: dt.date, hourly_start_date: dt.date) -> None:
@@ -142,7 +153,14 @@ def write_jsonl(path: Path, rows: Iterable[Mapping[str, Any]]) -> dict[str, Any]
         for row in rows:
             handle.write(canonical_json(row) + "\n")
             count += 1
-            for candidate in ("raw_revision_id", "action_id", "session_id", "status_id", "rejection_id"):
+            for candidate in (
+                "raw_revision_id",
+                "fx_rate_revision_id",
+                "action_id",
+                "session_id",
+                "status_id",
+                "rejection_id",
+            ):
                 if candidate in row:
                     identities.append(str(row[candidate]))
                     break

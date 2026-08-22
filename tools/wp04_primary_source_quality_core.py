@@ -152,6 +152,10 @@ def _session_day(
         timestamp = timestamp.replace(tzinfo=ZoneInfo(source_timezone))
     if exchange.upper() == "XNYS" or asset_type.upper() in {"STOCK", "ETF"}:
         return timestamp.astimezone(NY).date()
+    if asset_type.upper() == "FX" or exchange.upper() == "FX_24_5":
+        # Daily provider labels are calendar dates in the provider timezone.
+        # Extracting DATE after UTC conversion turns BST Mondays into Sundays.
+        return timestamp.astimezone(ZoneInfo(source_timezone)).date()
     return timestamp.astimezone(UTC).date()
 
 

@@ -21,20 +21,22 @@ class Wp04BackfillTests(unittest.TestCase):
         stocks = [row for row in assets if row["asset_type"] == "STOCK"]
         self.assertTrue(all(row["stooq_symbol"] for row in stocks))
         self.assertTrue(all(row["primary_source"] == "YAHOO" for row in stocks))
+        self.assertTrue(all(row["primary_provider"] == "YAHOO" for row in stocks))
         self.assertEqual({"BTC-USD", "ETH-USD"}, {row["ticker"] for row in assets if row["asset_type"] == "CRYPTO"})
         fx = [row for row in assets if row["asset_type"] == "FX"]
         self.assertEqual(1, len(fx))
         self.assertEqual("CLP=X", fx[0]["ticker"])
         self.assertEqual("BCCH_BDE", fx[0]["primary_source"])
+        self.assertEqual("BCCH_BDE", fx[0]["primary_provider"])
         self.assertEqual("F073.TCO.PRE.Z.D", fx[0]["bcch_series_id"])
-        self.assertIsNone(fx[0]["yahoo_symbol"])
-        self.assertEqual("USD", fx[0]["base_currency"])
-        self.assertEqual("CLP", fx[0]["quote_currency"])
+        self.assertEqual("CLP=X", fx[0]["yahoo_symbol"])
+        self.assertEqual("DIAGNOSTIC_ONLY", fx[0]["yahoo_role"])
+        self.assertIsNone(fx[0]["stooq_symbol"])
 
     def test_asset_set_rejects_mixed_yahoo_and_bcch_fx_configuration(self):
         document = json.loads(ASSET_SET.read_text(encoding="utf-8"))
         fx = next(row for row in document["assets"] if row["ticker"] == "CLP=X")
-        fx["yahoo_symbol"] = "CLP=X"
+        fx["yahoo_role"] = "PRIMARY"
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "assets.json"
             path.write_text(json.dumps(document), encoding="utf-8")
@@ -60,11 +62,11 @@ class Wp04BackfillTests(unittest.TestCase):
             root = Path(directory)
             first = core.write_jsonl(root / "prices.jsonl", [{"raw_revision_id": "r1", "value": 1}])
             window = provider.resolve_provider_window(anchor_at=dt.datetime(2026, 8, 18, 12, tzinfo=UTC))
-            plan = core.finalize_plan({"schema_version": 1, "operation": "WP04_SHADOW_BACKFILL", "git_sha": "a" * 40, "asset_set_version": "v1", "asset_set_sha256": "b" * 64, "assets": [{"ticker": "AAPL"}], "start_date": window["start_date"], "end_date": window["end_date"], "intraday_start_date": window["intraday_start_date"], "hourly_start_date": window["hourly_start_date"], "files": {"market_price_raw": first}, "total_row_count": 1, "max_rows": 10, "provider_versions": {"YAHOO": "test"}, "provider_window_policy": window, "provider_window_checksum": window["window_checksum"], "fx_reference_policy": {"policy_version": "v1", "provider": "BCCH_BDE"}, "production_change_allowed": False})
+            plan = core.finalize_plan({"schema_version": 1, "operation": "WP04_SHADOW_BACKFILL", "git_sha": "a" * 40, "asset_set_version": "v1", "asset_set_sha256": "b" * 64, "assets": [{"ticker": "AAPL"}], "asset_results": [], "start_date": window["start_date"], "end_date": window["end_date"], "intraday_start_date": window["intraday_start_date"], "hourly_start_date": window["hourly_start_date"], "files": {"market_price_raw": first}, "total_row_count": 1, "max_rows": 10, "provider_versions": {"YAHOO": "test"}, "ingestion_run_id": "run", "generated_at": "2026-08-20T00:00:00Z", "provider_window_policy": window, "provider_window_checksum": window["window_checksum"], "official_fx_source_policy": {"policy_version": "v1", "provider": "BCCH_BDE"}, "production_change_allowed": False})
             core.verify_plan_checksum(plan, plan["plan_checksum"])
             core.verify_plan_files(plan)
             changed = dict(plan)
-            changed["fx_reference_policy"] = {"policy_version": "v2", "provider": "BCCH_BDE"}
+            changed["official_fx_source_policy"] = {"policy_version": "v2", "provider": "BCCH_BDE"}
             with self.assertRaisesRegex(core.Wp04BackfillError, "checksum mismatch"):
                 core.verify_plan_checksum(changed, plan["plan_checksum"])
 

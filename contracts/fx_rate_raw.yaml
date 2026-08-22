@@ -1,0 +1,76 @@
+contract_version: 1.0.0
+data_contract_version: audit-contracts-v1
+criticality: P0
+environments: [research, shadow]
+point_in_time:
+  eligibility: NOT_BACKTEST_ELIGIBLE
+  reason: Raw official observations retain every immutable revision; consumers must use fx_rates_pit after publication and deduplication gates.
+table:
+  name: fx_rate_raw
+  description: Append-only official Banco Central de Chile observed-dollar revisions with publication lineage.
+  granularity: One immutable revision per provider series and rate date.
+  logical_primary_key: [fx_rate_revision_id]
+  append_only: true
+  partition_by: rate_date
+  cluster_by: [provider, series_id]
+  corporate_actions_policy: NOT_APPLICABLE
+temporal:
+  event_time: source_published_at
+  available_at: available_at
+  ingested_at: ingested_at
+  timezone: UTC
+  point_in_time_policy: The previous banking-day observation becomes available at the official 17:30 America/Santiago publication time and never before ingestion.
+source:
+  system: Banco Central de Chile BDE REST API series F073.TCO.PRE.Z.D
+  version_field: fx_rate_revision_id
+  original_timezone: America/Santiago
+deduplication:
+  rule: fx_rate_record_id identifies provider series and rate date; fx_rate_revision_id additionally hashes payload and publication time. Existing revisions are never updated.
+retention:
+  policy: Retain every official revision indefinitely for replay and publication-lineage audit.
+columns:
+- {name: fx_rate_revision_id, type: STRING, mode: REQUIRED, description: Content-addressed immutable revision identity.}
+- {name: fx_rate_record_id, type: STRING, mode: REQUIRED, description: Stable provider series and rate-date identity.}
+- {name: ingestion_run_id, type: STRING, mode: REQUIRED, description: UUID of the ingestion run.}
+- {name: provider, type: STRING, mode: REQUIRED, description: Official provider identifier.}
+- {name: series_id, type: STRING, mode: REQUIRED, description: Official BDE series identifier.}
+- {name: rate_date, type: DATE, mode: REQUIRED, description: Date on which the rate may be used.}
+- {name: source_reference_date, type: DATE, mode: REQUIRED, description: Earlier banking day represented by the observation.}
+- {name: base_currency, type: STRING, mode: REQUIRED, description: Base currency.}
+- {name: quote_currency, type: STRING, mode: REQUIRED, description: Quote currency.}
+- {name: rate, type: FLOAT64, mode: REQUIRED, description: Positive Chilean pesos per US dollar.}
+- {name: status_code, type: STRING, mode: REQUIRED, description: Official observation status.}
+- {name: source_record_id, type: STRING, mode: REQUIRED, description: Provider series and rate-date record identity.}
+- {name: source_version, type: STRING, mode: REQUIRED, description: Official source adapter version.}
+- {name: source_timezone, type: STRING, mode: REQUIRED, description: Official publication timezone.}
+- {name: source_published_at, type: TIMESTAMP, mode: REQUIRED, description: Conservative official publication timestamp.}
+- {name: availability_policy, type: STRING, mode: REQUIRED, description: Exact publication availability policy.}
+- {name: payload_hash, type: STRING, mode: REQUIRED, description: SHA-256 of the canonical public observation.}
+- {name: available_at, type: TIMESTAMP, mode: REQUIRED, description: First verified usable time.}
+- {name: ingested_at, type: TIMESTAMP, mode: REQUIRED, description: UTC ingestion time.}
+- {name: quality_status, type: STRING, mode: REQUIRED, description: Official published-rate quality state.}
+- {name: production_change_allowed, type: BOOL, mode: REQUIRED, description: Always false in WP-04 shadow validation.}
+assertions:
+  not_null: [fx_rate_revision_id, fx_rate_record_id, ingestion_run_id, provider, series_id, rate_date, source_reference_date, base_currency, quote_currency, rate, status_code, source_record_id, source_version, source_timezone, source_published_at, availability_policy, payload_hash, available_at, ingested_at, quality_status, production_change_allowed]
+  unique:
+  - [fx_rate_revision_id]
+  accepted_values:
+    provider: [BCCH_BDE]
+    series_id: [F073.TCO.PRE.Z.D]
+    base_currency: [USD]
+    quote_currency: [CLP]
+    status_code: [OK]
+    source_version: [bcch-bde-rest-v1]
+    source_timezone: [America/Santiago]
+    availability_policy: [bcch-previous-banking-day-1730-america-santiago-v1]
+    quality_status: [OFFICIAL_PUBLISHED_RATE]
+    production_change_allowed: [false]
+implementation:
+  mode: DATAFORM_CREATE
+  dataform_definition: dataform/definitions/fx_rate_raw.sqlx
+producers:
+- tools/wp04_fx_source.py
+- tools/wp04_shadow_backfill_official_fx.py
+consumers:
+- fx_rates_pit
+- audit_canonical_prices

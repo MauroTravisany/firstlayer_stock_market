@@ -18,12 +18,13 @@ from tools import wp03_sql_policy as sql_policy
 
 ACK = "WP04_SCHEMA_VALIDATION_WRITE"
 PASS = "ALL_COMPILED_ACTIONS_SCHEMA_GRAPH_PASS"
-POLICY = "wp04-native-action-types-v1"
+POLICY = "wp04-native-action-types-official-fx-v2"
 JOIN_POLICY = "wp04-explicit-join-keys-v1"
 EXPECTED = {
     "market_price_raw": "operations",
     "corporate_actions_pit": "operations",
     "market_session_calendar": "operations",
+    "fx_rate_raw": "operations",
     "price_source_reconciliation": "relation",
     "market_price_canonical": "relation",
     "fx_rates_pit": "relation",

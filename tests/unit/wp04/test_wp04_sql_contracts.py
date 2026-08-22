@@ -11,6 +11,7 @@ OPERATIONS = {
     "market_price_raw",
     "corporate_actions_pit",
     "market_session_calendar",
+    "fx_rate_raw",
 }
 RELATIONS = {
     "price_source_reconciliation",
@@ -34,7 +35,7 @@ class Wp04SqlContractTests(unittest.TestCase):
         }
 
     def test_required_action_inventory_and_native_types(self):
-        self.assertEqual(11, len(WP04_ACTIONS))
+        self.assertEqual(12, len(WP04_ACTIONS))
         for name in OPERATIONS:
             self.assertRegex(self.sources[name], r'type:\s*"operations"')
         for name in RELATIONS:
@@ -129,9 +130,13 @@ class Wp04SqlContractTests(unittest.TestCase):
             self.assertIn(status, reconciliation)
         self.assertIn("requireSecondaryPriceSource", reconciliation)
         fx = self.sources["fx_rates_pit"]
-        self.assertIn('"USD" AS base_currency', fx)
-        self.assertIn('"CLP" AS quote_currency', fx)
-        self.assertIn("usdClpTicker", fx)
+        self.assertIn('${ref("fx_rate_raw")}', fx)
+        self.assertIn('r.provider = "BCCH_BDE"', fx)
+        self.assertIn('r.series_id = "F073.TCO.PRE.Z.D"', fx)
+        self.assertIn("source_rate_revision_id", fx)
+        self.assertNotIn("market_price_canonical", fx)
+        self.assertNotIn("usdClpTicker", fx)
+        self.assertNotIn("adjusted_close", fx)
 
     def test_dual_run_and_audit_never_promote(self):
         dual = self.sources["wp04_legacy_vs_canonical_shadow"]
