@@ -63,7 +63,7 @@ Una fila solo pasa a `PASS` con enlace a código, prueba ejecutada y evidencia r
 | PX-04 | Corporate actions PIT | Contrato fail-closed implementado; cobertura histórica verificable sigue limitada | WP-04 | action table + reconciliation | IMPLEMENTED_UNVERIFIED |
 | PX-05 | Calendario por exchange/DST | Calendarios y fecha daily local implementados; falta materialización live | WP-04/05 | holiday/DST tests | IMPLEMENTED_UNVERIFIED |
 | PX-06 | Segunda fuente/reconciliación | Stooq configurable y mismatch gates implementados; falta reporte live | WP-04 | mismatch report | IMPLEMENTED_UNVERIFIED |
-| PX-07 | FX histórico para PnL CLP | `fx_rate_raw` oficial BCCh preserva revisiones desde `first_observed_at`; `fx_rates_pit` exige selección as-of y snapshots sin vintage no son backtest-eligible; falta backfill/audit live | WP-04/05 | FX revision/as-of fixture | IMPLEMENTED_UNVERIFIED |
+| PX-07 | FX histórico para PnL CLP | `fx_rate_raw` oficial BCCh preserva revisiones desde un `first_observed_at` capturado tras recibir y validar el payload, separado del inicio `generated_at`; `fx_rates_pit` exige selección as-of y snapshots sin vintage no son backtest-eligible; falta backfill/audit live | WP-04/05 | Regresión T0/T1/T2 + FX revision/as-of fixture | IMPLEMENTED_UNVERIFIED |
 
 ## 3. Backtesting
 

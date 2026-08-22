@@ -27,6 +27,7 @@ from tools.wp04_fx_source import (
     OfficialFxSourceError,
     fetch_bcch_observed_dollar,
     official_source_policy,
+    utc_now,
 )
 
 
@@ -59,6 +60,7 @@ def build_plan(
     bcch_api_token: str | None = None,
     market_planner: Callable[..., dict[str, Any]] = market.build_plan,
     fx_fetcher: Callable[..., tuple[list[dict[str, Any]], dict[str, Any]]] = fetch_bcch_observed_dollar,
+    fx_clock: Callable[[], dt.datetime] = utc_now,
 ) -> dict[str, Any]:
     """Build one checksum-bound plan without putting scalar FX into OHLC rows."""
 
@@ -88,15 +90,17 @@ def build_plan(
         stooq_api_key=stooq_api_key,
         bcch_api_token=None,
     )
-    generated_at = dt.datetime.fromisoformat(str(plan["generated_at"]).replace("Z", "+00:00"))
+    plan_started_at = dt.datetime.fromisoformat(
+        str(plan["generated_at"]).replace("Z", "+00:00")
+    )
     try:
         fx_rows, fx_status = fx_fetcher(
             token=bcch_api_token,
             start_date=start_date,
             end_date=end_date,
             ingestion_run_id=str(plan["ingestion_run_id"]),
-            ingested_at=generated_at,
             timeout_seconds=timeout_seconds,
+            clock=fx_clock,
         )
     except OfficialFxSourceError as exc:
         raise Wp04BackfillError(
@@ -110,7 +114,7 @@ def build_plan(
         [fx_asset],
         start_date=start_date,
         end_date=end_date,
-        available_at=generated_at,
+        available_at=plan_started_at,
     )
     sessions = market_sessions + fx_sessions
     session_ids = [row["session_id"] for row in sessions]

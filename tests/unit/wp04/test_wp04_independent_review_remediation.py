@@ -68,6 +68,13 @@ class Wp04VintageAvailabilityTests(unittest.TestCase):
                 [initial, corrected], t2 + dt.timedelta(seconds=1)
             )["fx_rate_revision_id"],
         )
+        inserted_by_revision = {}
+        for row in (initial, repeated):
+            inserted_by_revision.setdefault(row["fx_rate_revision_id"], row)
+        self.assertEqual(
+            t1,
+            inserted_by_revision[initial["fx_rate_revision_id"]]["first_observed_at"],
+        )
 
     def test_transport_exception_never_retains_token_in_chain_or_logging(self):
         token = "super-private-bcch-token"
@@ -90,7 +97,7 @@ class Wp04VintageAvailabilityTests(unittest.TestCase):
                         start_date=dt.date(2024, 1, 1),
                         end_date=dt.date(2024, 1, 2),
                         ingestion_run_id="run",
-                        ingested_at=dt.datetime(2026, 8, 20, tzinfo=UTC),
+                        clock=lambda: dt.datetime(2026, 8, 20, tzinfo=UTC),
                         get=fail,
                     )
                 except source.OfficialFxSourceError as exc:
@@ -244,6 +251,38 @@ class Wp04ExecutorValidationTests(unittest.TestCase):
             client_factory = Mock(side_effect=AssertionError("BigQuery client must not be called"))
             module = Mock(Client=client_factory)
             with self.assertRaisesRegex(executor.Wp04BackfillError, "fx_rate_raw"):
+                executor.execute_plan(
+                    plan=plan,
+                    project_id="stocks-437902",
+                    dataset_id="acciones_dataset_shadow_wp04_test",
+                    location="us-east1",
+                    bigquery_module=module,
+                    bq_operations_module=Mock(),
+                )
+            client_factory.assert_not_called()
+
+    def test_status_observation_mismatch_fails_before_bigquery_client(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = self._plan(root)
+            status = source.build_status_document(
+                query_start_date=dt.date(2023, 11, 30),
+                start_date=dt.date(2024, 1, 1),
+                end_date=dt.date(2024, 1, 3),
+                ingestion_run_id="run",
+                accepted_row_count=1,
+                skipped_status_counts={},
+                observed_at=dt.datetime(2026, 8, 20, 12, 1, tzinfo=UTC),
+            )
+            plan["files"]["official_fx_source_status"] = write_jsonl(
+                root / "status.jsonl", [status]
+            )
+            plan = finalize_plan(plan)
+            client_factory = Mock(
+                side_effect=AssertionError("BigQuery client must not be called")
+            )
+            module = Mock(Client=client_factory)
+            with self.assertRaisesRegex(executor.Wp04BackfillError, "failed validation"):
                 executor.execute_plan(
                     plan=plan,
                     project_id="stocks-437902",

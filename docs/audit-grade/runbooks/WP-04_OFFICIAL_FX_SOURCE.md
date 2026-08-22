@@ -58,11 +58,19 @@ Each `rate_date` uses the prior successful banking-day observation as
 `America/Santiago` economic/legal schedule, but it is not evidence that the
 payload observed today existed historically. For the current snapshot API:
 
+`generated_at` (also called `plan_started_at` in the planner) records the start
+of the overall planning process. It is not a provider-observation timestamp.
+After the HTTP response, success status, JSON document, API code, series ID,
+and observation collection have been validated, the BCCh adapter captures one
+timezone-aware UTC instant. Every row from that response and its sanitized
+source-status document share that exact instant.
+
 ```text
 source_reference_date < rate_date
 source_published_at < TIMESTAMP(rate_date, source_timezone)
-first_observed_at = ingested_at
-available_at = first_observed_at
+source_published_at <= first_observed_at
+first_observed_at = available_at = ingested_at
+official_fx_source_status.observed_at = first_observed_at
 quality_status = CURRENT_SNAPSHOT_NO_VINTAGE
 backtest_eligible = false
 production_change_allowed = false
@@ -79,6 +87,11 @@ lineage.
 series, and rate date. `fx_rate_revision_id` additionally binds the payload
 hash and publication timestamp. The executor uses insert-only `MERGE` keyed by
 `fx_rate_revision_id`, so an exact replay inserts zero rows.
+
+The executor revalidates that every row timestamp equals the status
+`observed_at` before creating a BigQuery client. The JSONL file hashes,
+identity-set hashes, and final plan checksum bind the captured observation
+instant without using BigQuery execution time.
 
 `fx_rates_pit` reads only `fx_rate_raw` and preserves every distinct observed
 revision. A consumer must select the deterministic maximum revision satisfying

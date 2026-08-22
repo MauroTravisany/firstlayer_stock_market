@@ -37,6 +37,12 @@ class OfficialFxSourceError(RuntimeError):
         super().__init__(str(message).strip())
 
 
+def utc_now() -> dt.datetime:
+    """Return the current timezone-aware UTC instant."""
+
+    return dt.datetime.now(UTC)
+
+
 def _parse_date(value: Any) -> dt.date:
     try:
         return dt.datetime.strptime(str(value or "").strip(), "%d-%m-%Y").date()
@@ -423,9 +429,9 @@ def fetch_bcch_observed_dollar(
     start_date: dt.date,
     end_date: dt.date,
     ingestion_run_id: str,
-    ingested_at: dt.datetime,
     timeout_seconds: int = 30,
     get: Callable[..., Any] = requests.get,
+    clock: Callable[[], dt.datetime] = utc_now,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Fetch the official series and return raw rows plus sanitized status."""
 
@@ -436,8 +442,6 @@ def fetch_bcch_observed_dollar(
         raise OfficialFxSourceError("INVALID_DATE_RANGE", "end_date precedes start_date")
     if not str(ingestion_run_id or "").strip():
         raise OfficialFxSourceError("INGESTION_RUN_ID_MISSING", "ingestion_run_id is required")
-    if ingested_at.tzinfo is None or ingested_at.utcoffset() is None:
-        raise OfficialFxSourceError("INVALID_INGESTION_TIME", "ingested_at must be timezone-aware")
 
     query_start = start_date - dt.timedelta(days=QUERY_LOOKBACK_DAYS)
     try:
@@ -505,6 +509,17 @@ def fetch_bcch_observed_dollar(
             raise
         parsed.append((day, rate))
 
+    observed_at = clock()
+    if (
+        not isinstance(observed_at, dt.datetime)
+        or observed_at.tzinfo is None
+        or observed_at.utcoffset() is None
+    ):
+        raise OfficialFxSourceError(
+            "INVALID_OBSERVATION_TIME", "BCCh observation clock must be timezone-aware"
+        )
+    observed_at = observed_at.astimezone(UTC)
+
     parsed.sort(key=lambda item: item[0])
     rows: list[dict[str, Any]] = []
     for index, (rate_date, rate) in enumerate(parsed):
@@ -521,7 +536,7 @@ def fetch_bcch_observed_dollar(
                 source_reference_date=parsed[index - 1][0],
                 rate=rate,
                 ingestion_run_id=ingestion_run_id,
-                ingested_at=ingested_at,
+                ingested_at=observed_at,
             )
         )
     if not rows:
@@ -541,6 +556,6 @@ def fetch_bcch_observed_dollar(
         ingestion_run_id=ingestion_run_id,
         accepted_row_count=len(rows),
         skipped_status_counts=skipped,
-        observed_at=ingested_at,
+        observed_at=observed_at,
     )
     return rows, status

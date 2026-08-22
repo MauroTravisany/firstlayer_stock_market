@@ -9,7 +9,7 @@ from unittest.mock import patch
 from tools import wp04_official_fx_planner as planner
 from tools import wp04_shadow_backfill_official_fx as executor
 from tools import wp04_shadow_backfill_windowed_official_fx as windowed
-from tools.wp04_backfill_core import finalize_plan, write_jsonl
+from tools.wp04_backfill_core import finalize_plan, read_jsonl, write_jsonl
 from tools.wp04_fx_source import (
     AVAILABILITY_POLICY,
     POLICY_VERSION,
@@ -30,10 +30,14 @@ class Wp04OfficialFxPlannerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             work = Path(directory)
             captured = {}
+            timeline = []
+            plan_started_at = dt.datetime(2026, 8, 20, 12, tzinfo=UTC)
+            market_finished_at = dt.datetime(2026, 8, 20, 12, 1, tzinfo=UTC)
+            fx_observed_at = dt.datetime(2026, 8, 20, 12, 2, tzinfo=UTC)
 
             def market_planner(**kwargs):
+                timeline.append(("market_started", plan_started_at))
                 captured.update(kwargs)
-                generated = dt.datetime(2026, 8, 20, 12, tzinfo=UTC)
                 files = {
                     "market_price_raw": write_jsonl(work / "market_price_raw.jsonl", []),
                     "corporate_actions_pit": write_jsonl(work / "corporate_actions_pit.jsonl", []),
@@ -43,7 +47,7 @@ class Wp04OfficialFxPlannerTests(unittest.TestCase):
                     "primary_source_status": write_jsonl(work / "primary_source_status.jsonl", []),
                     "primary_source_rejections": write_jsonl(work / "primary_source_rejections.jsonl", []),
                 }
-                return finalize_plan(
+                result = finalize_plan(
                     {
                         "schema_version": 1,
                         "operation": "WP04_SHADOW_BACKFILL",
@@ -62,7 +66,7 @@ class Wp04OfficialFxPlannerTests(unittest.TestCase):
                         "max_rows": kwargs["max_rows"],
                         "provider_versions": {"YAHOO": "test", "FX_REFERENCE_POLICY": "retired"},
                         "ingestion_run_id": "run-test",
-                        "generated_at": generated.isoformat(),
+                        "generated_at": plan_started_at.isoformat(),
                         "fx_reference_policy": {"retired": True},
                         "primary_source_policy": {"policy_version": "test"},
                         "secondary_source_required": False,
@@ -71,32 +75,33 @@ class Wp04OfficialFxPlannerTests(unittest.TestCase):
                         "production_change_allowed": False,
                     }
                 )
+                timeline.append(("market_finished", market_finished_at))
+                return result
+
+            def fx_clock():
+                self.assertEqual("market_finished", timeline[-1][0])
+                timeline.append(("fx_observed", fx_observed_at))
+                return fx_observed_at
 
             def fx_fetcher(**kwargs):
+                self.assertNotIn("ingested_at", kwargs)
+                observed_at = kwargs["clock"]()
                 row = _raw_row(
                     rate_date=dt.date(2024, 1, 3),
                     source_reference_date=dt.date(2024, 1, 2),
                     rate=900.0,
                     ingestion_run_id=kwargs["ingestion_run_id"],
-                    ingested_at=kwargs["ingested_at"],
+                    ingested_at=observed_at,
                 )
-                status = {
-                    "status_id": "status-one",
-                    "policy_version": POLICY_VERSION,
-                    "provider": "BCCH_BDE",
-                    "series_id": "F073.TCO.PRE.Z.D",
-                    "required": True,
-                    "authentication_mode": "API_KEY",
-                    "query_start_date": dt.date(2023, 11, 30),
-                    "start_date": kwargs["start_date"],
-                    "end_date": kwargs["end_date"],
-                    "accepted_row_count": 1,
-                    "skipped_status_counts": {},
-                    "source_version": SOURCE_VERSION,
-                    "availability_policy": AVAILABILITY_POLICY,
-                    "observed_at": kwargs["ingested_at"],
-                    "production_change_allowed": False,
-                }
+                status = build_status_document(
+                    query_start_date=dt.date(2023, 11, 30),
+                    start_date=kwargs["start_date"],
+                    end_date=kwargs["end_date"],
+                    ingestion_run_id=kwargs["ingestion_run_id"],
+                    accepted_row_count=1,
+                    skipped_status_counts={},
+                    observed_at=observed_at,
+                )
                 return [row], status
 
             plan = planner.build_plan(
@@ -112,6 +117,7 @@ class Wp04OfficialFxPlannerTests(unittest.TestCase):
                 timeout_seconds=5,
                 market_planner=market_planner,
                 fx_fetcher=fx_fetcher,
+                fx_clock=fx_clock,
                 bcch_api_token="private-token",
             )
             self.assertNotIn("CLP=X", captured["tickers"].split(","))
@@ -131,6 +137,24 @@ class Wp04OfficialFxPlannerTests(unittest.TestCase):
             self.assertEqual(POLICY_VERSION, plan["provider_versions"]["OFFICIAL_FX_POLICY"])
             self.assertFalse(plan["production_change_allowed"])
             self.assertNotIn("private-token", json.dumps(plan, default=str))
+            fx_rows = read_jsonl(Path(plan["files"]["fx_rate_raw"]["path"]))
+            status_rows = read_jsonl(
+                Path(plan["files"]["official_fx_source_status"]["path"])
+            )
+            self.assertEqual(plan_started_at.isoformat(), plan["generated_at"])
+            serialized_observed_at = fx_observed_at.isoformat().replace("+00:00", "Z")
+            for field in ("first_observed_at", "available_at", "ingested_at"):
+                self.assertEqual(serialized_observed_at, fx_rows[0][field])
+            self.assertEqual(serialized_observed_at, status_rows[0]["observed_at"])
+            self.assertNotEqual(plan["generated_at"], fx_rows[0]["first_observed_at"])
+            self.assertEqual(
+                [
+                    ("market_started", plan_started_at),
+                    ("market_finished", market_finished_at),
+                    ("fx_observed", fx_observed_at),
+                ],
+                timeline,
+            )
             before = plan["plan_checksum"]
             changed = dict(plan)
             changed["official_fx_source_policy"] = {

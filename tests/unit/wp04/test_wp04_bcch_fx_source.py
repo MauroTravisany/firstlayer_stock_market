@@ -50,7 +50,7 @@ class Wp04BcchFxSourceTests(unittest.TestCase):
             "start_date": dt.date(2024, 10, 7),
             "end_date": dt.date(2024, 10, 8),
             "ingestion_run_id": "run-test",
-            "ingested_at": dt.datetime(2024, 10, 9, 12, tzinfo=UTC),
+            "clock": lambda: dt.datetime(2024, 10, 9, 12, tzinfo=UTC),
             "get": fake_get,
         }
         kwargs.update(overrides)
@@ -93,7 +93,7 @@ class Wp04BcchFxSourceTests(unittest.TestCase):
             ],
             start_date=dt.date(2024, 1, 5),
             end_date=dt.date(2024, 1, 5),
-            ingested_at=dt.datetime(2024, 1, 6, tzinfo=UTC),
+            clock=lambda: dt.datetime(2024, 1, 6, tzinfo=UTC),
         )
         winter, _, _ = self.fetch(
             [
@@ -102,7 +102,7 @@ class Wp04BcchFxSourceTests(unittest.TestCase):
             ],
             start_date=dt.date(2024, 6, 5),
             end_date=dt.date(2024, 6, 5),
-            ingested_at=dt.datetime(2024, 6, 6, tzinfo=UTC),
+            clock=lambda: dt.datetime(2024, 6, 6, tzinfo=UTC),
         )
         self.assertEqual(20, summer[0]["source_published_at"].hour)
         self.assertEqual(21, winter[0]["source_published_at"].hour)
@@ -138,7 +138,7 @@ class Wp04BcchFxSourceTests(unittest.TestCase):
                 start_date=dt.date(2024, 1, 1),
                 end_date=dt.date(2024, 1, 2),
                 ingestion_run_id="run",
-                ingested_at=dt.datetime(2024, 1, 4, tzinfo=UTC),
+                clock=lambda: dt.datetime(2024, 1, 4, tzinfo=UTC),
                 get=lambda *_a, **_k: self.fail("network called"),
             )
         self.assertEqual("AUTHENTICATION_MISSING", raised.exception.reason_code)
@@ -159,11 +159,52 @@ class Wp04BcchFxSourceTests(unittest.TestCase):
                     start_date=dt.date(2024, 1, 1),
                     end_date=dt.date(2024, 1, 2),
                     ingestion_run_id="run",
-                    ingested_at=dt.datetime(2024, 1, 4, tzinfo=UTC),
+                    clock=lambda: dt.datetime(2024, 1, 4, tzinfo=UTC),
                     get=getter,
                 )
             self.assertEqual(reason, raised.exception.reason_code)
             self.assertNotIn("private-token-value", str(raised.exception))
+
+    def test_observation_clock_runs_once_after_response_validation(self):
+        events = []
+        observed_at = dt.datetime(2026, 8, 22, 3, 2, tzinfo=UTC)
+
+        class OrderedResponse(FakeResponse):
+            def json(self):
+                events.append("json_validated")
+                return super().json()
+
+        def fake_get(*_args, **_kwargs):
+            events.append("http_received")
+            return OrderedResponse(
+                document(
+                    [
+                        observation(dt.date(2024, 10, 4), "897.68"),
+                        observation(dt.date(2024, 10, 7), "923.74"),
+                    ]
+                )
+            )
+
+        def clock():
+            events.append("clock_captured")
+            return observed_at
+
+        rows, status = source.fetch_bcch_observed_dollar(
+            token="private-token-value",
+            start_date=dt.date(2024, 10, 7),
+            end_date=dt.date(2024, 10, 7),
+            ingestion_run_id="run-clock",
+            clock=clock,
+            get=fake_get,
+        )
+
+        self.assertEqual(
+            ["http_received", "json_validated", "clock_captured"], events
+        )
+        self.assertEqual(observed_at, rows[0]["first_observed_at"])
+        self.assertEqual(observed_at, rows[0]["available_at"])
+        self.assertEqual(observed_at, rows[0]["ingested_at"])
+        self.assertEqual(observed_at, status["observed_at"])
 
     def test_duplicate_non_positive_and_non_finite_values_fail_closed(self):
         cases = [

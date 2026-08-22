@@ -112,6 +112,13 @@ shadow dataset.
 print, persist, log, or commit it. Stooq remains optional unless separately
 authorized.
 
+The plan-level `generated_at` is the process start (`plan_started_at`), not the
+time FirstLayer observed the official payload. The BCCh adapter must capture
+one UTC observation instant only after the successful response has been
+received, parsed, and validated. That adapter-owned instant must populate
+`first_observed_at`, `available_at`, `ingested_at`, and
+`official_fx_source_status.observed_at` for the same snapshot.
+
 The only authorized planner command is:
 
 ```bash
@@ -142,6 +149,8 @@ official_fx_source_status.required = true
 official_fx_source_status.authentication_mode = API_KEY
 fx_rate_raw quality_status = CURRENT_SNAPSHOT_NO_VINTAGE
 fx_rate_raw first_observed_at = available_at = ingested_at
+official_fx_source_status.observed_at = fx_rate_raw first_observed_at
+source_published_at <= first_observed_at
 fx_rate_raw backtest_eligible = false
 production_change_allowed = false
 ```
